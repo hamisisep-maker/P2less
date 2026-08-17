@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "./db";
-import { understand, humanizeReply, smallTalk, aiEnabled, partOfDay, type ChatTurn } from "./ai";
+import { understand, humanizeReply, smallTalk, complete, aiEnabled, partOfDay, type ChatTurn } from "./ai";
 import { executeAction, type ParamSpec } from "./connector-engine";
 import { issueOtp, verifyOtp, hasVerifiedSession } from "./otp";
 import { hasPermission } from "./permissions";
@@ -61,6 +61,9 @@ type ConvContext = {
   // How many stray (non-answer) messages we've fielded while collecting a param /
   // waiting for confirm — used to stop re-asking after the user clearly moved on.
   paramAsides?: number;
+  // The last document a tool read for this person (capped excerpt) — lets a
+  // text-only follow-up ("what does it say about X?") work without re-sending it.
+  lastDocument?: { label: string; text: string; ts: number };
 };
 
 // The user signalling they didn't want this pending flow / are confused by the
@@ -183,6 +186,14 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     return { ok: true, replies, conversationId: conversation!.id, from: fromIdentity } satisfies HandleResult;
   };
 
+  // Send ONE message right now, mid-turn — before slow work (reading a document,
+  // writing a CV) starts — so the person sees "I'm on it" instead of long silence
+  // followed by typing dots. Does NOT touch conversation status/context; the
+  // final emit() at the end of this turn still owns that.
+  const announceNow = async (body: string) => {
+    await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body, fromNumberId: number.phoneNumberId });
+  };
+
   const text = input.text.trim();
   const lower = text.toLowerCase();
 
@@ -221,6 +232,9 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     if (!recognizedFree && contact.credits < tool.cost) {
       return emit([{ body: `The *${tool.name}* tool costs ${tool.cost} credits, and you have ${contact.credits}. Reply *PAY 100* to top up KES 100 (≈ ${creditsForAmount(100)} credits) via M-Pesa and I'll get right on it. 💳` }], "open", ctx);
     }
+    // Slow tools say what they're doing FIRST — sent as its own message, before
+    // the (possibly several-second) real work starts, instead of long silence.
+    if (tool.announce) await announceNow(tool.announce);
     const result = await tool.run({ text, attachment: input.attachment }, { assistant, contactName: contact.displayName ?? undefined });
     const replies: Reply[] = [{ body: result.reply }];
     if (result.document) replies.push({ kind: "document", body: `📄 ${result.document.filename}`, document: result.document });
@@ -235,7 +249,8 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       await meter(tenant.id, "tool_run");
       replies.push({ kind: "system", body: `— included with ${assistant}'s plan ✓`, meta: { included: true } });
     }
-    return emit(replies, "open", ctx);
+    const nextCtx: ConvContext = result.remember ? { ...ctx, lastDocument: { label: result.remember.label, text: result.remember.text, ts: Date.now() } } : ctx;
+    return emit(replies, "open", nextCtx);
   }
 
   // ── Super-app: wallet balance ───────────────────────────────────────────
@@ -528,6 +543,27 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   await meter(tenant.id, match.via === "ai" ? "ai_request" : "api_call", match.via === "ai" ? 1 : 0);
 
   if (!match.actionId || match.score < 0.15) {
+    // A text-only follow-up about a document read earlier in THIS conversation
+    // ("what does it say about X?") — answer from what we remembered instead of
+    // making them resend the file, as long as they have credit for a quick query.
+    if (ctx.lastDocument && aiEnabled()) {
+      const canAfford = recognizedFree || contact.credits >= 1;
+      if (canAfford) {
+        const system = `You are a helpful assistant on ${assistant}'s WhatsApp. The user is asking a follow-up question about a document titled "${ctx.lastDocument.label}" that they sent earlier in this chat. Answer ONLY from the document text below — never invent details. If the question isn't actually about the document, or the answer isn't in it, say so honestly rather than guessing. Reply in the user's language, concisely, WhatsApp-style. Do not say you are an AI.`;
+        const user = `DOCUMENT TEXT ("${ctx.lastDocument.label}"):\n${ctx.lastDocument.text}\n\nThe user asked: ${JSON.stringify(text)}`;
+        const out = await complete(system, user, 500, 0.3);
+        if (out) {
+          const replies: Reply[] = [{ body: out }];
+          if (!recognizedFree) {
+            const remaining = contact.credits - 1;
+            await db.contact.update({ where: { id: contact.id }, data: { credits: remaining } });
+            replies.push({ kind: "system", body: `— 1 credit used · ${remaining} left`, meta: { credits: remaining } });
+          }
+          await meter(tenant.id, "tool_run");
+          return emit(replies, "open", ctx);
+        }
+      }
+    }
     const menu = numberedMenu(actions);
     // If AI is on, answer chit-chat naturally (still grounded to real capabilities).
     const st = await smallTalk(assistant, text, [...actions.map((a) => a.name), ...toolCapabilityLines()], history, knownFacts, orgFaqs);

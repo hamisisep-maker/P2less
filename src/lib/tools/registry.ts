@@ -28,6 +28,10 @@ export type ToolResult = {
   /** Set when the tool didn't actually do billable work (guidance/validation
    *  message, unreadable file) — the dispatcher then charges nothing. */
   noCharge?: boolean;
+  /** Set to have the dispatcher remember this content against the conversation,
+   *  so a later text-only follow-up ("what does it say about X?") can be
+   *  answered without asking the user to resend the file. */
+  remember?: { label: string; text: string };
 };
 
 export type Tool = {
@@ -36,6 +40,10 @@ export type Tool = {
   description: string;
   /** Credits charged on a successful run. */
   cost: number;
+  /** Sent to the user IMMEDIATELY, before run() starts, for anything slow
+   *  enough that silence would feel broken — e.g. "📄 Reading your document
+   *  now, one moment...". Omit for fast tools that don't need it. */
+  announce?: string;
   /** Does this tool handle the given input? Higher-priority tools are listed first. */
   matches: (input: ToolInput) => boolean;
   run: (input: ToolInput, ctx: ToolContext) => Promise<ToolResult>;
