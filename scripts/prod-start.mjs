@@ -18,7 +18,6 @@ run("npx prisma db push --skip-generate");
 
 const db = new PrismaClient();
 const tenantCount = await db.tenant.count();
-await db.$disconnect();
 
 if (tenantCount === 0) {
   console.log("[prod-start] Empty database — seeding demo data...");
@@ -26,6 +25,36 @@ if (tenantCount === 0) {
 } else {
   console.log(`[prod-start] Database already has ${tenantCount} tenant(s) — skipping seed.`);
 }
+
+// Reconcile which tenant owns the REAL live WhatsApp number(s) from env — this
+// runs on EVERY boot (not just first-seed) so it also corrects a value the seed
+// assigned before an env var existed. A physical number can only route to ONE
+// tenant, so any other tenant currently (wrongly) holding it is parked first.
+const routes = [
+  { slug: "hamzone", pnid: process.env.WHATSAPP_HAMZONE_PNID },
+  { slug: "riverside", pnid: process.env.WHATSAPP_RIVERSIDE_PNID },
+  { slug: "nairobi-hospital", pnid: process.env.WHATSAPP_HOSPITAL_PNID },
+  { slug: "kilimani-retail", pnid: process.env.WHATSAPP_RETAIL_PNID },
+].filter((r) => r.pnid);
+
+for (const r of routes) {
+  const conflicting = await db.whatsAppNumber.findMany({ where: { phoneNumberId: r.pnid, tenant: { slug: { not: r.slug } } } });
+  for (const c of conflicting) {
+    await db.whatsAppNumber.update({ where: { id: c.id }, data: { phoneNumberId: `WA_PNID_PARKED_${c.id}` } });
+    console.log(`[prod-start] Parked conflicting number on a different tenant (was holding ${r.pnid}).`);
+  }
+  const tenant = await db.tenant.findUnique({ where: { slug: r.slug } });
+  if (tenant) {
+    const { count } = await db.whatsAppNumber.updateMany({ where: { tenantId: tenant.id }, data: { phoneNumberId: r.pnid } });
+    if (count) console.log(`[prod-start] ${r.slug} → live number routed (phoneNumberId set).`);
+  }
+}
+
+// Visibility: log the final routing table so it's inspectable via `railway logs`.
+const numbers = await db.whatsAppNumber.findMany({ include: { tenant: true } });
+for (const n of numbers) console.log(`[prod-start] number: ${n.phoneNumber} -> ${n.tenant.slug} (pnid: ${n.phoneNumberId})`);
+
+await db.$disconnect();
 
 const port = process.env.PORT || "3000";
 console.log(`[prod-start] Starting Next.js on port ${port}...`);
