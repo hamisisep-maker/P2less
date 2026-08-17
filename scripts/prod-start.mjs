@@ -31,6 +31,11 @@ if (tenantCount === 0) {
 // existing owners (see scripts/sync-owner-permissions.ts).
 run("npx tsx scripts/sync-owner-permissions.ts");
 
+// Demo catalog products (idempotent — skips any SKU that already exists), so
+// the business-catalog feature has something real to browse/order without a
+// separate manual seeding step against the remote database.
+run("npx tsx scripts/seed-products.ts");
+
 // Reconcile which tenant owns the REAL live WhatsApp number(s) from env — this
 // runs on EVERY boot (not just first-seed) so it also corrects a value the seed
 // assigned before an env var existed. A physical number can only route to ONE
