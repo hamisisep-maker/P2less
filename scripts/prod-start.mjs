@@ -54,6 +54,50 @@ for (const r of routes) {
 const numbers = await db.whatsAppNumber.findMany({ include: { tenant: true } });
 for (const n of numbers) console.log(`[prod-start] number: ${n.phoneNumber} -> ${n.tenant.slug} (pnid: ${n.phoneNumberId})`);
 
+// Reconcile the STANDING TEST PARENT link from env, every boot — so whichever
+// real phone is used for testing (across local dev and every environment) sees
+// the SAME recognized student, instead of production silently being a stranger
+// to a number that's already linked locally. Mirrors scripts/add-parent.ts.
+const tp = {
+  slug: process.env.TEST_TENANT_SLUG,
+  phone: process.env.TEST_PARENT_PHONE,
+  name: process.env.TEST_STUDENT_NAME,
+  grade: process.env.TEST_STUDENT_GRADE || "Grade 6",
+  admissionId: process.env.TEST_STUDENT_ADMISSION_ID,
+};
+if (tp.slug && tp.phone && tp.name && tp.admissionId) {
+  const tenant = await db.tenant.findUnique({ where: { slug: tp.slug } });
+  if (tenant) {
+    const student = await db.demoStudent.upsert({
+      where: { externalId: tp.admissionId },
+      create: { externalId: tp.admissionId, name: tp.name, grade: tp.grade, parentPhones: [tp.phone], arrivedAt: "07:48" },
+      update: { name: tp.name, grade: tp.grade, parentPhones: [tp.phone] },
+    });
+    if ((await db.demoResult.count({ where: { studentId: student.id } })) === 0) {
+      for (const [subject, score, g] of [["Mathematics", 84, "A-"], ["English", 78, "B+"], ["Science", 91, "A"]]) {
+        await db.demoResult.create({ data: { studentId: student.id, term: "Term 2", subject, score, grade: g } });
+      }
+    }
+    await db.demoFeeAccount.upsert({ where: { studentId: student.id }, create: { studentId: student.id, currency: "KES", billed: 42000, paid: 27000, dueDate: "2026-09-05" }, update: {} });
+    if ((await db.demoAttendance.count({ where: { studentId: student.id } })) === 0) {
+      for (const d of ["2026-08-13", "2026-08-14", "2026-08-15"]) {
+        await db.demoAttendance.create({ data: { studentId: student.id, date: d, status: "present" } }).catch(() => {});
+      }
+    }
+    await db.demoAppointment.upsert({
+      where: { reference: "APT-" + tp.admissionId },
+      create: { reference: "APT-" + tp.admissionId, studentId: student.id, date: "2026-08-20", time: "11:00 AM", reason: "Parent-teacher review", status: "confirmed" },
+      update: {},
+    });
+    let contact = await db.contact.findFirst({ where: { tenantId: tenant.id, address: tp.phone } });
+    if (!contact) contact = await db.contact.create({ data: { tenantId: tenant.id, channelType: "whatsapp", address: tp.phone } });
+    await db.contact.update({ where: { id: contact.id }, data: { phoneVerified: true, grants: { students: [{ id: tp.admissionId, name: tp.name, grade: tp.grade }] } } });
+    const role = await db.role.findUnique({ where: { tenantId_key: { tenantId: tenant.id, key: "parent" } } });
+    if (role) await db.contactRole.upsert({ where: { contactId_roleId: { contactId: contact.id, roleId: role.id } }, create: { contactId: contact.id, roleId: role.id }, update: {} });
+    console.log(`[prod-start] Test parent linked: ${tp.phone} -> ${tp.name} (${tp.admissionId}) on ${tp.slug}.`);
+  }
+}
+
 await db.$disconnect();
 
 const port = process.env.PORT || "3000";
