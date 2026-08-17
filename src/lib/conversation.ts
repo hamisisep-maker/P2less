@@ -426,6 +426,13 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
 
   // ── Resume: self-service identification (unknown user gave their ID) ─────
   if (conversation.status === "awaiting_identify") {
+    // The contact may have been linked in the meantime by someone/something else
+    // (office staff, a backend fix) while this conversation was still sitting in
+    // "awaiting_identify" — that status is now STALE. Don't keep asking for an ID
+    // that's no longer needed; drop into the normal recognized-contact flow.
+    if (contact.contactRoles.length > 0) {
+      return emit([{ body: `Good news — you're already connected! 🎉 What can I help you with?` }], "open", {});
+    }
     if (/^(cancel|stop|no|nevermind|never mind)$/i.test(lower)) {
       return emit([{ body: "No problem — say “hi” whenever you'd like to get connected." }], "open", {});
     }
