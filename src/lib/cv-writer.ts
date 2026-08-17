@@ -33,7 +33,11 @@ Respond with ONLY this JSON shape, nothing else:
 {"sufficient": true|false, "missing": ["..."], "data": {"name": "...", "contact": "phone/email/location, one line", "title": "professional headline or empty", "summary": "...", "experience": [{"role":"...","company":"...","dates":"...","bullets":["..."]}], "education": [{"qualification":"...","institution":"...","dates":"..."}], "skills": ["..."]}}`;
   const user = `What the person has told us about themselves so far:\n${rawText}\n\nRespond with ONLY the JSON.`;
 
-  const out = await complete(system, user, 1000, 0.4);
+  // Low temperature — this is structured extraction (does the data satisfy the
+  // rule?), not creative writing; consistency across repeat calls matters more
+  // than variety (a higher temperature was occasionally re-asking for contact
+  // info already supplied via the "known already" hint).
+  const out = await complete(system, user, 1000, 0.15);
   if (!out) return { sufficient: false, missing: ["a bit more about yourself — your name, contact details, and your work or education background"] };
 
   try {

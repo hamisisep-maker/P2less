@@ -67,7 +67,9 @@ type ConvContext = {
   // text-only follow-up ("what does it say about X?") work without re-sending it.
   lastDocument?: { label: string; text: string; ts: number };
   // Accumulated raw text while conversationally building a CV across turns.
-  cvBuilder?: { rawText: string };
+  // asides counts non-productive replies, so we stop repeating the identical
+  // canned prompt and instead acknowledge + rephrase from the 2nd try onward.
+  cvBuilder?: { rawText: string; asides?: number };
   // A product order awaiting CONFIRM before the real M-Pesa charge fires.
   pendingOrder?: { productId: string; productName: string; quantity: number; unitPrice: number; currency: string };
 };
@@ -489,15 +491,25 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // and let the AI decide once it's genuinely enough to produce something real.
   const CV_COST = 4;
   const CV_EDIT_COST = 1;
-  const tryBuildCv = async (rawText: string, isEdit: boolean): Promise<{ replies: Reply[]; status: string; ctx: ConvContext }> => {
-    const extraction = await extractCvData(rawText);
+  // Never ask for what we already know from the conversation itself — the
+  // sender's own phone number, and their name if this is a recognized contact.
+  const cvKnownFacts = `Known already — use this, do not ask for it again: their WhatsApp/phone number is ${senderAddress}.${contact.displayName ? ` Their name is ${contact.displayName}.` : ""}`;
+  const tryBuildCv = async (rawText: string, isEdit: boolean, asides = 0): Promise<{ replies: Reply[]; status: string; ctx: ConvContext }> => {
+    const extraction = await extractCvData(`${cvKnownFacts}\n${rawText}`);
     if (!extraction.sufficient) {
       const ask = extraction.missing.map((m) => `• ${m}`).join("\n");
-      return {
-        replies: [{ body: `Almost there! Could you also share:\n${ask}\n\n(Or reply CANCEL to stop.)` }],
-        status: "awaiting_cv_details",
-        ctx: { cvBuilder: { rawText } },
-      };
+      // First ask: the plain checklist + a concrete example. From the 2nd try
+      // onward, don't repeat the identical text — acknowledge what they said
+      // (they may be confused, asking a question, or pushing back) and rephrase.
+      let body: string;
+      if (asides === 0) {
+        body = `Almost there! Could you also share:\n${ask}\n\nFor example: "I'm Jane Wanjiru. I worked at ABC Ltd as an Accountant from 2020 to 2023, and studied a Diploma in Business at XYZ College 2017–2019."\n\n(Or reply CANCEL to stop.)`;
+      } else {
+        const st = aiEnabled() ? await smallTalk(assistant, text, [], history, knownFacts, orgFaqs) : null;
+        const plain = `Still need:\n${ask}\n\nJust describe it in your own words in one message — I'll handle the formatting. Or reply CANCEL if you'd rather not right now.`;
+        body = st ? `${st}\n\n${plain}` : plain;
+      }
+      return { replies: [{ body }], status: "awaiting_cv_details", ctx: { cvBuilder: { rawText, asides } } };
     }
     const cost = isEdit ? CV_EDIT_COST : CV_COST;
     if (!recognizedFree && contact.credits < cost) {
@@ -534,7 +546,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       return emit([{ body: "No problem, we can pick it back up anytime — just say \"write my CV\" again." }], "open", {});
     }
     const combined = `${ctx.cvBuilder?.rawText ?? ""}\n${text}`.trim();
-    const run = await tryBuildCv(combined, false);
+    const run = await tryBuildCv(combined, false, (ctx.cvBuilder?.asides ?? 0) + 1);
     return emit(run.replies, run.status, run.ctx);
   }
   if (isCvRequest(lower)) {
