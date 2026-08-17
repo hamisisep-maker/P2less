@@ -591,7 +591,25 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       }
       return emit([{ body: `📲 ${res.customerMessage}\n\nOnce you enter your M-Pesa PIN, I'll confirm order ${reference} right away.` }], "open", {});
     }
-    return emit([{ body: "Reply CONFIRM to proceed with payment, or CANCEL to stop." }], "awaiting_order_confirm", ctx);
+    // Not a plain yes/no — they might be adjusting the order ("I need 5 of
+    // them", "make it 3") rather than confirming/cancelling. Handle that
+    // directly instead of ignoring it and robotically repeating CONFIRM/CANCEL.
+    const po = ctx.pendingOrder;
+    const qtyMatch = /\b(\d+)\b/.exec(text);
+    if (qtyMatch && /\b(need|want|make it|change|actually|instead|of them|of it|please)\b/i.test(lower)) {
+      const newQty = Math.max(1, parseInt(qtyMatch[1], 10));
+      const updated = { ...po, quantity: newQty };
+      const total = updated.unitPrice * newQty;
+      return emit(
+        [{ body: `Updated: ${newQty} × ${updated.productName} = ${updated.currency} ${total.toLocaleString("en-US")}. Reply CONFIRM to pay via M-Pesa, or CANCEL to stop.` }],
+        "awaiting_order_confirm",
+        { pendingOrder: updated },
+      );
+    }
+    const total = po.unitPrice * po.quantity;
+    const stc = aiEnabled() ? await smallTalk(assistant, text, [], history, knownFacts, orgFaqs) : null;
+    const remind = `${po.quantity} × ${po.productName} = ${po.currency} ${total.toLocaleString("en-US")}. Reply CONFIRM to pay via M-Pesa, or CANCEL to stop.`;
+    return emit([{ body: stc ? `${stc}\n\n${remind}` : remind }], "awaiting_order_confirm", ctx);
   }
   if (isCatalogBrowseRequest(lower)) {
     const products = await db.product.findMany({ where: { tenantId: tenant.id, active: true }, orderBy: [{ category: "asc" }, { name: "asc" }] });
@@ -609,8 +627,12 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       if (hit) {
         const qty = extractQuantity(text);
         const total = hit.price * qty;
+        // Acknowledge a discount/negotiation request honestly instead of
+        // silently proceeding at full price as if they never asked.
+        const askedDiscount = /\b(discount|cheaper|lower price|reduce|bargain|deal|offer)\b/i.test(lower);
+        const prefix = askedDiscount ? "We don't have discounts set up for this right now, but here's the price: " : "";
         return emit(
-          [{ body: `${qty} × ${hit.name} = ${hit.currency} ${total.toLocaleString("en-US")}. Reply CONFIRM to pay via M-Pesa, or CANCEL to stop.` }],
+          [{ body: `${prefix}${qty} × ${hit.name} = ${hit.currency} ${total.toLocaleString("en-US")}. Reply CONFIRM to pay via M-Pesa, or CANCEL to stop.` }],
           "awaiting_order_confirm",
           { pendingOrder: { productId: hit.id, productName: hit.name, quantity: qty, unitPrice: hit.price, currency: hit.currency } },
         );
