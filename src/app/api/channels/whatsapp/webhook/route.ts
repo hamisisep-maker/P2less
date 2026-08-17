@@ -122,14 +122,16 @@ async function processEvents(payload: WaPayload): Promise<void> {
 
         // Files (documents / images): download and pass as an attachment for a tool.
         if (m.type === "document" || m.type === "image") {
-          const media = m.type === "document" ? m.document : m.image;
-          const dl = media?.id ? await fetchWhatsAppMedia(media.id, phoneNumberId) : null;
+          const mediaId = m.type === "document" ? m.document?.id : m.image?.id;
+          const filename = m.type === "document" ? m.document?.filename : undefined; // images have no filename from WhatsApp
+          const caption = m.type === "document" ? m.document?.caption : m.image?.caption;
+          const dl = mediaId ? await fetchWhatsAppMedia(mediaId, phoneNumberId) : null;
           if (!dl) {
             await sendWhatsAppText(phoneNumberId, m.from, "I couldn't open that file 🙏 Could you send it again?");
             continue;
           }
-          attachment = { base64: dl.base64, filename: media?.filename || `file.${(dl.mimeType.split("/")[1] || "bin")}`, mimeType: dl.mimeType };
-          text = media?.caption ?? "";
+          attachment = { base64: dl.base64, filename: filename || `file.${dl.mimeType.split("/")[1] || "bin"}`, mimeType: dl.mimeType };
+          text = caption ?? "";
         }
 
         if (!text.trim() && !attachment) continue;

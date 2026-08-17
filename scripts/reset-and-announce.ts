@@ -65,6 +65,7 @@ Fee statements and results come back as real PDFs.
 
 Give it a try — send anything!`;
 
+  if (!number.phoneNumberId) { console.error(`Number for "${slug}" has no phoneNumberId set.`); process.exit(1); }
   const res = await sendWhatsAppText(number.phoneNumberId, phone, message);
   if (res.ok) console.log(`✓ Sent capabilities message to ${phone} via ${number.phoneNumberId}.`);
   else console.error(`✗ Send failed: ${res.error}`);

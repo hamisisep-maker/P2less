@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "./db";
 
-export type UsageType = "message_in" | "message_out" | "api_call" | "ai_request" | "document";
+export type UsageType = "message_in" | "message_out" | "api_call" | "ai_request" | "document" | "tool_run";
 
 /** Record a metered event (feeds plan-limit enforcement + future usage billing). */
 export async function meter(tenantId: string, type: UsageType, quantity = 1): Promise<void> {

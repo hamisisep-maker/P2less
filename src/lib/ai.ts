@@ -339,7 +339,7 @@ export async function understand(text: string, actions: IntentAction[], history:
         // random action (that's what made "tell me more about X" ask for a date).
         const local = matchIntent(text, actions);
         if (local.actionId && local.score >= 0.85) return { ...local, via: "local" };
-        return { actionId: undefined, actionKey: undefined, score: 0, entities: {}, candidates: [], via: "ai" };
+        return { actionId: null, actionKey: null, score: 0, entities: {}, candidates: [], via: "ai" };
       }
     } catch {
       /* fall through */

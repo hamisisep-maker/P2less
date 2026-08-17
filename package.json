@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/prod-start.mjs",
+    "postinstall": "prisma generate",
     "lint": "eslint",
     "seed": "tsx prisma/seed.ts",
     "db:push": "prisma db push",
@@ -24,6 +25,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tailwind-merge": "^3.6.0",
+    "tsx": "^4.23.12",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -36,7 +38,6 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
     "tailwindcss": "^4",
-    "tsx": "^4.23.12",
     "typescript": "^5"
   }
 }
