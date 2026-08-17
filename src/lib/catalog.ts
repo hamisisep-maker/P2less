@@ -21,9 +21,13 @@ export function isCatalogBrowseRequest(lower: string): boolean {
   return /\b(what).{0,15}\b(sell|have|offer|sale|stock)\b|\b(do you (sell|have|stock|offer))\b|\b(show|see|list).{0,10}\b(product|item|menu|catalog|stock)\b|\bprice list\b|\bwhat'?s (on|for) (offer|sale)\b/i.test(lower);
 }
 
-/** Does this message look like a request to buy something? */
+/** Does this message look like a request to buy something? Catches an explicit
+ *  buy-verb ("I want to buy X") AND our own suggested reply shape from the
+ *  catalog listing itself ("2 of the navy sweater" has no verb at all). */
 export function isOrderRequest(lower: string): boolean {
-  return /\b(buy|order|purchase|get|want|need)\b/i.test(lower) && !/\b(cv|resume|résumé)\b/i.test(lower);
+  if (/\b(cv|resume|résumé)\b/i.test(lower)) return false;
+  if (/\b(buy|order|purchase|want|need)\b/i.test(lower)) return true;
+  return /^\s*\d+\s*(x|×)?\s*\S/.test(lower) || /\bof the\b/i.test(lower);
 }
 
 export function formatCatalog(assistant: string, products: CatalogProduct[]): string {
