@@ -10,7 +10,7 @@ import { deliver } from "./transport";
 import { generateReportCard, generatePayslipPdf, generateLeavePdf, generateFeeStatementPdf, generateCvPdf, type GeneratedDoc } from "./documents";
 import { isCvRequest, extractCvData } from "./cv-writer";
 import { requestId as newRequestId, randomToken } from "./crypto";
-import { isCatalogBrowseRequest, isOrderRequest, formatCatalog, matchProduct, extractQuantity, startOrderPayment } from "./catalog";
+import { isCatalogBrowseRequest, isOrderRequest, formatCatalog, matchProduct, extractQuantity, startOrderPayment, findExactProductMention } from "./catalog";
 import { dispatchWebhook } from "./webhooks";
 import { extractDate, extractTime, isGreeting, type IntentAction } from "./intent-engine";
 import { pickTool, allTools } from "./tools";
@@ -666,6 +666,23 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       return emit([{ body: `I couldn't match that to something we sell. ${formatCatalog(assistant, products)}` }], "open", ctx);
     }
     // Org sells nothing (no products set up) — fall through to normal handling.
+  } else if (!/\?/.test(lower) && text.trim().split(/\s+/).length <= 4) {
+    // No buy verb, but a short message might STILL just be a bare product name
+    // ("mitumba") — check for an exact match before letting free-form AI chat
+    // improvise a fake "how many would you like?" exchange that has no real
+    // order behind it. Silent no-op if nothing matches (never dumps the catalog
+    // here — that's reserved for explicit buy intent above).
+    const products = await db.product.findMany({ where: { tenantId: tenant.id, active: true, inStock: true } });
+    const hit = findExactProductMention(text, products);
+    if (hit) {
+      const qty = extractQuantity(text);
+      const total = hit.price * qty;
+      return emit(
+        [{ body: `${qty} × ${hit.name} = ${hit.currency} ${total.toLocaleString("en-US")}. Reply CONFIRM to pay via M-Pesa, or CANCEL to stop.` }],
+        "awaiting_order_confirm",
+        { pendingOrder: { productId: hit.id, productName: hit.name, quantity: qty, unitPrice: hit.price, currency: hit.currency } },
+      );
+    }
   }
 
   // ── Unknown contact → warm welcome + self-service linking, never a cold "no" ─

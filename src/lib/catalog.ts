@@ -75,6 +75,19 @@ export function matchProduct(query: string, products: CatalogProduct[]): { hit?:
   return { candidates: top.map((s) => s.product) };
 }
 
+/** Bare, low-noise product-name mention with NO buy verb ("mitumba") — only an
+ *  EXACT product-name substring match, never the fuzzy/scored path, so a short
+ *  unrelated message that merely shares a word with a product name (e.g. "how
+ *  is school going") can't misfire into starting an order. Used so a plain
+ *  product name reliably starts the REAL order flow instead of falling through
+ *  to free-form AI chat that has no backing state (asks "how many would you
+ *  like?" then has nowhere to put the answer). */
+export function findExactProductMention(text: string, products: CatalogProduct[]): CatalogProduct | null {
+  const q = text.toLowerCase();
+  const hits = products.filter((p) => p.inStock && q.includes(p.name.toLowerCase()));
+  return hits.length === 1 ? hits[0] : null;
+}
+
 /** Pull a quantity from free text ("2 of the sweater", "three sweaters"); default 1. */
 export function extractQuantity(text: string): number {
   const digit = text.match(/\b(\d+)\b/);
