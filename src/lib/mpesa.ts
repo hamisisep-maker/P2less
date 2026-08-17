@@ -24,6 +24,12 @@ function cfg() {
 }
 
 export function isConfigured(): boolean {
+  // Explicit kill-switch: keeps the real key/secret wired in (verified working)
+  // but forces every payment through the instant-mock path — e.g. while testing,
+  // since Daraja SANDBOX only pushes a real PIN prompt to Safaricom's own test
+  // MSISDN (254708374149), never to arbitrary real numbers. Flip off to resume
+  // real STK pushes without re-entering credentials.
+  if ((process.env.MPESA_FORCE_MOCK || "").toLowerCase() === "true") return false;
   const c = cfg();
   return !!c.key && !!c.secret && /^https?:\/\//.test(c.callbackUrl);
 }
