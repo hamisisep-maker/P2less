@@ -79,6 +79,20 @@ type ConvContext = {
 // "date for what?", "what's wrong", "makes no sense", etc.
 const PUSHBACK = /\b(not (asked?|request)|did ?n'?t ask|have ?n'?t ask|haven'?t ask|never ask|no ?one ask|didn'?t request|for what|why (a )?date|why (are|you|do)|who asked|not interested|don'?t want|makes no sense|what'?s wrong|stop asking|this is (wrong|annoying)|i hate)\b/i;
 
+// A SHORT, direct yes/no reply — deliberately NOT just "does the message contain
+// the word confirm/yes/cancel anywhere". A longer sentence that merely mentions
+// one of those words in passing ("I need to confirm if my son arrived at
+// school") is NOT authorization to complete a purchase or write action — that
+// would fire a real M-Pesa charge or a real booking on a false positive. Requires
+// the message to be short, not phrased as a question, and not about some other
+// topic before the word even counts as an answer.
+const OTHER_TOPIC_HINT = /\?|\b(if|whether|wonder|wondering|know|check|fee|balance|attendance|appointment|meeting|exam|results?|leave|payslip|salary|school|student|class|grade|arrived|son|daughter|child)\b/i;
+function isDirectReply(lower: string, pattern: RegExp): boolean {
+  const trimmed = lower.trim().replace(/[.!]+$/, "");
+  const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
+  return wordCount <= 6 && !OTHER_TOPIC_HINT.test(trimmed) && pattern.test(trimmed);
+}
+
 // A resource the contact is authorized to reference — a student, employee,
 // patient, order, member, etc. The grants JSON holds arrays keyed by type.
 type ResourceGrant = { id: string; name: string; grade?: string; [k: string]: unknown };
@@ -346,14 +360,18 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
 
   // ── Resume: awaiting confirmation (write actions) ───────────────────────
   if (conversation.status === "awaiting_confirm" && ctx.pendingActionId) {
-    // Recognize natural yes/no, not just the exact word — "ok confirm", "yes please",
-    // "go ahead", "book it" all mean go. Check "no/cancel" first so "no thanks" stops.
-    const negate = /\b(cancel|no|nope|nah|don'?t|stop|nevermind|never mind|not now|forget it)\b/i;
-    const affirm = /\b(confirm|ye(s|ah|p|a)|yup|ok|okay|sure|proceed|go ahead|do it|book it|go for it|please do|sounds good|looks good|that'?s (right|correct|good|fine))\b/i;
-    if (negate.test(lower)) {
+    // Recognize natural SHORT yes/no replies ("ok confirm", "yes please", "go
+    // ahead", "book it") — but a longer sentence that merely CONTAINS one of
+    // these words in passing (e.g. "I need to confirm if my son arrived at
+    // school") must NOT trigger a real write action on that false positive.
+    const negateWords = /\b(cancel|no|nope|nah|don'?t|stop|nevermind|never mind|not now|forget it)\b/i;
+    const affirmWords = /\b(confirm|ye(s|ah|p|a)|yup|ok|okay|sure|proceed|go ahead|do it|book it|go for it|please do|sounds good|looks good|that'?s (right|correct|good|fine))\b/i;
+    const negate = isDirectReply(lower, negateWords);
+    const affirm = isDirectReply(lower, affirmWords);
+    if (negate) {
       return emit([{ body: "No problem — I've cancelled that. Anything else I can help with?" }], "open", { lastResource: ctx.lastResource });
     }
-    if (affirm.test(lower)) {
+    if (affirm) {
       const resumed = await runAction({
         tenantId: tenant.id, reqId, contact, permissions, grants, assistant, channelType: input.channelType, contactName: contact.displayName ?? undefined, userText: text, history,
         actionId: ctx.pendingActionId, resolved: ctx.pendingResolved ?? {}, alreadyConfirmed: true,
@@ -572,12 +590,19 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // already used everywhere (destination number → tenant). Universal like the
   // file tools and CV writer — works for anyone messaging this number.
   if (conversation.status === "awaiting_order_confirm" && ctx.pendingOrder) {
-    const negate = /\b(cancel|no|nope|nah|stop|don'?t)\b/i;
-    const affirm = /\b(confirm|ye(s|ah|p)|yup|ok|okay|proceed|go ahead|pay|do it)\b/i;
-    if (negate.test(lower)) {
+    // This gates a REAL money charge — a false positive here means firing an
+    // unintended M-Pesa payment prompt. Requires a short, direct reply, not
+    // just "the word confirm/pay appears somewhere in a longer sentence"
+    // (e.g. "I need to confirm if my son arrived at school" is a real question
+    // about something else entirely, not authorization to buy anything).
+    const negateWords = /\b(cancel|no|nope|nah|stop|don'?t)\b/i;
+    const affirmWords = /\b(confirm|ye(s|ah|p)|yup|ok|okay|proceed|go ahead|pay|do it)\b/i;
+    const negate = isDirectReply(lower, negateWords);
+    const affirm = isDirectReply(lower, affirmWords);
+    if (negate) {
       return emit([{ body: "No problem — order cancelled. Let me know if you'd like anything else!" }], "open", { lastResource: ctx.lastResource });
     }
-    if (affirm.test(lower)) {
+    if (affirm) {
       const po = ctx.pendingOrder;
       const total = po.unitPrice * po.quantity;
       const reference = "ORD-" + randomToken(4).toUpperCase();
