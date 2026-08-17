@@ -7,7 +7,8 @@ import { hasPermission } from "./permissions";
 import { audit } from "./audit";
 import { meter, checkLimit } from "./usage";
 import { deliver } from "./transport";
-import { generateReportCard, generatePayslipPdf, generateLeavePdf, generateFeeStatementPdf, type GeneratedDoc } from "./documents";
+import { generateReportCard, generatePayslipPdf, generateLeavePdf, generateFeeStatementPdf, generateCvPdf, type GeneratedDoc } from "./documents";
+import { isCvRequest, extractCvData } from "./cv-writer";
 import { requestId as newRequestId } from "./crypto";
 import { dispatchWebhook } from "./webhooks";
 import { extractDate, extractTime, isGreeting, type IntentAction } from "./intent-engine";
@@ -64,6 +65,8 @@ type ConvContext = {
   // The last document a tool read for this person (capped excerpt) — lets a
   // text-only follow-up ("what does it say about X?") work without re-sending it.
   lastDocument?: { label: string; text: string; ts: number };
+  // Accumulated raw text while conversationally building a CV across turns.
+  cvBuilder?: { rawText: string };
 };
 
 // The user signalling they didn't want this pending flow / are confused by the
@@ -475,6 +478,78 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     }
     await audit({ tenantId: tenant.id, requestId: reqId, actorType: "contact", actorId: contact.id, action: "contact.link", success: false });
     return emit([{ body: `Hmm, I couldn't match that ${ob.idLabel} to this phone number. Please double-check it and try again, or contact ${ob.office} to get linked. (Reply CANCEL to stop.)` }], "awaiting_identify", {});
+  }
+
+  // ── Super-app: CV writer — universal, works for anyone (like the file tools) ─
+  // A CV isn't collected via rigid one-field-at-a-time slot filling (too tedious
+  // over chat); instead we accumulate whatever the person tells us across turns
+  // and let the AI decide once it's genuinely enough to produce something real.
+  const CV_COST = 4;
+  const CV_EDIT_COST = 1;
+  const tryBuildCv = async (rawText: string, isEdit: boolean): Promise<{ replies: Reply[]; status: string; ctx: ConvContext }> => {
+    const extraction = await extractCvData(rawText);
+    if (!extraction.sufficient) {
+      const ask = extraction.missing.map((m) => `• ${m}`).join("\n");
+      return {
+        replies: [{ body: `Almost there! Could you also share:\n${ask}\n\n(Or reply CANCEL to stop.)` }],
+        status: "awaiting_cv_details",
+        ctx: { cvBuilder: { rawText } },
+      };
+    }
+    const cost = isEdit ? CV_EDIT_COST : CV_COST;
+    if (!recognizedFree && contact.credits < cost) {
+      return {
+        replies: [{ body: `${isEdit ? "Updating your CV" : "Your CV is ready to generate"} costs ${cost} credit${cost === 1 ? "" : "s"}, and you have ${contact.credits}. Reply *PAY 100* to top up (≈ ${creditsForAmount(100)} credits) and I'll finish it right away. 💳` }],
+        status: "awaiting_cv_details",
+        ctx: { cvBuilder: { rawText } },
+      };
+    }
+    await announceNow(isEdit ? "📝 Updating your CV now..." : "📝 Great, I have what I need — putting your professional CV together now...");
+    const doc = await generateCvPdf({ tenantId: tenant.id, contactId: contact.id, data: extraction.data });
+    const replies: Reply[] = [
+      { body: isEdit
+        ? `✅ Updated! Here's your revised CV. Let me know if there's anything else to change.`
+        : `✅ Here's your CV, ${extraction.data.name.split(" ")[0]}! Let me know if you'd like anything changed — more detail on a role, a different summary, whatever you need — I'll remember what we've got.` },
+      { kind: "document", body: `📄 ${doc.filename}`, document: doc },
+    ];
+    if (!recognizedFree) {
+      const remaining = contact.credits - cost;
+      await db.contact.update({ where: { id: contact.id }, data: { credits: remaining } });
+      replies.push({ kind: "system", body: `— ${cost} credit${cost === 1 ? "" : "s"} used · ${remaining} left`, meta: { credits: remaining } });
+    } else {
+      replies.push({ kind: "system", body: `— included with ${assistant}'s plan ✓`, meta: { included: true } });
+    }
+    await meter(tenant.id, "tool_run");
+    // Keep the data around (not reset) — so a later "also add X" can amend it
+    // without starting over or, worse, an AI claiming to update something it
+    // has no memory of.
+    return { replies, status: "open", ctx: { cvBuilder: { rawText } } };
+  };
+
+  if (conversation.status === "awaiting_cv_details") {
+    if (/^(cancel|stop|nevermind|never mind)$/i.test(lower)) {
+      return emit([{ body: "No problem, we can pick it back up anytime — just say \"write my CV\" again." }], "open", {});
+    }
+    const combined = `${ctx.cvBuilder?.rawText ?? ""}\n${text}`.trim();
+    const run = await tryBuildCv(combined, false);
+    return emit(run.replies, run.status, run.ctx);
+  }
+  if (isCvRequest(lower)) {
+    const combined = ctx.cvBuilder?.rawText ? `${ctx.cvBuilder.rawText}\n${text}` : text;
+    const run = await tryBuildCv(combined, !!ctx.cvBuilder);
+    return emit(run.replies, run.status, run.ctx);
+  }
+  // A CV already exists in this conversation and this message looks like an
+  // amendment to it ("also add...", "change my...", "remove...") even without
+  // saying "CV" again — append it and regenerate, rather than silently doing
+  // nothing (or worse, an AI claiming falsely that it updated something).
+  // Excludes obvious org-domain wording so it doesn't hijack e.g. "change my
+  // appointment" just because a CV happened to be built earlier in this chat.
+  const looksOrgDomain = /\b(fee|balance|attendance|appointment|meeting|exam|results?|leave|payslip|salary|school|student|class|grade)\b/i.test(lower);
+  if (ctx.cvBuilder && !looksOrgDomain && /\b(add|also|include|update|change|edit|fix|remove|correct|redo|regenerate)\b.{0,30}\b(my|i|cv|resume|résumé)\b|\b(my|i)\b.{0,15}\b(add|also|include|update|change|remove|correct)\b/i.test(lower)) {
+    const combined = `${ctx.cvBuilder.rawText}\n${text}`;
+    const run = await tryBuildCv(combined, true);
+    return emit(run.replies, run.status, run.ctx);
   }
 
   // ── Unknown contact → warm welcome + self-service linking, never a cold "no" ─
