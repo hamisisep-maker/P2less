@@ -4,6 +4,10 @@ import { db } from "@/lib/db";
 import { Logo } from "@/components/ui";
 import { LoginForm } from "./login-form";
 
+// Queries the DB, so it must render per-request, not be statically prerendered
+// at build time (the DB isn't reachable during the build step, only at runtime).
+export const dynamic = "force-dynamic";
+
 export default async function LoginPage() {
   const current = await getCurrentUser();
   if (current) redirect(current.isSuperAdmin ? "/admin" : "/dashboard");

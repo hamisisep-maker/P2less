@@ -1,6 +1,10 @@
 import { db } from "@/lib/db";
 import { DemoClient } from "./demo-client";
 
+// Queries the DB, so it must render per-request, not be statically prerendered
+// at build time (the DB isn't reachable during the build step, only at runtime).
+export const dynamic = "force-dynamic";
+
 // The demo simulates messaging an ORGANIZATION's own WhatsApp number. You pick
 // which organization number to message and which sender you are; P2Less routes
 // by the destination number to the right tenant — exactly like the real webhook.

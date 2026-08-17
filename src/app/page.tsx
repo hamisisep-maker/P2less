@@ -2,6 +2,10 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { Logo } from "@/components/ui";
 
+// Queries the DB, so it must render per-request, not be statically prerendered
+// at build time (the DB isn't reachable during the build step, only at runtime).
+export const dynamic = "force-dynamic";
+
 const ICON: Record<string, string> = { school: "🎓", hospital: "🏥", business: "🏢", government: "🏛️" };
 
 export default async function Landing() {
