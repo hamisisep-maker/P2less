@@ -9,7 +9,8 @@ import { meter, checkLimit } from "./usage";
 import { deliver } from "./transport";
 import { generateReportCard, generatePayslipPdf, generateLeavePdf, generateFeeStatementPdf, generateCvPdf, type GeneratedDoc } from "./documents";
 import { isCvRequest, extractCvData } from "./cv-writer";
-import { requestId as newRequestId } from "./crypto";
+import { requestId as newRequestId, randomToken } from "./crypto";
+import { isCatalogBrowseRequest, isOrderRequest, formatCatalog, matchProduct, extractQuantity, startOrderPayment } from "./catalog";
 import { dispatchWebhook } from "./webhooks";
 import { extractDate, extractTime, isGreeting, type IntentAction } from "./intent-engine";
 import { pickTool, allTools } from "./tools";
@@ -67,6 +68,8 @@ type ConvContext = {
   lastDocument?: { label: string; text: string; ts: number };
   // Accumulated raw text while conversationally building a CV across turns.
   cvBuilder?: { rawText: string };
+  // A product order awaiting CONFIRM before the real M-Pesa charge fires.
+  pendingOrder?: { productId: string; productName: string; quantity: number; unitPrice: number; currency: string };
 };
 
 // The user signalling they didn't want this pending flow / are confused by the
@@ -550,6 +553,60 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     const combined = `${ctx.cvBuilder.rawText}\n${text}`;
     const run = await tryBuildCv(combined, true);
     return emit(run.replies, run.status, run.ctx);
+  }
+
+  // ── Super-app: business catalog — browse + order a tenant's own products ────
+  // Native P2Less data (not a connector), tenant-scoped by the SAME routing
+  // already used everywhere (destination number → tenant). Universal like the
+  // file tools and CV writer — works for anyone messaging this number.
+  if (conversation.status === "awaiting_order_confirm" && ctx.pendingOrder) {
+    const negate = /\b(cancel|no|nope|nah|stop|don'?t)\b/i;
+    const affirm = /\b(confirm|ye(s|ah|p)|yup|ok|okay|proceed|go ahead|pay|do it)\b/i;
+    if (negate.test(lower)) {
+      return emit([{ body: "No problem — order cancelled. Let me know if you'd like anything else!" }], "open", { lastResource: ctx.lastResource });
+    }
+    if (affirm.test(lower)) {
+      const po = ctx.pendingOrder;
+      const total = po.unitPrice * po.quantity;
+      const reference = "ORD-" + randomToken(4).toUpperCase();
+      const order = await db.order.create({
+        data: { tenantId: tenant.id, contactId: contact.id, reference, totalAmount: total, currency: po.currency, status: "pending", items: { create: [{ productId: po.productId, quantity: po.quantity, unitPrice: po.unitPrice, name: po.productName }] } },
+      });
+      const res = await startOrderPayment({ tenantId: tenant.id, orderId: order.id, phone: senderAddress, amountKes: total, reference });
+      if (!res.ok) return emit([{ body: `Couldn't start payment: ${res.error}. Reply CONFIRM to try again, or CANCEL to stop.` }], "awaiting_order_confirm", ctx);
+      if (res.mock) {
+        return emit([{ body: `✅ Payment received (demo mode — no real M-Pesa configured)! Order ${reference} confirmed: ${po.quantity} × ${po.productName}. Thank you! 🎉` }], "open", {});
+      }
+      return emit([{ body: `📲 ${res.customerMessage}\n\nOnce you enter your M-Pesa PIN, I'll confirm order ${reference} right away.` }], "open", {});
+    }
+    return emit([{ body: "Reply CONFIRM to proceed with payment, or CANCEL to stop." }], "awaiting_order_confirm", ctx);
+  }
+  if (isCatalogBrowseRequest(lower)) {
+    const products = await db.product.findMany({ where: { tenantId: tenant.id, active: true }, orderBy: [{ category: "asc" }, { name: "asc" }] });
+    if (products.length > 0) return emit([{ body: formatCatalog(assistant, products) }], "open", ctx);
+    // No catalog set up for this org — fall through to normal handling (e.g. FAQs/smallTalk).
+  }
+  if (isOrderRequest(lower)) {
+    const products = await db.product.findMany({ where: { tenantId: tenant.id, active: true, inStock: true } });
+    if (products.length > 0) {
+      const { hit, candidates } = matchProduct(text, products);
+      if (candidates) {
+        const list = candidates.map((c, i) => `${i + 1}. ${c.name} — ${c.currency} ${c.price.toLocaleString("en-US")}`).join("\n");
+        return emit([{ body: `I found a few matches — which one did you mean?\n${list}` }], "open", ctx);
+      }
+      if (hit) {
+        const qty = extractQuantity(text);
+        const total = hit.price * qty;
+        return emit(
+          [{ body: `${qty} × ${hit.name} = ${hit.currency} ${total.toLocaleString("en-US")}. Reply CONFIRM to pay via M-Pesa, or CANCEL to stop.` }],
+          "awaiting_order_confirm",
+          { pendingOrder: { productId: hit.id, productName: hit.name, quantity: qty, unitPrice: hit.price, currency: hit.currency } },
+        );
+      }
+      // Mentioned buying something but nothing matched a real product — offer the catalog instead of a dead end.
+      return emit([{ body: `I couldn't match that to something we sell. ${formatCatalog(assistant, products)}` }], "open", ctx);
+    }
+    // Org sells nothing (no products set up) — fall through to normal handling.
   }
 
   // ── Unknown contact → warm welcome + self-service linking, never a cold "no" ─

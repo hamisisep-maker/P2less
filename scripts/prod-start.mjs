@@ -26,6 +26,11 @@ if (tenantCount === 0) {
   console.log(`[prod-start] Database already has ${tenantCount} tenant(s) — skipping seed.`);
 }
 
+// New permissions added in code don't retroactively apply to already-created
+// Role rows — sync every boot so a fresh capability never silently locks out
+// existing owners (see scripts/sync-owner-permissions.ts).
+run("npx tsx scripts/sync-owner-permissions.ts");
+
 // Reconcile which tenant owns the REAL live WhatsApp number(s) from env — this
 // runs on EVERY boot (not just first-seed) so it also corrects a value the seed
 // assigned before an env var existed. A physical number can only route to ONE

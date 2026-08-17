@@ -57,6 +57,8 @@ model Tenant {
   webhooks      Webhook[]
   tickets       SupportTicket[]
   payments      Payment[]
+  products      Product[]
+  orders        Order[]
 }
 
 /// Configurable subscription plan. Not hard-coded — Super Admin edits these.
@@ -100,10 +102,14 @@ model Payment {
   // balance to credit when the payment clears. Null for org-level subscription bills.
   contactId   String?
   contact     Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  // Set for a product purchase (purpose="order") — which order this payment
+  // settles. One payment per order.
+  orderId     String?  @unique
+  order       Order?   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   reference   String   @unique
   amount      Int // minor units of `currency`
   currency    String   @default("KES")
-  purpose     String   @default("subscription") // subscription | usage | topup
+  purpose     String   @default("subscription") // subscription | usage | topup | order
   method      String   @default("mpesa") // mpesa | card | bank
   status      String   @default("pending") // pending | paid | failed | refunded
   provider    String? // stripe | daraja | manual
@@ -113,6 +119,64 @@ model Payment {
   paidAt      DateTime?
 
   @@index([tenantId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUSINESS CATALOG — a tenant's own products, browsable and purchasable straight
+// from WhatsApp. Native P2Less data (not a connector to an external system) so
+// ANY tenant — a retailer, a school selling uniforms, a clinic selling supplies —
+// can self-serve a catalog from the dashboard, independent of industry.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Product {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  price       Int // whole units of `currency` (matches Payment's convention)
+  currency    String   @default("KES")
+  category    String?
+  sku         String?
+  imageUrl    String?
+  inStock     Boolean  @default(true)
+  active      Boolean  @default(true) // soft-disable without deleting
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orderItems OrderItem[]
+
+  @@index([tenantId])
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  tenantId    String
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contactId   String
+  contact     Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  reference   String      @unique // e.g. ORD-4F9K
+  items       OrderItem[]
+  totalAmount Int
+  currency    String      @default("KES")
+  status      String      @default("pending") // pending | paid | failed | cancelled
+  payment     Payment?
+  createdAt   DateTime    @default(now())
+  paidAt      DateTime?
+
+  @@index([tenantId])
+  @@index([contactId])
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int     @default(1)
+  unitPrice Int // snapshot of Product.price at order time — price changes later don't rewrite history
+  name      String // snapshot of Product.name — survives if the product is later renamed/deleted
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -192,6 +256,7 @@ model Contact {
   authSessions  AuthSession[]
   documents     Document[]
   payments      Payment[]
+  orders        Order[]
 
   @@unique([tenantId, channelType, address])
   @@index([tenantId])

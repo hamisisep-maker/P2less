@@ -11,6 +11,7 @@ const NAV = [
   ["/dashboard/audit", "Audit log"],
   ["/dashboard/users", "Users & roles"],
   ["/dashboard/faqs", "Assistant FAQs"],
+  ["/dashboard/products", "Products"],
   ["/dashboard/developers", "Developers"],
   ["/dashboard/billing", "Billing"],
 ];

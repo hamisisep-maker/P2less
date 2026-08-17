@@ -193,6 +193,48 @@ export async function saveFaqsAction(_prev: unknown, formData: FormData) {
   return { ok: true, count: clean.length };
 }
 
+// ── Business catalog — products a tenant sells, browsable/orderable on WhatsApp ─
+const productSchema = z.object({
+  name: z.string().min(1).max(120),
+  description: z.string().max(500).optional().default(""),
+  price: z.coerce.number().int().positive(),
+  currency: z.string().min(3).max(3).optional().default("KES"),
+  category: z.string().max(60).optional().default(""),
+  sku: z.string().max(60).optional().default(""),
+  inStock: z.coerce.boolean().optional().default(true),
+});
+
+// One action for both create and edit — presence of "id" decides which. Keeps
+// the client form simple (a single useActionState, no hook-swapping on edit).
+export async function saveProductAction(_prev: unknown, formData: FormData) {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.PRODUCTS_MANAGE)) return { error: "You don't have permission to manage products." };
+  const parsed = productSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid product details." };
+  const d = parsed.data;
+  const id = String(formData.get("id") ?? "");
+  const data = { name: d.name, description: d.description || null, price: d.price, currency: d.currency, category: d.category || null, sku: d.sku || null, inStock: d.inStock };
+  if (id) {
+    await db.product.updateMany({ where: { id, tenantId: user.tenantId! }, data });
+  } else {
+    await db.product.create({ data: { tenantId: user.tenantId!, ...data } });
+  }
+  revalidatePath("/dashboard/products");
+  return { ok: true, editedId: id || undefined };
+}
+
+// Toggle, not delete — past orders reference products, so we never hard-delete;
+// disabling just hides it from the WhatsApp catalog and blocks new orders.
+export async function toggleProductActiveAction(formData: FormData) {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.PRODUCTS_MANAGE)) return;
+  const id = String(formData.get("id") ?? "");
+  const product = await db.product.findFirst({ where: { id, tenantId: user.tenantId! } });
+  if (!product) return;
+  await db.product.update({ where: { id }, data: { active: !product.active } });
+  revalidatePath("/dashboard/products");
+}
+
 // ── Connector Builder ─────────────────────────────────────────────────────────
 // Creates a connector + one action from the no-code form. Credentials are
 // encrypted before storage. This is the same machinery used at runtime — there

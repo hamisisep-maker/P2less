@@ -13,6 +13,7 @@ export const PERMISSIONS = {
   AUDIT_READ: "audit.read",
   BILLING_MANAGE: "billing.manage",
   DEVELOPER_MANAGE: "developer.manage",
+  PRODUCTS_MANAGE: "products.manage",
   // Conversational capabilities (referenced by ConnectorAction.requiredPermission)
   STUDENT_RESULTS_READ: "student.results.read",
   STUDENT_BALANCE_READ: "student.balance.read",
@@ -48,6 +49,7 @@ export const DEFAULT_USER_ROLES: {
       PERMISSIONS.CONVERSATIONS_READ,
       PERMISSIONS.AUDIT_READ,
       PERMISSIONS.DEVELOPER_MANAGE,
+      PERMISSIONS.PRODUCTS_MANAGE,
     ],
   },
   {
