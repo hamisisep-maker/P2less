@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { db } from "./db";
 import { verifyPassword, hashPassword, createSession, destroySession, requireTenantUser, userPermissions } from "./auth";
 import { encryptJSON, randomToken, sha256 } from "./crypto";
@@ -79,36 +80,53 @@ export async function provisionOrganizationAction(_prev: unknown, formData: Form
   if (await db.user.findUnique({ where: { email: d.adminEmail } })) {
     return { error: "That email already has an account. Try signing in." };
   }
+  if (await db.whatsAppNumber.findUnique({ where: { phoneNumber: d.phoneNumber } })) {
+    return { error: "That phone number is already registered on P2Less. Use a different number, or contact us if this is yours." };
+  }
   const slug = d.orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) + "-" + randomToken(2).toLowerCase();
 
-  const tenant = await db.tenant.create({
-    data: { name: d.orgName, slug, industry: d.industry, status: "trial", branding: { assistantName: d.orgName, poweredBy: "Powered by P2Less" } },
-  });
-  const freePlan = (await db.plan.findUnique({ where: { key: "free" } })) ?? (await db.plan.findFirst({ orderBy: { sort: "asc" } }));
-  if (freePlan) await db.subscription.create({ data: { tenantId: tenant.id, planId: freePlan.id, period: "monthly", status: "trial", renewsAt: new Date(Date.now() + 30 * 864e5) } });
+  // Everything below must succeed together — a partial failure (e.g. a phone
+  // number collision slipping past the check above under a race) must not leave
+  // an orphaned tenant/roles/owner with no WhatsApp number. One transaction.
+  try {
+    const { password } = await db.$transaction(async (tx) => {
+      const tenant = await tx.tenant.create({
+        data: { name: d.orgName, slug, industry: d.industry, status: "trial", branding: { assistantName: d.orgName, poweredBy: "Powered by P2Less" } },
+      });
+      const freePlan = (await tx.plan.findUnique({ where: { key: "free" } })) ?? (await tx.plan.findFirst({ orderBy: { sort: "asc" } }));
+      if (freePlan) await tx.subscription.create({ data: { tenantId: tenant.id, planId: freePlan.id, period: "monthly", status: "trial", renewsAt: new Date(Date.now() + 30 * 864e5) } });
 
-  // Roles (staff + contacts) so the org can operate immediately.
-  let ownerRoleId = "";
-  for (const r of DEFAULT_USER_ROLES) {
-    const role = await db.role.create({ data: { tenantId: tenant.id, key: r.key, name: r.name, isSystem: r.isSystem, permissions: r.permissions } });
-    if (r.key === "owner") ownerRoleId = role.id;
+      // Roles (staff + contacts) so the org can operate immediately.
+      let ownerRoleId = "";
+      for (const r of DEFAULT_USER_ROLES) {
+        const role = await tx.role.create({ data: { tenantId: tenant.id, key: r.key, name: r.name, isSystem: r.isSystem, permissions: r.permissions } });
+        if (r.key === "owner") ownerRoleId = role.id;
+      }
+      for (const r of DEFAULT_CONTACT_ROLES) {
+        await tx.role.create({ data: { tenantId: tenant.id, key: r.key, name: r.name, isSystem: r.isSystem, permissions: r.permissions } });
+      }
+
+      // Owner login (one-time password shown to the user).
+      const password = randomToken(6);
+      const owner = await tx.user.create({ data: { tenantId: tenant.id, name: d.adminName, email: d.adminEmail, passwordHash: await hashPassword(password) } });
+      if (ownerRoleId) await tx.userRole.create({ data: { userId: owner.id, roleId: ownerRoleId } });
+
+      // The organization's WhatsApp number. In production this arrives from Meta's
+      // Embedded Signup (WABA id + phone_number_id + token); here it's pending.
+      await tx.whatsAppNumber.create({
+        data: { tenantId: tenant.id, phoneNumber: d.phoneNumber, displayName: d.orgName, department: "General", status: "active", verificationStatus: "pending" },
+      });
+
+      return { password };
+    });
+    return { ok: true, email: d.adminEmail, password, slug };
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return { error: "That phone number or email is already in use. Please try different details." };
+    }
+    console.error("[provisionOrganizationAction] failed:", e);
+    return { error: "Something went wrong setting up your organization. Please try again." };
   }
-  for (const r of DEFAULT_CONTACT_ROLES) {
-    await db.role.create({ data: { tenantId: tenant.id, key: r.key, name: r.name, isSystem: r.isSystem, permissions: r.permissions } });
-  }
-
-  // Owner login (one-time password shown to the user).
-  const password = randomToken(6);
-  const owner = await db.user.create({ data: { tenantId: tenant.id, name: d.adminName, email: d.adminEmail, passwordHash: await hashPassword(password) } });
-  if (ownerRoleId) await db.userRole.create({ data: { userId: owner.id, roleId: ownerRoleId } });
-
-  // The organization's WhatsApp number. In production this arrives from Meta's
-  // Embedded Signup (WABA id + phone_number_id + token); here it's pending.
-  await db.whatsAppNumber.create({
-    data: { tenantId: tenant.id, phoneNumber: d.phoneNumber, displayName: d.orgName, department: "General", status: "active", verificationStatus: "pending" },
-  });
-
-  return { ok: true, email: d.adminEmail, password, slug };
 }
 
 // ── Developer platform: API keys + webhooks ───────────────────────────────────
