@@ -1,0 +1,51 @@
+import { requireTenantUser } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { Card, PageHeader, Badge } from "@/components/ui";
+
+const toneFor = (action: string, success: boolean): "green" | "rose" | "amber" | "neutral" => {
+  if (!success) return "rose";
+  if (action.startsWith("authz")) return "amber";
+  return "green";
+};
+
+export default async function AuditPage() {
+  const user = await requireTenantUser();
+  const logs = await db.auditLog.findMany({
+    where: { tenantId: user.tenantId! },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+
+  return (
+    <div>
+      <PageHeader title="Audit log" subtitle="Immutable record of every sensitive action. Secrets and PII are minimized by design." />
+      <Card className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-sm">
+          <thead>
+            <tr className="text-left text-xs text-faint">
+              <th className="px-4 py-2.5">Time</th>
+              <th className="px-4 py-2.5">Action</th>
+              <th className="px-4 py-2.5">Target</th>
+              <th className="px-4 py-2.5">Actor</th>
+              <th className="px-4 py-2.5">Result</th>
+              <th className="px-4 py-2.5">Request</th>
+            </tr>
+          </thead>
+          <tbody>
+            {logs.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-muted">No audit events yet.</td></tr>}
+            {logs.map((l) => (
+              <tr key={l.id} className="border-t border-line-soft">
+                <td className="px-4 py-2.5 text-xs text-muted">{l.createdAt.toLocaleTimeString()}</td>
+                <td className="px-4 py-2.5 font-mono text-xs">{l.action}</td>
+                <td className="px-4 py-2.5 text-xs">{l.target ?? "—"}</td>
+                <td className="px-4 py-2.5 text-xs text-muted">{l.actorType}</td>
+                <td className="px-4 py-2.5"><Badge tone={toneFor(l.action, l.success)}>{l.success ? "success" : "denied"}</Badge></td>
+                <td className="px-4 py-2.5 font-mono text-[10px] text-faint">{l.requestId}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+    </div>
+  );
+}

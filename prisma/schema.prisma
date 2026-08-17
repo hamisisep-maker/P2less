@@ -1,0 +1,665 @@
+// ============================================================================
+// P2Less — Universal Conversational Access & Integration Platform
+// "Stop logging into systems. Start talking to them."
+//
+// SQLite is used for zero-setup local development. Enum-like fields are stored
+// as String (SQLite has no native enums). Swap `provider` to "postgresql" for
+// production — every model is portable. Multi-tenancy is enforced in the app
+// layer (every tenant-owned row carries tenantId and queries are scoped); in
+// production this is backed by Postgres Row-Level Security on the same columns.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PLATFORM: Tenancy, billing, branding
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A tenant = one organization (school, hospital, SACCO, business, NGO, gov...).
+/// Everything below is scoped to a Tenant. Tenant A can never read Tenant B.
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  industry  String   @default("school") // school | hospital | sacco | business | ngo | government | ...
+  status    String   @default("active") // active | suspended | trial
+  // White-label branding. Free/basic tenants fall back to P2Less defaults.
+  branding  Json? // { assistantName, logoText, primaryColor, welcome, poweredBy, pdfFooter }
+  // Org-approved FAQs the assistant may answer verbatim (e.g. school hours, term
+  // dates). Array of { q, a }. The org controls these — the AI never invents them.
+  faqs      Json? // [{ q: "What are your hours?", a: "Mon–Fri, 7:30am–4:30pm." }]
+  // The WhatsApp number (or other channel address) assigned to this tenant.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users         User[]
+  roles         Role[]
+  contacts      Contact[]
+  channels      Channel[]
+  numbers       WhatsAppNumber[]
+  connectors    Connector[]
+  conversations Conversation[]
+  messages      Message[]
+  otps          OtpChallenge[]
+  authSessions  AuthSession[]
+  auditLogs     AuditLog[]
+  usageEvents   UsageEvent[]
+  documents     Document[]
+  subscription  Subscription?
+  apiKeys       ApiKey[]
+  webhooks      Webhook[]
+  tickets       SupportTicket[]
+  payments      Payment[]
+}
+
+/// Configurable subscription plan. Not hard-coded — Super Admin edits these.
+model Plan {
+  id           String  @id @default(cuid())
+  key          String  @unique // free | professional | business | enterprise
+  name         String
+  priceMonthly Int     @default(0) // minor units of tenant currency
+  interval     String  @default("monthly") // monthly | half_yearly | yearly (base cadence)
+  whiteLabel   Boolean @default(false)
+  // Usage limits enforced by the metering layer.
+  limits       Json // { users, messagesPerMonth, connectors, aiRequestsPerMonth, documentsPerMonth }
+  features     Json? // free-form feature flags
+  active       Boolean @default(true)
+  sort         Int     @default(0)
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id        String   @id @default(cuid())
+  tenantId  String   @unique
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  planId    String
+  plan      Plan     @relation(fields: [planId], references: [id])
+  period    String   @default("monthly") // monthly | half_yearly | yearly
+  status    String   @default("active") // trial | active | past_due | canceled
+  startedAt DateTime @default(now())
+  renewsAt  DateTime
+  createdAt DateTime @default(now())
+}
+
+/// A payment the organization makes to P2Less (subscription + usage). P2Less in
+/// turn settles the underlying WhatsApp/provider costs — see docs/ARCHITECTURE.
+/// Gateway integration (Stripe / M-Pesa Daraja) plugs into `provider`/`providerRef`.
+model Payment {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Set for a super-app WALLET top-up (purpose="topup") — which contact's credit
+  // balance to credit when the payment clears. Null for org-level subscription bills.
+  contactId   String?
+  contact     Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  reference   String   @unique
+  amount      Int // minor units of `currency`
+  currency    String   @default("KES")
+  purpose     String   @default("subscription") // subscription | usage | topup
+  method      String   @default("mpesa") // mpesa | card | bank
+  status      String   @default("pending") // pending | paid | failed | refunded
+  provider    String? // stripe | daraja | manual
+  providerRef String? // gateway transaction id
+  periodLabel String? // e.g. "2026-08"
+  createdAt   DateTime @default(now())
+  paidAt      DateTime?
+
+  @@index([tenantId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IDENTITY & ACCESS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A dashboard/portal user (staff of a tenant, or a platform super admin).
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String?  // null for platform super admins
+  tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String
+  email        String
+  phone        String?
+  passwordHash String
+  isSuperAdmin Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  userRoles UserRole[]
+
+  @@unique([email])
+  @@index([tenantId])
+}
+
+/// A role within a tenant, carrying a set of permission strings.
+/// Roles are configurable per organization (RBAC).
+model Role {
+  id          String  @id @default(cuid())
+  tenantId    String
+  tenant      Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key         String // owner | admin | integration_manager | staff | parent | ...
+  name        String
+  permissions Json // string[] e.g. ["connectors.manage","conversations.read","student.results.read"]
+  isSystem    Boolean @default(false)
+
+  userRoles    UserRole[]
+  contactRoles ContactRole[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+}
+
+model UserRole {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+}
+
+/// A Contact is the *end user* on a conversational channel (e.g. a parent's
+/// WhatsApp identity). Distinct from a dashboard User. This is who talks to the
+/// bot. A phone number alone is NOT treated as sufficient auth for sensitive data.
+model Contact {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  channelType String   @default("whatsapp") // the channel this address lives on
+  address     String // phone number / chat id — unique per tenant+channel
+  displayName String?
+  phoneVerified Boolean @default(false)
+  pinHash     String? // optional user-set P2Less PIN
+  // Super-app credit wallet: end users spend credits per tool use; topped up via
+  // M-Pesa. New contacts get a few free credits so anyone can try it instantly.
+  credits     Int      @default(30)
+  // Links to records in external systems this contact is authorized to access,
+  // e.g. { "students": ["STU-001","STU-014"] }. Populated from the connected
+  // system during onboarding — this is the authorization ground truth.
+  grants      Json?
+  createdAt   DateTime @default(now())
+
+  contactRoles  ContactRole[]
+  conversations Conversation[]
+  otps          OtpChallenge[]
+  authSessions  AuthSession[]
+  documents     Document[]
+  payments      Payment[]
+
+  @@unique([tenantId, channelType, address])
+  @@index([tenantId])
+}
+
+model ContactRole {
+  id        String  @id @default(cuid())
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  roleId    String
+  role      Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, roleId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NUMBER REGISTRY — the routing backbone.
+//
+// The organization's OWN WhatsApp number is the front door. A user messages that
+// number directly (P2Less is invisible behind it). The DESTINATION number is the
+// routing key: number → tenant → configuration. One org may own several numbers
+// (General, HR, Finance…), each with its own capabilities/branding.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model WhatsAppNumber {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // The public E.164 number users message (e.g. +254711562526). Globally unique
+  // across the platform — this is what routes an inbound message to a tenant.
+  phoneNumber        String   @unique
+  // What the user sees as the sender identity — the ORGANIZATION, not "P2Less".
+  displayName        String
+  department         String? // General | HR | Finance | Support | Admissions …
+  // WhatsApp Cloud API identifiers (the webhook routes on phoneNumberId).
+  wabaId             String?
+  phoneNumberId      String?  @unique
+  status             String   @default("active") // active | disabled
+  verificationStatus String   @default("verified") // verified | pending
+  branding           Json? // per-number branding override (falls back to tenant)
+  webhookConfig      Json?
+  createdAt          DateTime @default(now())
+
+  conversations Conversation[]
+
+  @@index([tenantId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHANNELS (transport type; the engine is channel-agnostic)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Channel {
+  id        String  @id @default(cuid())
+  tenantId  String
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type      String // whatsapp | webchat | sms | telegram
+  address   String? // the tenant's number/handle on this channel
+  status    String  @default("active") // active | disabled
+  config    Json? // provider config (never expose secrets to clients)
+
+  conversations Conversation[]
+
+  @@unique([tenantId, type])
+  @@index([tenantId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONNECTOR FRAMEWORK (the integration layer)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A configured connection to an external system (REST for the MVP; the schema
+/// carries `kind` so GraphQL/SOAP/DB connectors slot in without migration).
+model Connector {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  kind         String   @default("rest") // rest | graphql | soap | database | custom
+  baseUrl      String
+  authType     String   @default("none") // none | api_key | bearer | basic | oauth2 | jwt
+  // Credentials are encrypted at rest (AES-256-GCM). Never returned to clients
+  // in plaintext and never logged. See src/lib/crypto.ts.
+  authConfigEnc String?
+  timeoutMs    Int      @default(8000)
+  maxRetries   Int      @default(1)
+  status       String   @default("active") // active | disabled
+  // Health, updated by the engine on each call.
+  lastCheckAt  DateTime?
+  lastOk       Boolean?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  actions ConnectorAction[]
+
+  @@index([tenantId])
+}
+
+/// A single capability exposed by a connector: an endpoint + how to call it +
+/// how to map the response + who is allowed + whether step-up auth is required.
+/// This is what the Connector Builder produces and the AI selects as a "tool".
+model ConnectorAction {
+  id                String  @id @default(cuid())
+  connectorId       String
+  connector         Connector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  key               String // GET_STUDENT_RESULTS | GET_STUDENT_BALANCE | ...
+  name              String
+  description       String?
+  operation         String  @default("read") // read | write
+  method            String  @default("GET") // GET | POST | PUT | PATCH | DELETE
+  path              String // /students/{studentId}/results  ({param} placeholders)
+  // Declares the params this action needs and how to source them.
+  // [{ name, in: "path"|"query"|"body", required, from: "entity"|"grant"|"const", entity?, const? }]
+  paramSchema       Json
+  // Dot-path map from raw response → tidy fields, e.g. { "name":"student.name" }
+  responseMapping   Json?
+  // Permission an actor must hold to run this action.
+  requiredPermission String?
+  // Resource guard: the grant key (e.g. "students") the target id must be in.
+  resourceGrantKey  String?
+  resourceParam     String? // which param holds the resource id (e.g. "studentId")
+  // Step-up auth: sensitive actions require a verified OtpChallenge/AuthSession.
+  requiresStepUp    Boolean @default(false)
+  // Write actions ask for explicit confirmation before executing.
+  requiresConfirm   Boolean @default(false)
+  // Natural-language phrases + keywords the intent engine matches against.
+  samplePhrases     Json? // string[]
+  // Template for formatting a successful response back to the user.
+  replyTemplate     String?
+  // Confirmation prompt for write actions ({placeholders} filled from params).
+  confirmTemplate   String?
+  // Optionally produce a document from the response.
+  documentKind      String? // e.g. "report_card" | null
+  enabled           Boolean @default(true)
+
+  @@unique([connectorId, key])
+  @@index([connectorId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONVERSATION ENGINE
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Conversation {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  channelId String?
+  channel   Channel? @relation(fields: [channelId], references: [id])
+  // The organization number this conversation is happening on (the front door).
+  numberId  String?
+  number    WhatsAppNumber? @relation(fields: [numberId], references: [id])
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  status    String   @default("open") // open | awaiting_otp | awaiting_param | awaiting_confirm | escalated | closed
+  // Short-term conversational memory + pending-step state:
+  // { lastEntities, pendingActionKey, pendingParams, missingParam, otpChallengeId, ... }
+  context   Json?
+  assignedUserId String? // set when escalated to a human
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages Message[]
+  tickets  SupportTicket[]
+
+  @@index([tenantId])
+  @@index([contactId])
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction      String // in | out
+  body           String
+  // Diagnostic metadata (intent, action, latency) — never raw credentials.
+  meta           Json?
+  createdAt      DateTime @default(now())
+
+  @@index([conversationId])
+  @@index([tenantId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTHENTICATION (OTP / step-up / sessions)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model OtpChallenge {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contactId   String
+  contact     Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  purpose     String   @default("step_up") // step_up | login
+  codeHash    String // OTP is hashed at rest, never stored in plaintext
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(3)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([contactId])
+  @@index([tenantId])
+}
+
+/// A short-lived verified session granted after successful OTP, so a contact
+/// isn't re-challenged on every sensitive request within the window.
+model AuthSession {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([contactId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GOVERNANCE: audit, usage metering, documents, support
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  requestId   String
+  actorType   String // contact | user | system
+  actorId     String?
+  action      String // e.g. connector.execute | otp.verify | authz.deny
+  target      String? // connector action key / resource id
+  success     Boolean
+  // Sanitized detail. Secrets and full PII are minimized here by design.
+  detail      Json?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([requestId])
+}
+
+/// Usage metering feeds both plan-limit enforcement and future usage billing.
+model UsageEvent {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type      String // message_in | message_out | api_call | ai_request | document
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, type])
+  @@index([tenantId, createdAt])
+}
+
+model Document {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contactId  String?
+  contact    Contact? @relation(fields: [contactId], references: [id])
+  kind       String // report_card | receipt | statement | ...
+  filename   String
+  content    String // MVP: inline HTML/text; production: object-storage key
+  token      String   @unique // for temporary secure access URLs
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+model SupportTicket {
+  id             String   @id @default(cuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
+  subject        String
+  status         String   @default("open") // open | assigned | resolved
+  createdAt      DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEVELOPER PLATFORM (API keys, webhooks) — foundation
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ApiKey {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name       String
+  prefix     String // shown to the user; the full key is only shown once
+  keyHash    String
+  scopes     Json // string[]
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+model Webhook {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  url       String
+  secret    String // used to sign deliveries (HMAC)
+  events    Json // string[]
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// DEMO EXTERNAL SYSTEM — "Riverside School Management System"
+//
+// These tables simulate a THIRD-PARTY school system. P2Less has NO direct
+// access to them: they are served over HTTP at /api/demo-school/* behind an
+// API key, and P2Less reaches them ONLY through a configured Connector making
+// real HTTP calls. This proves the integration is real, not hard-coded.
+// In a real deployment these tables live in the school's own database.
+// ═════════════════════════════════════════════════════════════════════════════
+
+model DemoStudent {
+  id           String   @id @default(cuid())
+  externalId   String   @unique // STU-001 — the id the school system exposes
+  name         String
+  grade        String
+  parentPhones Json // string[] — phones the school has on file for guardians
+  arrivedAt    String? // today's gate check-in time, or null
+  leftAt       String?
+
+  results      DemoResult[]
+  fees         DemoFeeAccount?
+  attendance   DemoAttendance[]
+  appointments DemoAppointment[]
+}
+
+/// A booked parent-teacher appointment in the external school system. Created by
+/// P2Less through a WRITE connector action (POST), after user confirmation.
+model DemoAppointment {
+  id         String   @id @default(cuid())
+  reference  String   @unique // human-friendly ref, e.g. APT-3F9K
+  studentId  String
+  student    DemoStudent @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  date       String
+  time       String
+  reason     String
+  status     String   @default("confirmed")
+  createdAt  DateTime @default(now())
+
+  @@index([studentId])
+}
+
+model DemoResult {
+  id        String @id @default(cuid())
+  studentId String
+  student   DemoStudent @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  term      String
+  subject   String
+  score     Int
+  grade     String
+}
+
+model DemoFeeAccount {
+  id        String @id @default(cuid())
+  studentId String @unique
+  student   DemoStudent @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  currency  String @default("KES")
+  billed    Int
+  paid      Int
+  dueDate   String
+}
+
+model DemoAttendance {
+  id        String @id @default(cuid())
+  studentId String
+  student   DemoStudent @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  date      String
+  status    String // present | absent | late
+}
+
+model DemoAnnouncement {
+  id        String @id @default(cuid())
+  title     String
+  body      String
+  eventDate String
+}
+
+model DemoTimetableSlot {
+  id      String @id @default(cuid())
+  grade   String
+  day     String
+  period  Int
+  subject String
+}
+
+// ── DEMO EXTERNAL SYSTEM: Hamzone Payroll/HR (served at /api/demo-payroll/*) ──
+model DemoEmployee {
+  id           String  @id @default(cuid())
+  externalId   String  @unique // EMP-184
+  name         String
+  title        String
+  phones       Json // string[] guardian/registered phones on file
+  leaveBalance Int     @default(21)
+
+  payslips      DemoPayslip[]
+  leaveRequests DemoLeaveRequest[]
+  meetings      DemoMeeting[]
+}
+
+model DemoMeeting {
+  id         String   @id @default(cuid())
+  reference  String   @unique // MTG-3F9K
+  employeeId String
+  employee   DemoEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date       String
+  time       String
+  topic      String?
+  status     String   @default("confirmed") // confirmed | cancelled
+  createdAt  DateTime @default(now())
+}
+
+model DemoPayslip {
+  id         String @id @default(cuid())
+  employeeId String
+  employee   DemoEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  period     String // "2026-07"
+  currency   String @default("KES")
+  gross      Int
+  deductions Int
+  net        Int
+}
+
+model DemoLeaveRequest {
+  id         String   @id @default(cuid())
+  reference  String   @unique // LR-3F9K
+  employeeId String
+  employee   DemoEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  startDate  String
+  endDate    String
+  reason     String?
+  status     String   @default("pending") // pending | approved | rejected
+  createdAt  DateTime @default(now())
+}
+
+// ── DEMO EXTERNAL SYSTEM: Nairobi Hospital (served at /api/demo-hospital/*) ──
+model DemoPatient {
+  id           String  @id @default(cuid())
+  externalId   String  @unique // PT-5521
+  name         String
+  phones       Json
+  nextApptDate String?
+  nextApptTime String?
+  nextApptDept String?
+}
+
+// ── DEMO EXTERNAL SYSTEM: Kilimani Retail (served at /api/demo-business/*) ──
+model DemoOrder {
+  id         String @id @default(cuid())
+  reference  String @unique // ORD-3388
+  customerPhone String
+  item       String
+  status     String // processing | shipped | delivered
+  eta        String?
+}
