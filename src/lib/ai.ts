@@ -228,7 +228,7 @@ export function partOfDay(): string {
 
 /** A friendly, human-readable "now" the AI can reason about — date, local clock
  *  time and part of day — so it can tell the time and greet appropriately. */
-function nowStr(): string {
+export function nowStr(): string {
   try {
     const d = new Date();
     const date = d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: TZ });

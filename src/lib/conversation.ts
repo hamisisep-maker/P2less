@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "./db";
-import { understand, humanizeReply, smallTalk, complete, aiEnabled, partOfDay, classifyCommerceMessage, resolveOrderStepAnswer, type ChatTurn, type CommerceIntent } from "./ai";
+import { understand, humanizeReply, smallTalk, complete, aiEnabled, partOfDay, nowStr, classifyCommerceMessage, resolveOrderStepAnswer, type ChatTurn, type CommerceIntent } from "./ai";
 import { executeAction, type ParamSpec } from "./connector-engine";
 import { issueOtp, verifyOtp, hasVerifiedSession } from "./otp";
 import { hasPermission } from "./permissions";
@@ -988,9 +988,18 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   if (pureGreeting) {
     const menu = numberedMenu(await loadActions(tenant.id));
     const first = (contact.displayName ?? "").split(" ")[0];
-    const hi = first
-      ? `Good ${partOfDay()}, ${first}! 👋 Welcome back to ${assistant}.`
-      : `Good ${partOfDay()}! 👋 ${branding.welcome ?? `Welcome to ${assistant}.`}`;
+    // A real greeting varies every time — a real person doesn't say the exact
+    // same words back no matter how you greeted them. Only the menu below (the
+    // actual factual capability list) stays fixed; the opening line doesn't.
+    const aiHi = aiEnabled()
+      ? await complete(
+          `You're a warm, genuinely friendly human staff member on ${assistant}'s WhatsApp, greeting someone RIGHT NOW (${nowStr()}). ${first ? `Their name is ${first} — greet them by name.` : `You don't know their name — don't invent one.`} Match their energy/language from what they just said (casual, formal, Swahili, Sheng, etc.). Vary your wording every single time — never a template, never robotic, sound like a real person who's glad to hear from them. ONE short sentence only, no menu or list (that's added separately). Reply with ONLY that sentence.`,
+          text,
+          60,
+          0.9,
+        )
+      : null;
+    const hi = aiHi?.trim() || (first ? `Good ${partOfDay()}, ${first}! 👋 Welcome back to ${assistant}.` : `Good ${partOfDay()}! 👋 ${branding.welcome ?? `Welcome to ${assistant}.`}`);
     return emit([{ body: `${hi}\n\nReply with a number, or just tell me what you need:\n${menu.text}` }], "open", { lastResource: ctx.lastResource, menu: menu.ids });
   }
   if (/(speak|talk).*(human|someone|agent|person)|human agent|customer care/.test(lower)) {
