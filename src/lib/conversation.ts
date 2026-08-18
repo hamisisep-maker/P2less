@@ -11,7 +11,7 @@ import { handleDriverMessage, matchDeliveryZone, tryAssignTrip } from "./dispatc
 import { generateReportCard, generatePayslipPdf, generateLeavePdf, generateFeeStatementPdf, generateCvPdf, type GeneratedDoc } from "./documents";
 import { isCvRequest, extractCvData } from "./cv-writer";
 import { requestId as newRequestId, randomToken } from "./crypto";
-import { isCatalogBrowseRequest, isOrderRequest, formatCatalog, matchProduct, extractQuantity, startOrderPayment, findExactProductMention, hasExplicitQuantity, isProductImageRequest, isProductAttributeQuestion, isDeliveryIntent, isPickupIntent, isAddressDetailed } from "./catalog";
+import { isCatalogBrowseRequest, isOrderRequest, formatCatalog, matchProduct, extractQuantity, startOrderPayment, findExactProductMention, hasExplicitQuantity, isProductImageRequest, isProductAttributeQuestion, isDeliveryIntent, isPickupIntent, isAddressDetailed, reserveStock, isAvailable } from "./catalog";
 import { dispatchWebhook } from "./webhooks";
 import { extractDate, extractTime, isGreeting, type IntentAction } from "./intent-engine";
 import { pickTool, allTools } from "./tools";
@@ -291,7 +291,19 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // delivery address (only if delivery) → final recap + CONFIRM/CANCEL. Every
   // step is asked explicitly; nothing is assumed, and the final recap restates
   // everything the customer chose so they confirm the REAL order, not a guess.
-  const advanceOrder = (po: NonNullable<ConvContext["pendingOrder"]>) => {
+  const advanceOrder = async (po: NonNullable<ConvContext["pendingOrder"]>) => {
+    // Checked EVERY time quantity is (re-)known — a live re-check, not a stale
+    // one from when they first asked, so it reflects what's actually left right
+    // now. This is a courtesy check before payment; the real guarantee against
+    // overselling is the atomic reservation at the moment of actual payment.
+    const product = await db.product.findUnique({ where: { id: po.productId } });
+    if (product?.stockQuantity != null && po.quantity > product.stockQuantity) {
+      const left = product.stockQuantity;
+      const body = left > 0
+        ? `Sorry — we only have ${left} ${po.productName} left right now. Would you like ${left} instead, or a different quantity?`
+        : `Sorry — ${po.productName} is actually out of stock right now. Would you like something else, or should I let you know once it's back?`;
+      return emit([{ body }], "awaiting_order_quantity", { pendingOrder: { ...po, quantity: 0 } });
+    }
     if (po.options && !po.optionChosen) {
       return emit([{ body: `For ${po.productName}, which would you like — ${po.options}?` }], "awaiting_order_option", { pendingOrder: po });
     }
@@ -813,8 +825,25 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
           items: { create: [{ productId: po.productId, quantity: po.quantity, unitPrice: po.unitPrice, name: po.productName, optionChosen: po.optionChosen ?? null }] },
         },
       });
+      // Reserved NOW, atomically, before any payment attempt — the earliest
+      // possible moment — so two customers can never both be told "yes we have
+      // it" for the last unit. If Daraja later reports this payment failed, the
+      // callback route releases the hold back (see mpesa/callback/route.ts).
+      const reserved = await reserveStock(po.productId, po.quantity);
+      if (!reserved.ok) {
+        await db.order.delete({ where: { id: order.id } });
+        const body = reserved.available > 0
+          ? `Sorry — someone just bought the last of those and only ${reserved.available} ${po.productName} are left now. Would you like ${reserved.available} instead, or something else?`
+          : `Sorry — ${po.productName} just sold out. Would you like something else, or should I let you know once it's back?`;
+        return emit([{ body }], "awaiting_order_quantity", { pendingOrder: { ...po, quantity: 0 } });
+      }
       const res = await startOrderPayment({ tenantId: tenant.id, orderId: order.id, phone: senderAddress, amountKes: total, reference });
-      if (!res.ok) return emit([{ body: `Couldn't start payment: ${res.error}. Reply CONFIRM to try again, or CANCEL to stop.` }], "awaiting_order_confirm", ctx);
+      if (!res.ok) {
+        // The stock hold was never consumed — release it back rather than
+        // leaving it permanently short by a unit nobody actually bought.
+        await db.product.update({ where: { id: po.productId }, data: { stockQuantity: { increment: po.quantity } } }).catch(() => {});
+        return emit([{ body: `Couldn't start payment: ${res.error}. Reply CONFIRM to try again, or CANCEL to stop.` }], "awaiting_order_confirm", ctx);
+      }
       if (res.mock) {
         // Mock marks the order paid immediately (unlike real STK, which only
         // confirms asynchronously) — so this is the right moment to start
@@ -869,6 +898,9 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // "how much is X" read as an order, "do you have paybill" dumping the
   // catalog, and Swahili messages never being understood as commerce at all. ──
   {
+    // Deliberately includes out-of-stock products too — a customer asking
+    // about one BY NAME should be told honestly that it's out of stock, not
+    // get a non-answer just because it was silently excluded from the list.
     const catalogProducts = await db.product.findMany({ where: { tenantId: tenant.id, active: true, inStock: true } });
     if (catalogProducts.length > 0) {
       const intent: CommerceIntent = aiEnabled()
@@ -896,14 +928,18 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
         const hit = intent.productId ? catalogProducts.find((p) => p.id === intent.productId) : undefined;
         if (hit) {
           const parts = [`${hit.name} — ${hit.currency} ${hit.price.toLocaleString("en-US")}`];
-          if (hit.description) parts.push(hit.description);
-          if (hit.options) parts.push(`Choices: ${hit.options}`);
+          if (!isAvailable(hit)) parts.push("currently OUT OF STOCK");
+          else if (hit.description) parts.push(hit.description);
+          if (isAvailable(hit) && hit.options) parts.push(`Choices: ${hit.options}`);
           return emit([{ body: parts.join(". ") }], "open", ctx);
         }
         return emit([{ body: `Which product did you mean? ${formatCatalog(assistant, catalogProducts)}` }], "open", ctx);
       }
       if (intent.kind === "order") {
         const hit = catalogProducts.find((p) => p.id === intent.productId);
+        if (hit && !isAvailable(hit)) {
+          return emit([{ body: `Sorry, ${hit.name} is out of stock right now — I can let you know when it's back, or show you what else we have.` }], "open", ctx);
+        }
         if (hit) {
           // Acknowledge a discount/negotiation request honestly instead of
           // silently proceeding at full price as if they never asked.

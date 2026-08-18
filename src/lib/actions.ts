@@ -204,6 +204,7 @@ const productSchema = z.object({
   category: z.string().max(60).optional().default(""),
   sku: z.string().max(60).optional().default(""),
   options: z.string().max(200).optional().default(""),
+  stockQuantity: z.string().optional().default(""), // blank = not tracked; parsed manually below (z.coerce.number would turn "" into 0)
   inStock: z.coerce.boolean().optional().default(true),
 });
 
@@ -219,8 +220,11 @@ export async function saveProductAction(_prev: unknown, formData: FormData) {
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid product details." };
   const d = parsed.data;
   const id = String(formData.get("id") ?? "");
-  const data: { name: string; description: string | null; price: number; currency: string; category: string | null; sku: string | null; options: string | null; inStock: boolean; imageUrl?: string } = {
-    name: d.name, description: d.description || null, price: d.price, currency: d.currency, category: d.category || null, sku: d.sku || null, options: d.options || null, inStock: d.inStock,
+  const stockRaw = d.stockQuantity.trim();
+  if (stockRaw && (!/^\d+$/.test(stockRaw) || parseInt(stockRaw, 10) < 0)) return { error: "Stock quantity must be a whole number, or blank to not track it." };
+  const data: { name: string; description: string | null; price: number; currency: string; category: string | null; sku: string | null; options: string | null; stockQuantity: number | null; inStock: boolean; imageUrl?: string } = {
+    name: d.name, description: d.description || null, price: d.price, currency: d.currency, category: d.category || null, sku: d.sku || null, options: d.options || null,
+    stockQuantity: stockRaw ? parseInt(stockRaw, 10) : null, inStock: d.inStock,
   };
 
   // A new photo is optional — an empty file input submits a zero-byte File, and

@@ -14,7 +14,15 @@ import { stkPush, isConfigured } from "./mpesa";
 // a natural next step (per-tenant payment config), not yet built.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type CatalogProduct = { id: string; name: string; description: string | null; price: number; currency: string; category: string | null; inStock: boolean; imageUrl?: string | null; options?: string | null };
+export type CatalogProduct = { id: string; name: string; description: string | null; price: number; currency: string; category: string | null; inStock: boolean; imageUrl?: string | null; options?: string | null; stockQuantity?: number | null };
+
+/** Is this product actually orderable right now? Respects BOTH the manual
+ *  inStock toggle AND tracked quantity (when set) hitting zero — a product
+ *  isn't "in stock" just because someone forgot to flip the toggle after
+ *  selling the last one. */
+export function isAvailable(p: CatalogProduct): boolean {
+  return p.inStock && (p.stockQuantity == null || p.stockQuantity > 0);
+}
 
 /** Does this message look like someone asking what's for sale? Excludes "do you
  *  have X" when X is a specific different topic (an image, a warranty, delivery,
@@ -76,7 +84,7 @@ export function isOrderRequest(lower: string): boolean {
 }
 
 export function formatCatalog(assistant: string, products: CatalogProduct[]): string {
-  const available = products.filter((p) => p.inStock);
+  const available = products.filter(isAvailable);
   if (available.length === 0) return `We don't have anything listed right now — check back soon, or contact ${assistant} directly.`;
   const byCategory = new Map<string, CatalogProduct[]>();
   for (const p of available) {
@@ -89,7 +97,10 @@ export function formatCatalog(assistant: string, products: CatalogProduct[]): st
   for (const [cat, items] of byCategory) {
     const lines = items.map((p) => {
       if (p.imageUrl) anyPhotos = true;
-      return `• ${p.name} — ${p.currency} ${p.price.toLocaleString("en-US")}${p.description ? ` (${p.description})` : ""}${p.options ? ` [${p.options}]` : ""}${p.imageUrl ? " 📷" : ""}`;
+      // Only mention remaining stock once it's genuinely low (≤5) — otherwise
+      // "47 left" is just noise; the honest signal is scarcity, not the count.
+      const lowStock = p.stockQuantity != null && p.stockQuantity <= 5 ? ` (only ${p.stockQuantity} left!)` : "";
+      return `• ${p.name} — ${p.currency} ${p.price.toLocaleString("en-US")}${p.description ? ` (${p.description})` : ""}${p.options ? ` [${p.options}]` : ""}${p.imageUrl ? " 📷" : ""}${lowStock}`;
     });
     parts.push(byCategory.size > 1 ? `*${cat}*\n${lines.join("\n")}` : lines.join("\n"));
   }
@@ -104,7 +115,7 @@ export function formatCatalog(assistant: string, products: CatalogProduct[]): st
  *  single match, a disambiguation list (genuine ties), or none. */
 export function matchProduct(query: string, products: CatalogProduct[]): { hit?: CatalogProduct; candidates?: CatalogProduct[] } {
   const q = query.toLowerCase();
-  const available = products.filter((p) => p.inStock);
+  const available = products.filter(isAvailable);
 
   const exact = available.filter((p) => q.includes(p.name.toLowerCase()));
   if (exact.length === 1) return { hit: exact[0] };
@@ -134,8 +145,24 @@ export function matchProduct(query: string, products: CatalogProduct[]): { hit?:
  *  like?" then has nowhere to put the answer). */
 export function findExactProductMention(text: string, products: CatalogProduct[]): CatalogProduct | null {
   const q = text.toLowerCase();
-  const hits = products.filter((p) => p.inStock && q.includes(p.name.toLowerCase()));
+  const hits = products.filter((p) => isAvailable(p) && q.includes(p.name.toLowerCase()));
   return hits.length === 1 ? hits[0] : null;
+}
+
+export type StockReserveResult = { ok: true } | { ok: false; available: number };
+
+/** Atomically decrements tracked stock at the moment a sale is genuinely paid
+ *  for. Returns ok:false with the REAL remaining count if there wasn't enough
+ *  — this can legitimately happen if two customers buy the last units around
+ *  the same time; never oversell silently. No-ops (always ok) for a product
+ *  that doesn't track quantity (stockQuantity is null). */
+export async function reserveStock(productId: string, qty: number): Promise<StockReserveResult> {
+  const product = await db.product.findUnique({ where: { id: productId } });
+  if (!product || product.stockQuantity == null) return { ok: true };
+  const updated = await db.product.updateMany({ where: { id: productId, stockQuantity: { gte: qty } }, data: { stockQuantity: { decrement: qty } } });
+  if (updated.count > 0) return { ok: true };
+  const fresh = await db.product.findUnique({ where: { id: productId } });
+  return { ok: false, available: fresh?.stockQuantity ?? 0 };
 }
 
 /** Was a quantity actually said, or would extractQuantity() just be silently

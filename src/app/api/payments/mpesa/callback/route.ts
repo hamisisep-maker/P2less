@@ -58,6 +58,16 @@ export async function POST(req: Request) {
             void tryAssignTrip(trip.id).catch(() => {});
           }
         }
+      } else if (payment.purpose === "order" && payment.orderId) {
+        // Payment genuinely failed (e.g. the customer never entered their PIN)
+        // — the stock hold taken at CONFIRM time was never consumed, so give it
+        // back rather than leaving the shop permanently a unit short for a sale
+        // that never happened.
+        const items = await db.orderItem.findMany({ where: { orderId: payment.orderId } });
+        for (const item of items) {
+          await db.product.update({ where: { id: item.productId }, data: { stockQuantity: { increment: item.quantity } } }).catch(() => {});
+        }
+        await db.order.update({ where: { id: payment.orderId }, data: { status: "failed" } }).catch(() => {});
       }
     }
   }

@@ -146,6 +146,11 @@ model Product {
   // "Colors: Navy, Grey, Black" or "Sizes: S, M, L, XL". Null/blank = nothing to
   // choose. Deliberately free text, not a rigid variant/inventory system.
   options     String?
+  // How many are actually left. Null = not tracked (unlimited/manual via
+  // inStock only) — tracking is opt-in so a business that doesn't count units
+  // isn't forced to. When set, this is the real source of truth: decremented
+  // atomically on every paid order, checked before a sale is even offered.
+  stockQuantity Int?
   inStock     Boolean  @default(true)
   active      Boolean  @default(true) // soft-disable without deleting
   createdAt   DateTime @default(now())

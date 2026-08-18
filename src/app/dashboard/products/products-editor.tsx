@@ -16,6 +16,7 @@ type Product = {
   active: boolean;
   imageUrl: string | null;
   options: string | null;
+  stockQuantity: number | null;
 };
 type State = { ok?: boolean; error?: string; editedId?: string } | null;
 
@@ -54,6 +55,11 @@ export function ProductsEditor({ initial, canManage }: { initial: Product[]; can
               <div>
                 <label className="mb-1 block text-xs text-muted">SKU (optional)</label>
                 <input name="sku" defaultValue={editing?.sku ?? ""} placeholder="e.g. UNI-SW-NVY" className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted">Stock quantity (optional)</label>
+                <input name="stockQuantity" type="number" min={0} defaultValue={editing?.stockQuantity ?? ""} placeholder="Leave blank to not track" className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent" />
+                <p className="mt-1 text-xs text-faint">If set, this is decremented automatically on every paid order and checked before a sale is offered.</p>
               </div>
             </div>
             <div>
@@ -112,6 +118,9 @@ export function ProductsEditor({ initial, canManage }: { initial: Product[]; can
                     <span className="font-medium">{p.name}</span>
                     {p.category && <Badge tone="neutral">{p.category}</Badge>}
                     {!p.inStock && <Badge tone="amber">Out of stock</Badge>}
+                    {p.inStock && p.stockQuantity === 0 && <Badge tone="amber">Out of stock (0 left)</Badge>}
+                    {p.inStock && p.stockQuantity != null && p.stockQuantity > 0 && p.stockQuantity <= 5 && <Badge tone="amber">{p.stockQuantity} left</Badge>}
+                    {p.inStock && p.stockQuantity != null && p.stockQuantity > 5 && <Badge tone="neutral">{p.stockQuantity} in stock</Badge>}
                     {!p.active && <Badge tone="rose">Inactive</Badge>}
                   </div>
                   {p.description && <p className="mt-1 text-sm text-muted">{p.description}</p>}
