@@ -18,7 +18,7 @@ import { matchIntent, type IntentAction, type IntentMatch } from "./intent-engin
 // API key, so the platform always works offline.
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Provider = "anthropic" | "openai" | "google" | "xai";
+type Provider = "anthropic" | "openai" | "google" | "xai" | "groq" | "cerebras" | "openrouter";
 
 /** A prior turn in this conversation, oldest→newest, so the AI has memory. */
 export type ChatTurn = { role: "user" | "assistant"; text: string };
@@ -28,15 +28,21 @@ function hasKey(p: Provider): boolean {
   return p === "anthropic" ? !!process.env.ANTHROPIC_API_KEY
     : p === "openai" ? !!process.env.OPENAI_API_KEY
     : p === "xai" ? !!process.env.XAI_API_KEY
+    : p === "groq" ? !!process.env.GROQ_API_KEY
+    : p === "cerebras" ? !!process.env.CEREBRAS_API_KEY
+    : p === "openrouter" ? !!process.env.OPENROUTER_API_KEY
     : !!process.env.GEMINI_API_KEY;
 }
 
 /** The ORDERED list of providers to try: the configured primary first, then any
  *  other providers that have a key, as automatic failover. So if the primary is
- *  throttled/down (e.g. free-tier Gemini 429/503), the reply still goes out via a
- *  backup key instead of falling to a canned template. Add a 2nd key to enable. */
+ *  throttled/down (e.g. free-tier Gemini 429/503, or a paid key with zero credit
+ *  balance), the reply still goes out via a backup key instead of falling to a
+ *  canned template. Groq/Cerebras listed early — genuinely free tiers with much
+ *  higher rate limits than Gemini's free tier, so they're worth trying before
+ *  burning retries on a provider more likely to already be exhausted. */
 function providerChain(): Provider[] {
-  const all: Provider[] = ["google", "anthropic", "openai", "xai"];
+  const all: Provider[] = ["google", "groq", "cerebras", "openrouter", "anthropic", "openai", "xai"];
   const configured = (process.env.AI_PROVIDER || "").toLowerCase();
   const primary = all.find((p) => p === configured && hasKey(p))
     ?? all.find(hasKey); // auto-detect if AI_PROVIDER unset/keyless
@@ -47,7 +53,7 @@ function providerChain(): Provider[] {
 }
 
 export function aiEnabled(): boolean {
-  return !!(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.XAI_API_KEY);
+  return !!(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.XAI_API_KEY || process.env.GROQ_API_KEY || process.env.CEREBRAS_API_KEY || process.env.OPENROUTER_API_KEY);
 }
 
 /** General-purpose completion for super-app TOOLS (data analysis, doc summary,
@@ -138,18 +144,35 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
   let history = opts.history ?? [];
   while (history.length && history[0].role === "assistant") history = history.slice(1);
   try {
-    // OpenAI and xAI (Grok) share the same Chat Completions request shape — only
-    // the base URL, key and default model differ.
-    if ((p === "openai" && process.env.OPENAI_API_KEY) || (p === "xai" && process.env.XAI_API_KEY)) {
-      const isXai = p === "xai";
-      const url = isXai ? "https://api.x.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
-      const key = isXai ? process.env.XAI_API_KEY! : process.env.OPENAI_API_KEY!;
-      const model = isXai ? (process.env.XAI_MODEL || "grok-4") : (process.env.OPENAI_MODEL || "gpt-4o-mini");
-      const res = await fetchT(url, {
+    // OpenAI, xAI (Grok), Groq, Cerebras, and OpenRouter all share the same
+    // "OpenAI-compatible" Chat Completions request shape — only the base URL,
+    // key, and default model differ, so one lookup table covers all five
+    // instead of repeating the request logic per provider.
+    const OPENAI_COMPAT: Partial<Record<Provider, { url: string; key: string | undefined; model: string }>> = {
+      openai: { url: "https://api.openai.com/v1/chat/completions", key: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL || "gpt-4o-mini" },
+      xai: { url: "https://api.x.ai/v1/chat/completions", key: process.env.XAI_API_KEY, model: process.env.XAI_MODEL || "grok-4" },
+      // Free tier, generous rate limits, fast inference. Verified working
+      // 2026-08-19 — catalog changes over time; if this 404s, check
+      // console.groq.com or GET /openai/v1/models with your key.
+      groq: { url: "https://api.groq.com/openai/v1/chat/completions", key: process.env.GROQ_API_KEY, model: process.env.GROQ_MODEL || "openai/gpt-oss-120b" },
+      // Cerebras — despite being marketed free-tier, this account got 402
+      // Payment Required on every model as of 2026-08-19; needs a payment
+      // method added in their billing tab before it'll actually work. Kept
+      // configured (harmless no-op in the chain until that's resolved).
+      cerebras: { url: "https://api.cerebras.ai/v1/chat/completions", key: process.env.CEREBRAS_API_KEY, model: process.env.CEREBRAS_MODEL || "gpt-oss-120b" },
+      // Free-tier models carry a ":free" suffix and share upstream capacity
+      // across ALL OpenRouter free users, so they're prone to 429s at busy
+      // times (confirmed 2026-08-19) — treat as a bonus, not primary. Catalog
+      // changes often; check openrouter.ai/models?max_price=0 if this 404s.
+      openrouter: { url: "https://openrouter.ai/api/v1/chat/completions", key: process.env.OPENROUTER_API_KEY, model: process.env.OPENROUTER_MODEL || "google/gemma-4-31b-it:free" },
+    };
+    const compat = OPENAI_COMPAT[p];
+    if (compat?.key) {
+      const res = await fetchT(compat.url, {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+        headers: { "content-type": "application/json", authorization: `Bearer ${compat.key}` },
         body: JSON.stringify({
-          model,
+          model: compat.model,
           max_tokens: maxTokens,
           temperature,
           messages: [
@@ -159,7 +182,7 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
           ],
         }),
       });
-      if (!res || !res.ok) return null;
+      if (!res || !res.ok) { console.error(`[ai:${p}] status=${res?.status} body=${res ? (await res.text()).slice(0,300) : "no response"}`); return null; }
       const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
       return j.choices?.[0]?.message?.content?.trim() ?? null;
     }
