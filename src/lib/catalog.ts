@@ -16,9 +16,21 @@ import { stkPush, isConfigured } from "./mpesa";
 
 export type CatalogProduct = { id: string; name: string; description: string | null; price: number; currency: string; category: string | null; inStock: boolean };
 
-/** Does this message look like someone asking what's for sale? */
+/** Does this message look like someone asking what's for sale? Excludes "do you
+ *  have X" when X is a specific different topic (an image, a warranty, delivery,
+ *  etc.) — that's a real question deserving its own honest answer, not a catalog
+ *  dump ("do you have an image of the product" is NOT "what do you sell"). */
 export function isCatalogBrowseRequest(lower: string): boolean {
-  return /\b(what).{0,15}\b(sell|have|offer|sale|stock)\b|\b(do you (sell|have|stock|offer))\b|\b(show|see|list).{0,10}\b(product|item|menu|catalog|stock)\b|\bprice list\b|\bwhat'?s (on|for) (offer|sale)\b/i.test(lower);
+  const genericHave = /\b(do you (sell|have|stock|offer))\b(?!.{0,20}\b(image|images|photo|photos|picture|pictures|pic|pics|video|discount|warranty|return|refund|delivery|shipping|receipt|invoice|colou?r|size)\b)/i;
+  return /\b(what).{0,15}\b(sell|have|offer|sale|stock)\b/i.test(lower) || genericHave.test(lower) || /\b(show|see|list).{0,10}\b(product|item|menu|catalog|stock)\b/i.test(lower) || /\bprice list\b/i.test(lower) || /\bwhat'?s (on|for) (offer|sale)\b/i.test(lower);
+}
+
+/** Asking specifically about PRODUCT PHOTOS — needs its own honest answer (the
+ *  catalog has no images wired up), not a "couldn't match" dump from tripping
+ *  the order-matching path (e.g. "i need images of those catalog" contains
+ *  "need", which would otherwise read as buy intent). */
+export function isProductImageRequest(lower: string): boolean {
+  return /\b(image|images|photo|photos|picture|pictures|pic|pics)\b/i.test(lower);
 }
 
 /** Does this message look like a request to buy something? Catches an explicit

@@ -10,7 +10,7 @@ import { deliver } from "./transport";
 import { generateReportCard, generatePayslipPdf, generateLeavePdf, generateFeeStatementPdf, generateCvPdf, type GeneratedDoc } from "./documents";
 import { isCvRequest, extractCvData } from "./cv-writer";
 import { requestId as newRequestId, randomToken } from "./crypto";
-import { isCatalogBrowseRequest, isOrderRequest, formatCatalog, matchProduct, extractQuantity, startOrderPayment, findExactProductMention, hasExplicitQuantity } from "./catalog";
+import { isCatalogBrowseRequest, isOrderRequest, formatCatalog, matchProduct, extractQuantity, startOrderPayment, findExactProductMention, hasExplicitQuantity, isProductImageRequest } from "./catalog";
 import { dispatchWebhook } from "./webhooks";
 import { extractDate, extractTime, isGreeting, type IntentAction } from "./intent-engine";
 import { pickTool, allTools } from "./tools";
@@ -663,6 +663,15 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     const stc = aiEnabled() ? await smallTalk(assistant, text, [], history, knownFacts, orgFaqs) : null;
     const remind = `${po.quantity} × ${po.productName} = ${po.currency} ${total.toLocaleString("en-US")}. Reply CONFIRM to pay via M-Pesa, or CANCEL to stop.`;
     return emit([{ body: stc ? `${stc}\n\n${remind}` : remind }], "awaiting_order_confirm", ctx);
+  }
+  if (isProductImageRequest(lower)) {
+    // Only relevant for a tenant that actually sells things — otherwise this is
+    // about something else entirely ("photo of the campus") and should fall
+    // through to normal handling instead of talking about a nonexistent catalog.
+    const hasCatalog = (await db.product.count({ where: { tenantId: tenant.id, active: true } })) > 0;
+    if (hasCatalog) {
+      return emit([{ body: "We don't have photos of our products uploaded yet — happy to describe any of them, or you can ask about price, sizes, or anything else!" }], "open", ctx);
+    }
   }
   if (isCatalogBrowseRequest(lower)) {
     const products = await db.product.findMany({ where: { tenantId: tenant.id, active: true }, orderBy: [{ category: "asc" }, { name: "asc" }] });
