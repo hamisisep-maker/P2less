@@ -1111,13 +1111,17 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     const menu = numberedMenu(actions);
     // If AI is on, answer chit-chat naturally (still grounded to real capabilities).
     const st = await smallTalk(assistant, text, [...actions.map((a) => a.name), ...toolCapabilityLines()], history, knownFacts, orgFaqs);
-    // Fallback ONLY if the AI is truly unavailable (after retries). Keep it warm
-    // and ask, rather than cold-dumping the menu. A friendly remark gets a warm
-    // ack; anything else gets a gentle "tell me more" with the menu as a backup.
+    // Fallback ONLY if the AI is truly unavailable (after retries — e.g. every
+    // configured provider is rate-limited/out of quota at once). Never leave a
+    // bedrock identity question unanswered just because AI is briefly down —
+    // check that FIRST, deterministically. Otherwise keep it warm and ask,
+    // rather than cold-dumping the menu: a friendly remark gets a warm ack;
+    // anything else gets a gentle "tell me more" with the menu as a backup.
     const first = (contact.displayName ?? "").split(" ")[0];
-    const fallback = isSocialChit(lower)
-      ? warmAck(text)
-      : `I want to make sure I get you the right thing${first ? `, ${first}` : ""} 😊 Could you tell me a little more about what you need? For example, checking attendance, exam results, a fee balance, booking an appointment, or sending me a spreadsheet to analyze — or reply with a number:\n${menu.text}`;
+    const fallback = identityFallbackAnswer(lower, assistant)
+      ?? (isSocialChit(lower)
+        ? warmAck(text)
+        : `I want to make sure I get you the right thing${first ? `, ${first}` : ""} 😊 Could you tell me a little more about what you need? For example, checking attendance, exam results, a fee balance, booking an appointment, or sending me a spreadsheet to analyze — or reply with a number:\n${menu.text}`);
     return emit([{ body: st ?? fallback }], "open", { lastResource: ctx.lastResource, menu: menu.ids });
   }
 
@@ -1298,6 +1302,25 @@ function warmAck(text: string): string {
   if (/(thank|thx|asante|appreciate|cheers)/.test(l)) return "You're very welcome! 😊 I'm here whenever you need anything.";
   if (/(happy|glad|great|good to hear|wonderful|lovely|nice|perfect|awesome|amazing)/.test(l)) return "So glad to hear that! 😊 Let me know if there's anything else I can help you with.";
   return "😊 Anytime! Just let me know if there's anything you need.";
+}
+
+/** Basic identity/platform questions ("what's your name", "who owns you",
+ *  "what is p2less") answered directly WITHOUT needing an AI call — these are
+ *  fixed, always-true platform facts, not something worth risking on AI being
+ *  reachable. Used as a deterministic fallback when smallTalk() returns null
+ *  (AI down/unavailable) so at least these bedrock questions never go
+ *  unanswered or get a generic "tell me more" non-reply. */
+function identityFallbackAnswer(lower: string, assistant: string): string | null {
+  if (/\b(your name|who are you|what('?s| is) your name)\b/.test(lower)) {
+    return `I'm the WhatsApp assistant for ${assistant}, running on P2Less. Happy to help — what do you need?`;
+  }
+  if (/\b(who (made|built|owns|runs) you|whose are you|to whom do you belong|who do you belong to|who is hamisi|who is onesmus|who is kilumo)\b/.test(lower)) {
+    return `I run on P2Less, built by Hamisi Onesmus Kilumo — a software engineer and founder/CEO of Hamzone Technologies. What can I help you with?`;
+  }
+  if (/\bwhat (is|does) p2less( mean| stand for)?\b|\bp2less inamaana gani\b/.test(lower)) {
+    return `P2Less means "paperless" — it's the WhatsApp technology (built by Hamisi Onesmus Kilumo of Hamzone Technologies) that lets you handle things like this right here on WhatsApp, no separate app or login needed. What can I help you with?`;
+  }
+  return null;
 }
 
 /** Is this a broad "tell me about / overview / how is X doing" style request? */
