@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "./db";
-import { understand, humanizeReply, smallTalk, complete, aiEnabled, partOfDay, type ChatTurn } from "./ai";
+import { understand, humanizeReply, smallTalk, complete, aiEnabled, partOfDay, classifyCommerceMessage, resolveOrderStepAnswer, type ChatTurn, type CommerceIntent } from "./ai";
 import { executeAction, type ParamSpec } from "./connector-engine";
 import { issueOtp, verifyOtp, hasVerifiedSession } from "./otp";
 import { hasPermission } from "./permissions";
@@ -254,6 +254,17 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // here (nothing invented) — the shop confirms it separately, as stated to
   // the customer in the recap below.
   const orderGrandTotal = (po: NonNullable<ConvContext["pendingOrder"]>) => po.unitPrice * po.quantity + (po.fulfillment === "delivery" ? po.deliveryFee ?? 0 : 0);
+
+  // Everything REAL that's known about a product, for grounding the AI
+  // fallback in the order-step handlers — so it has an actual, complete list
+  // of facts to check against instead of an excuse to guess.
+  const productKnownFacts = async (po: NonNullable<ConvContext["pendingOrder"]>) => {
+    const product = await db.product.findUnique({ where: { id: po.productId } });
+    const lines = [`Name: ${po.productName}`, `Price: ${po.currency} ${po.unitPrice.toLocaleString("en-US")} each`];
+    if (product?.description) lines.push(`Description: ${product.description}`);
+    if (product?.options) lines.push(`Choices available: ${product.options}`);
+    return lines.join(". ");
+  };
 
   // Full recap of a pending order — restates EVERYTHING the customer chose
   // (product, option, quantity, delivery/pickup, delivery fee) so CONFIRM is on
@@ -672,7 +683,21 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       return emit([{ body: "No problem — order cancelled. Let me know if you'd like anything else!" }], "open", { lastResource: ctx.lastResource });
     }
     if (!hasExplicitQuantity(text)) {
-      // Still didn't say a number — ask again rather than guessing.
+      // Didn't recognize a number by the fast check — before just repeating the
+      // same line, let the AI actually read what they said (another language,
+      // a word-number, or a real question) rather than assume it's unclear.
+      if (aiEnabled()) {
+        const resolved = await resolveOrderStepAnswer({
+          assistant, question: `how many ${po.productName} they'd like (a number)`, userText: text, history,
+          knownFacts: await productKnownFacts(po),
+        });
+        if (resolved.answered) {
+          const n = parseInt(resolved.value.replace(/[^\d]/g, ""), 10);
+          if (n > 0) return advanceOrder({ ...po, quantity: n });
+        } else if (resolved.reply) {
+          return emit([{ body: resolved.reply }], "awaiting_order_quantity", ctx);
+        }
+      }
       return emit([{ body: `Sorry, how many ${po.productName} would you like? (Just the number, e.g. "2")` }], "awaiting_order_quantity", ctx);
     }
     const qty = extractQuantity(text);
@@ -688,6 +713,14 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     // isn't a stray greeting or an unrelated question riding along.
     const trimmed = text.trim();
     if (!trimmed || trimmed.length > 100 || /\?/.test(trimmed)) {
+      if (aiEnabled()) {
+        const resolved = await resolveOrderStepAnswer({
+          assistant, question: `which option they want for ${po.productName} (choices: ${po.options})`, userText: text, history,
+          knownFacts: await productKnownFacts(po),
+        });
+        if (resolved.answered) return advanceOrder({ ...po, optionChosen: resolved.value });
+        if (resolved.reply) return emit([{ body: resolved.reply }], "awaiting_order_option", ctx);
+      }
       return emit([{ body: `Sorry, just to be clear — for ${po.productName}, which would you like? (${po.options})` }], "awaiting_order_option", ctx);
     }
     return advanceOrder({ ...po, optionChosen: trimmed });
@@ -703,6 +736,22 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     if (isPickupIntent(lower) && !isDeliveryIntent(lower)) {
       return advanceOrder({ ...po, fulfillment: "pickup" });
     }
+    // The fast keyword check didn't recognize either — let the AI read it
+    // properly (word forms it doesn't catch, another language, or a real
+    // question) instead of assuming it's unclear and repeating itself.
+    if (aiEnabled()) {
+      const resolved = await resolveOrderStepAnswer({
+        assistant, question: `whether they want ${po.productName} delivered, or will pick it up themselves — answer must be exactly "delivery" or "pickup"`, userText: text, history,
+        knownFacts: await productKnownFacts(po),
+      });
+      if (resolved.answered) {
+        const v = resolved.value.toLowerCase();
+        if (v.includes("deliver")) return advanceOrder({ ...po, fulfillment: "delivery" });
+        if (v.includes("pick")) return advanceOrder({ ...po, fulfillment: "pickup" });
+      } else if (resolved.reply) {
+        return emit([{ body: resolved.reply }], "awaiting_order_fulfillment", ctx);
+      }
+    }
     // Ambiguous or unrelated reply — ask again rather than guessing either way.
     return emit([{ body: `Sorry — just to confirm, would you like ${po.productName} delivered to you, or will you pick it up yourself?` }], "awaiting_order_fulfillment", ctx);
   }
@@ -711,7 +760,26 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     if (isDirectReply(lower, /\b(cancel|no|nope|nah|stop|don'?t)\b/i)) {
       return emit([{ body: "No problem — order cancelled. Let me know if you'd like anything else!" }], "open", { lastResource: ctx.lastResource });
     }
-    if (!isAddressDetailed(text)) {
+    if (!isAddressDetailed(text) || /\?/.test(text)) {
+      // Either too short/vague to be a real address, OR phrased as a question
+      // ("why do you need it?") — a word-count check alone can't tell those
+      // apart, so a real question gets a real answer instead of being wrongly
+      // accepted as an address.
+      if (/\?/.test(text) && aiEnabled()) {
+        const resolved = await resolveOrderStepAnswer({
+          assistant, question: `their delivery address (area, street, and a landmark)`, userText: text, history,
+          knownFacts: await productKnownFacts(po),
+        });
+        if (resolved.answered) {
+          if (isAddressDetailed(resolved.value)) {
+            const zones = await db.deliveryZone.findMany({ where: { tenantId: tenant.id, active: true } });
+            const zone = matchDeliveryZone(resolved.value, zones);
+            return advanceOrder({ ...po, deliveryAddress: resolved.value, deliveryFee: zone?.fee, deliveryZoneName: zone?.name });
+          }
+        } else if (resolved.reply) {
+          return emit([{ body: resolved.reply }], "awaiting_order_address", ctx);
+        }
+      }
       return emit([{ body: `Could you share a bit more detail — area, street, and a landmark nearby — so the delivery actually finds you?` }], "awaiting_order_address", ctx);
     }
     const address = text.trim();
@@ -792,101 +860,70 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     if (ctx.awaitingFeedbackTripId) await db.deliveryTrip.updateMany({ where: { id: ctx.awaitingFeedbackTripId }, data: { customerFeedback: text.trim() } });
     return emit([{ body: "Thanks so much for letting us know — really appreciate it! 🙏" }], "open", {});
   }
-  if (isProductImageRequest(lower)) {
-    // Only relevant for a tenant that actually sells things — otherwise this is
-    // about something else entirely ("photo of the campus") and should fall
-    // through to normal handling instead of talking about a nonexistent catalog.
-    const products = await db.product.findMany({ where: { tenantId: tenant.id, active: true, inStock: true } });
-    if (products.length > 0) {
-      const withPhotos = products.filter((p) => p.imageUrl);
-      const { hit } = matchProduct(text, products);
-      if (hit?.imageUrl) {
-        return emit([{ body: `${hit.name} — ${hit.currency} ${hit.price.toLocaleString("en-US")}`, kind: "image", image: { url: hit.imageUrl }, meta: { url: hit.imageUrl } }], "open", ctx);
+  // ── Commerce intent — AI-FIRST. Typo/language-tolerant (handles Swahili,
+  // Sheng, shorthand, "how much is X" vs an order, etc.) and grounded ONLY to
+  // this tenant's real catalog — the AI is given the exact product list and
+  // told to say "none" rather than guess. Keyword regexes are kept ONLY as the
+  // fallback when AI is unavailable, same convention as understand() above.
+  // This replaced a keyword-only version that produced real, reported bugs:
+  // "how much is X" read as an order, "do you have paybill" dumping the
+  // catalog, and Swahili messages never being understood as commerce at all. ──
+  {
+    const catalogProducts = await db.product.findMany({ where: { tenantId: tenant.id, active: true, inStock: true } });
+    if (catalogProducts.length > 0) {
+      const intent: CommerceIntent = aiEnabled()
+        ? await classifyCommerceMessage(text, catalogProducts.map((p) => ({ id: p.id, name: p.name })), history)
+        : localCommerceIntent(lower, text, catalogProducts);
+
+      if (intent.kind === "browse") {
+        return emit([{ body: formatCatalog(assistant, catalogProducts) }], "open", ctx);
       }
-      if (hit && !hit.imageUrl) {
-        return emit([{ body: `We don't have a photo of ${hit.name} uploaded yet — happy to describe it, or ask about price and sizes!` }], "open", ctx);
-      }
-      if (withPhotos.length > 0) {
-        const list = withPhotos.map((p) => p.name).join(", ");
-        return emit([{ body: `Sure — which one? We have photos of: ${list}.` }], "open", ctx);
-      }
-      return emit([{ body: "We don't have photos of our products uploaded yet — happy to describe any of them, or you can ask about price, sizes, or anything else!" }], "open", ctx);
-    }
-  }
-  if (isCatalogBrowseRequest(lower)) {
-    const products = await db.product.findMany({ where: { tenantId: tenant.id, active: true }, orderBy: [{ category: "asc" }, { name: "asc" }] });
-    if (products.length > 0) return emit([{ body: formatCatalog(assistant, products) }], "open", ctx);
-    // No catalog set up for this org — fall through to normal handling (e.g. FAQs/smallTalk).
-  }
-  if (isOrderRequest(lower)) {
-    const products = await db.product.findMany({ where: { tenantId: tenant.id, active: true, inStock: true } });
-    if (products.length > 0) {
-      const { hit, candidates } = matchProduct(text, products);
-      if (candidates) {
-        const list = candidates.map((c, i) => `${i + 1}. ${c.name} — ${c.currency} ${c.price.toLocaleString("en-US")}`).join("\n");
-        return emit([{ body: `I found a few matches — which one did you mean?\n${list}` }], "open", ctx);
-      }
-      if (hit) {
-        // Acknowledge a discount/negotiation request honestly instead of
-        // silently proceeding at full price as if they never asked.
-        const askedDiscount = /\b(discount|cheaper|lower price|reduce|bargain|deal|offer)\b/i.test(lower);
-        if (askedDiscount) await announceNow("We don't have discounts set up for this right now.");
-        // Never silently assume a quantity — ASK when they didn't say one.
-        if (!hasExplicitQuantity(text)) {
-          return emit(
-            [{ body: `How many ${hit.name} would you like?` }],
-            "awaiting_order_quantity",
-            { pendingOrder: { productId: hit.id, productName: hit.name, quantity: 0, unitPrice: hit.price, currency: hit.currency, options: hit.options } },
-          );
+      if (intent.kind === "image_question") {
+        const withPhotos = catalogProducts.filter((p) => p.imageUrl);
+        const hit = intent.productId ? catalogProducts.find((p) => p.id === intent.productId) : undefined;
+        if (hit?.imageUrl) {
+          return emit([{ body: `${hit.name} — ${hit.currency} ${hit.price.toLocaleString("en-US")}`, kind: "image", image: { url: hit.imageUrl }, meta: { url: hit.imageUrl } }], "open", ctx);
         }
-        const qty = extractQuantity(text);
-        return advanceOrder({ productId: hit.id, productName: hit.name, quantity: qty, unitPrice: hit.price, currency: hit.currency, options: hit.options });
+        if (hit && !hit.imageUrl) {
+          return emit([{ body: `We don't have a photo of ${hit.name} uploaded yet — happy to describe it, or ask about price and sizes!` }], "open", ctx);
+        }
+        if (withPhotos.length > 0) {
+          return emit([{ body: `Sure — which one? We have photos of: ${withPhotos.map((p) => p.name).join(", ")}.` }], "open", ctx);
+        }
+        return emit([{ body: "We don't have photos of our products uploaded yet — happy to describe any of them, or you can ask about price, sizes, or anything else!" }], "open", ctx);
       }
-      // Mentioned buying something but nothing matched a real product — offer the catalog instead of a dead end.
-      return emit([{ body: `I couldn't match that to something we sell. ${formatCatalog(assistant, products)}` }], "open", ctx);
-    }
-    // Org sells nothing (no products set up) — fall through to normal handling.
-  } else if (!/\?/.test(lower) && text.trim().split(/\s+/).length <= 4) {
-    // No buy verb, but a short message might STILL just be a bare product name
-    // ("mitumba") — check for an exact match before letting free-form AI chat
-    // improvise a fake "how many would you like?" exchange that has no real
-    // order behind it. Silent no-op if nothing matches (never dumps the catalog
-    // here — that's reserved for explicit buy intent above).
-    const products = await db.product.findMany({ where: { tenantId: tenant.id, active: true, inStock: true } });
-    const hit = findExactProductMention(text, products);
-    if (hit) {
-      if (!hasExplicitQuantity(text)) {
-        return emit(
-          [{ body: `How many ${hit.name} would you like?` }],
-          "awaiting_order_quantity",
-          { pendingOrder: { productId: hit.id, productName: hit.name, quantity: 0, unitPrice: hit.price, currency: hit.currency, options: hit.options } },
-        );
+      if (intent.kind === "price_question") {
+        const hit = intent.productId ? catalogProducts.find((p) => p.id === intent.productId) : undefined;
+        if (hit) {
+          const parts = [`${hit.name} — ${hit.currency} ${hit.price.toLocaleString("en-US")}`];
+          if (hit.description) parts.push(hit.description);
+          if (hit.options) parts.push(`Choices: ${hit.options}`);
+          return emit([{ body: parts.join(". ") }], "open", ctx);
+        }
+        return emit([{ body: `Which product did you mean? ${formatCatalog(assistant, catalogProducts)}` }], "open", ctx);
       }
-      const qty = extractQuantity(text);
-      return advanceOrder({ productId: hit.id, productName: hit.name, quantity: qty, unitPrice: hit.price, currency: hit.currency, options: hit.options });
-    }
-  }
-  if (isProductAttributeQuestion(lower)) {
-    // A question ABOUT a product (price, size, color, description) that isn't
-    // covered by the browse/order/image checks above — must stay in the
-    // commerce domain and be answered from real catalog data, never fall
-    // through to general intent-routing where it can misfire onto an unrelated
-    // action (the exact bug that shipped: "tell me about the price and size"
-    // once got answered with a school fee balance).
-    const products = await db.product.findMany({ where: { tenantId: tenant.id, active: true, inStock: true } });
-    if (products.length > 0) {
-      const { hit, candidates } = matchProduct(text, products);
-      if (hit) {
-        const parts = [`${hit.name} — ${hit.currency} ${hit.price.toLocaleString("en-US")}`];
-        if (hit.description) parts.push(hit.description);
-        if (hit.options) parts.push(`Choices: ${hit.options}`);
-        return emit([{ body: parts.join(". ") }], "open", ctx);
+      if (intent.kind === "order") {
+        const hit = catalogProducts.find((p) => p.id === intent.productId);
+        if (hit) {
+          // Acknowledge a discount/negotiation request honestly instead of
+          // silently proceeding at full price as if they never asked.
+          const askedDiscount = /\b(discount|cheaper|lower price|reduce|bargain|deal|offer)\b/i.test(lower);
+          if (askedDiscount) await announceNow("We don't have discounts set up for this right now.");
+          // The AI may have already extracted a quantity AND an option answer
+          // from ONE message ("rangi ya blue, size yoyote na nataka tano") —
+          // use them directly instead of re-asking for something already given.
+          if (intent.quantity == null) {
+            return emit(
+              [{ body: `How many ${hit.name} would you like?` }],
+              "awaiting_order_quantity",
+              { pendingOrder: { productId: hit.id, productName: hit.name, quantity: 0, unitPrice: hit.price, currency: hit.currency, options: hit.options, optionChosen: intent.optionAnswer } },
+            );
+          }
+          return advanceOrder({ productId: hit.id, productName: hit.name, quantity: intent.quantity, unitPrice: hit.price, currency: hit.currency, options: hit.options, optionChosen: intent.optionAnswer });
+        }
       }
-      if (candidates && candidates.length) {
-        const list = candidates.map((c, i) => `${i + 1}. ${c.name} — ${c.currency} ${c.price.toLocaleString("en-US")}`).join("\n");
-        return emit([{ body: `Which one did you mean?\n${list}` }], "open", ctx);
-      }
-      return emit([{ body: `Which product did you mean? ${formatCatalog(assistant, products)}` }], "open", ctx);
+      // intent.kind === "none" (or an order with no valid product resolved) →
+      // fall through to normal handling below (FAQs, general questions, etc.).
     }
   }
 
@@ -1094,6 +1131,33 @@ async function dispatchAction(
  *  these work for ANY sender, independent of the org's connector actions. */
 function toolCapabilityLines(): string[] {
   return allTools().map((t) => `${t.name} — ${t.description} (the user just needs to SEND the file, no need to ask first)`);
+}
+
+/** AI-unavailable-only fallback for commerce intent — the old keyword-regex
+ *  approach, kept solely so the platform still works with zero API key
+ *  configured. When AI is enabled (the normal case), classifyCommerceMessage()
+ *  in ai.ts is used instead — it understands meaning, typos, and any language,
+ *  which this cannot. */
+function localCommerceIntent(lower: string, text: string, products: Parameters<typeof matchProduct>[1]): CommerceIntent {
+  if (isProductImageRequest(lower)) {
+    const { hit } = matchProduct(text, products);
+    return { kind: "image_question", productId: hit?.id };
+  }
+  if (isCatalogBrowseRequest(lower)) return { kind: "browse" };
+  if (isOrderRequest(lower)) {
+    const { hit } = matchProduct(text, products);
+    if (hit) return { kind: "order", productId: hit.id, quantity: hasExplicitQuantity(text) ? extractQuantity(text) : undefined };
+    return { kind: "none" };
+  }
+  if (!/\?/.test(lower) && text.trim().split(/\s+/).length <= 4) {
+    const hit = findExactProductMention(text, products);
+    if (hit) return { kind: "order", productId: hit.id, quantity: hasExplicitQuantity(text) ? extractQuantity(text) : undefined };
+  }
+  if (isProductAttributeQuestion(lower)) {
+    const { hit } = matchProduct(text, products);
+    return { kind: "price_question", productId: hit?.id };
+  }
+  return { kind: "none" };
 }
 
 function buildKnownFacts(displayName: string | null | undefined, grants: Record<string, ResourceGrant[]>, lastOrder?: ConvContext["lastOrder"]): string {

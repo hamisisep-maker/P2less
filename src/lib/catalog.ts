@@ -47,12 +47,15 @@ export function isProductAttributeQuestion(lower: string): boolean {
   return /\b(price|prize|cost|how much|size|sizes|colou?r|colours?|material|spec|specs|specification|detail|details|description)\b/i.test(lower);
 }
 
-/** Delivery vs pickup — asked once per order so we never silently assume. */
+/** Delivery vs pickup — asked once per order so we never silently assume.
+ *  NOTE: \b after "deliver" alone does NOT match "delivered"/"delivering" (the
+ *  next character is still a word character) — a real bug that made "delivered"
+ *  fail to register as an answer. Match the stem without a trailing boundary. */
 export function isDeliveryIntent(lower: string): boolean {
-  return /\b(deliver|delivery|drop off|bring it|send it (to|over)|courier)\b/i.test(lower);
+  return /\bdeliver|\bdrop(ped|ping)? off|bring it|send it (to|over)|\bcourier/i.test(lower);
 }
 export function isPickupIntent(lower: string): boolean {
-  return /\b(pick ?up|collect|myself|in person|come to the shop|i'?ll come|i will come|at the shop|self ?collect)\b/i.test(lower);
+  return /\bpick(ed|ing)? ?up|\bcollect(ed|ing)?\b|\bmyself\b|in person|come to the shop|i'?ll come|i will come|at the shop|self ?collect/i.test(lower);
 }
 
 /** Is this address detailed enough to actually find the place, or too vague to

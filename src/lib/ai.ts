@@ -348,6 +348,97 @@ export async function understand(text: string, actions: IntentAction[], history:
   return { ...matchIntent(text, actions), via: "local" };
 }
 
+// ── 1b) Commerce intent (typo/language-tolerant, grounded to the REAL catalog) ──
+// Same discipline as understand(): the AI picks from a list it's given (real
+// product ids only, never invented) and returns "none" when unsure rather than
+// guessing. This exists because keyword regexes cannot handle typos ("procys"),
+// alternate phrasing ("how much is X" ≠ an order), or non-English input
+// (Swahili "bei gani", "nataka tano") — all real, reported failures.
+export type CommerceIntent =
+  | { kind: "browse" }
+  | { kind: "order"; productId: string; quantity?: number; optionAnswer?: string }
+  | { kind: "price_question"; productId?: string }
+  | { kind: "image_question"; productId?: string }
+  | { kind: "none" };
+
+export async function classifyCommerceMessage(
+  text: string,
+  products: { id: string; name: string }[],
+  history: ChatTurn[] = [],
+): Promise<CommerceIntent> {
+  if (!aiEnabled() || products.length === 0) return { kind: "none" };
+  const catalog = products.map((p) => `- id="${p.id}": ${p.name}`).join("\n");
+  const convo = history.length ? `RECENT CONVERSATION (use it to resolve short follow-ups — e.g. after discussing "the sweater", "blue, any size, five of them" answers THAT product):\n${transcript(history)}\n\n` : "";
+  const system = `You are a shopping-intent classifier for a WhatsApp business assistant. The business sells EXACTLY these products — never invent, assume, or match a different one:
+${catalog}
+
+Classify the user's CURRENT message. Understand ANY language (English, Swahili, Sheng, mixed) and tolerate typos/shorthand — read for MEANING, not exact keywords.
+- "browse": asking what's for sale in general, not about one specific product.
+- "order": wants to buy/order a SPECIFIC product from the list. Extract quantity as a number if one was genuinely stated, in ANY language or word form ("tano"→5, "five"→5, "5"→5) — omit if not stated, never default to 1. If the message also answers a color/size/variant choice, put that free text in optionAnswer.
+- "price_question": asking the price/cost/"how much"/"bei gani" for a product (a specific one if identifiable, else omit productId).
+- "image_question": asking to see a photo/picture/image of a product.
+- "none": anything else — a different question, small talk, unrelated topic. If genuinely unsure which of the above it is, choose "none" rather than guessing.
+
+Respond with ONLY compact JSON: {"kind":"browse"|"order"|"price_question"|"image_question"|"none","productId":"<exact id from the list, or omit>","quantity":<number, or omit>,"optionAnswer":"<text, or omit>"}`;
+  const raw = await callLLM(system, `${convo}Current message: ${JSON.stringify(text)}`, { maxTokens: 150, temperature: 0 });
+  if (!raw) return { kind: "none" };
+  try {
+    const parsed = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)) as { kind?: string; productId?: string; quantity?: number; optionAnswer?: string };
+    const validId = parsed.productId && products.some((p) => p.id === parsed.productId) ? parsed.productId : undefined;
+    if (parsed.kind === "order" && validId) {
+      return { kind: "order", productId: validId, quantity: typeof parsed.quantity === "number" && parsed.quantity > 0 ? Math.floor(parsed.quantity) : undefined, optionAnswer: parsed.optionAnswer || undefined };
+    }
+    if (parsed.kind === "price_question") return { kind: "price_question", productId: validId };
+    if (parsed.kind === "image_question") return { kind: "image_question", productId: validId };
+    if (parsed.kind === "browse") return { kind: "browse" };
+    return { kind: "none" };
+  } catch {
+    return { kind: "none" };
+  }
+}
+
+/** Interprets a free-form reply to ONE pending order question (quantity, a
+ *  color/size choice, delivery-vs-pickup, or a delivery address) when the fast
+ *  deterministic check didn't recognize it. Used so a state never just repeats
+ *  its canned question verbatim when the customer said something real — asks
+ *  something else, answers unclearly, or the wording just didn't match a
+ *  regex. If they answered, extracts the value; if not, produces an honest,
+ *  natural, non-repetitive reply (answering their real question if it can from
+ *  what it actually knows) that still ends by restating what's needed. */
+export async function resolveOrderStepAnswer(opts: {
+  assistant: string;
+  question: string; // what we're waiting for, in plain words, e.g. "how many they want" | "delivery or pickup" | "their delivery address" | "which color/size (Colors: Navy, Grey)"
+  userText: string;
+  knownFacts?: string;
+  history?: ChatTurn[];
+}): Promise<{ answered: true; value: string } | { answered: false; reply: string }> {
+  if (!aiEnabled()) return { answered: false, reply: "" };
+  const known = `\n\nWHAT YOU ACTUALLY KNOW ABOUT THIS PRODUCT (this is the COMPLETE list — nothing else about it is known, not even by inference):\n${opts.knownFacts || "(nothing beyond the name)"}`;
+  const system = `You are a warm, sharp human staff member for ${opts.assistant} on WhatsApp, mid-way through taking an order. You are currently waiting for ONE specific thing: ${opts.question}.
+
+The customer just replied. Two possibilities:
+1. Their reply GENUINELY answers what you asked (even phrased oddly, in another language, or with a typo) — extract it.
+2. They said something else — a real question, a comment, confusion, pushback — not an answer.
+
+LANGUAGE: ${langDirective(opts.userText)}
+CRITICAL RULE — DO NOT INVENT: if they ask about ANYTHING not explicitly listed under "WHAT YOU ACTUALLY KNOW" below (colors, sizes, materials, stock, brand, specs, delivery time, anything) — do NOT guess or make up a plausible-sounding answer, even one word of it. Say plainly that it's not something you have on file and you'll check with the team, THEN continue toward what you still need. Inventing details that don't exist is the single worst thing you can do here — a customer could pay for something based on a detail you made up. When in doubt, say you don't know.
+Never just repeat a canned line — sound like a real person, vary your wording, a touch of warmth or light humor is welcome but keep it brief and helpful, then naturally circle back to what you still need.${known}
+
+Respond with ONLY compact JSON:
+{"answered": true, "value": "<the extracted answer, exactly as they'd want it recorded>"} — if case 1
+{"answered": false, "reply": "<your natural reply text>"} — if case 2`;
+  const raw = await callLLM(system, `Customer said: ${JSON.stringify(opts.userText)}`, { maxTokens: 200, temperature: 0.6, history: opts.history });
+  if (!raw) return { answered: false, reply: "" };
+  try {
+    const parsed = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)) as { answered?: boolean; value?: string; reply?: string };
+    if (parsed.answered && parsed.value) return { answered: true, value: String(parsed.value) };
+    if (parsed.reply) return { answered: false, reply: String(parsed.reply) };
+    return { answered: false, reply: "" };
+  } catch {
+    return { answered: false, reply: "" };
+  }
+}
+
 // ── 2) Human-like reply (grounded rephrase — no hallucination, in flow) ─────
 export async function humanizeReply(orgName: string, userText: string, factText: string, history: ChatTurn[] = []): Promise<string> {
   if (!aiEnabled() || !factText) return factText;
