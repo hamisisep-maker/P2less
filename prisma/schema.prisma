@@ -139,6 +139,10 @@ model Product {
   category    String?
   sku         String?
   imageUrl    String?
+  // Free-text description of choices a customer must make before ordering, e.g.
+  // "Colors: Navy, Grey, Black" or "Sizes: S, M, L, XL". Null/blank = nothing to
+  // choose. Deliberately free text, not a rigid variant/inventory system.
+  options     String?
   inStock     Boolean  @default(true)
   active      Boolean  @default(true) // soft-disable without deleting
   createdAt   DateTime @default(now())
@@ -160,6 +164,8 @@ model Order {
   totalAmount Int
   currency    String      @default("KES")
   status      String      @default("pending") // pending | paid | failed | cancelled
+  fulfillment String      @default("pickup") // pickup | delivery
+  deliveryAddress String? // free text, only set when fulfillment = delivery
   payment     Payment?
   createdAt   DateTime    @default(now())
   paidAt      DateTime?
@@ -177,6 +183,7 @@ model OrderItem {
   quantity  Int     @default(1)
   unitPrice Int // snapshot of Product.price at order time — price changes later don't rewrite history
   name      String // snapshot of Product.name — survives if the product is later renamed/deleted
+  optionChosen String? // e.g. "Navy, size M" — the customer's answer to Product.options, if any
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

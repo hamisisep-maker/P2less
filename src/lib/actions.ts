@@ -202,6 +202,7 @@ const productSchema = z.object({
   currency: z.string().min(3).max(3).optional().default("KES"),
   category: z.string().max(60).optional().default(""),
   sku: z.string().max(60).optional().default(""),
+  options: z.string().max(200).optional().default(""),
   inStock: z.coerce.boolean().optional().default(true),
 });
 
@@ -217,8 +218,8 @@ export async function saveProductAction(_prev: unknown, formData: FormData) {
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid product details." };
   const d = parsed.data;
   const id = String(formData.get("id") ?? "");
-  const data: { name: string; description: string | null; price: number; currency: string; category: string | null; sku: string | null; inStock: boolean; imageUrl?: string } = {
-    name: d.name, description: d.description || null, price: d.price, currency: d.currency, category: d.category || null, sku: d.sku || null, inStock: d.inStock,
+  const data: { name: string; description: string | null; price: number; currency: string; category: string | null; sku: string | null; options: string | null; inStock: boolean; imageUrl?: string } = {
+    name: d.name, description: d.description || null, price: d.price, currency: d.currency, category: d.category || null, sku: d.sku || null, options: d.options || null, inStock: d.inStock,
   };
 
   // A new photo is optional — an empty file input submits a zero-byte File, and

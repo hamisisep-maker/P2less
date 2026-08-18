@@ -10,7 +10,7 @@ import { deliver } from "./transport";
 import { generateReportCard, generatePayslipPdf, generateLeavePdf, generateFeeStatementPdf, generateCvPdf, type GeneratedDoc } from "./documents";
 import { isCvRequest, extractCvData } from "./cv-writer";
 import { requestId as newRequestId, randomToken } from "./crypto";
-import { isCatalogBrowseRequest, isOrderRequest, formatCatalog, matchProduct, extractQuantity, startOrderPayment, findExactProductMention, hasExplicitQuantity, isProductImageRequest } from "./catalog";
+import { isCatalogBrowseRequest, isOrderRequest, formatCatalog, matchProduct, extractQuantity, startOrderPayment, findExactProductMention, hasExplicitQuantity, isProductImageRequest, isProductAttributeQuestion, isDeliveryIntent, isPickupIntent, isAddressDetailed } from "./catalog";
 import { dispatchWebhook } from "./webhooks";
 import { extractDate, extractTime, isGreeting, type IntentAction } from "./intent-engine";
 import { pickTool, allTools } from "./tools";
@@ -70,8 +70,16 @@ type ConvContext = {
   // asides counts non-productive replies, so we stop repeating the identical
   // canned prompt and instead acknowledge + rephrase from the 2nd try onward.
   cvBuilder?: { rawText: string; asides?: number };
-  // A product order awaiting CONFIRM before the real M-Pesa charge fires.
-  pendingOrder?: { productId: string; productName: string; quantity: number; unitPrice: number; currency: string };
+  // A product order being built up step by step — never skip a step the
+  // product/order actually needs, so nobody ends up paying for something they
+  // didn't fully specify.
+  pendingOrder?: {
+    productId: string; productName: string; quantity: number; unitPrice: number; currency: string;
+    options?: string | null; // copied from the product — what they need to choose (color/size/etc.), if anything
+    optionChosen?: string; // their free-text answer to `options`
+    fulfillment?: "pickup" | "delivery";
+    deliveryAddress?: string;
+  };
   // The most recently PLACED order (pending payment or paid) — kept in context so
   // a follow-up question right after ("which number did you send it to?") can be
   // answered from real data instead of the AI having nothing to go on and
@@ -219,6 +227,37 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // final emit() at the end of this turn still owns that.
   const announceNow = async (body: string) => {
     await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body, fromNumberId: number.phoneNumberId });
+  };
+
+  // Full recap of a pending order — restates EVERYTHING the customer chose
+  // (product, option, quantity, delivery/pickup) so CONFIRM is on the real
+  // order, never a guess.
+  const orderRecapText = (po: NonNullable<ConvContext["pendingOrder"]>) => {
+    const total = po.unitPrice * po.quantity;
+    const lines = [
+      `${po.quantity} × ${po.productName}${po.optionChosen ? ` (${po.optionChosen})` : ""} = ${po.currency} ${total.toLocaleString("en-US")}`,
+      po.fulfillment === "delivery" ? `Delivery to: ${po.deliveryAddress} (delivery fee not yet calculated — the shop will confirm it separately)` : `Pickup in person — no delivery`,
+    ];
+    return lines.join("\n");
+  };
+
+  // Advances a pending order to whatever it's still missing — never skips a
+  // step. Order: quantity (asked before this is ever called) → options
+  // (color/size, only if the product has any) → delivery-vs-pickup → the
+  // delivery address (only if delivery) → final recap + CONFIRM/CANCEL. Every
+  // step is asked explicitly; nothing is assumed, and the final recap restates
+  // everything the customer chose so they confirm the REAL order, not a guess.
+  const advanceOrder = (po: NonNullable<ConvContext["pendingOrder"]>) => {
+    if (po.options && !po.optionChosen) {
+      return emit([{ body: `For ${po.productName}, which would you like — ${po.options}?` }], "awaiting_order_option", { pendingOrder: po });
+    }
+    if (!po.fulfillment) {
+      return emit([{ body: `Would you like this delivered, or will you pick it up yourself?` }], "awaiting_order_fulfillment", { pendingOrder: po });
+    }
+    if (po.fulfillment === "delivery" && !po.deliveryAddress) {
+      return emit([{ body: `What's the delivery address? Please be specific — area, street, and a landmark — so it actually gets to you.` }], "awaiting_order_address", { pendingOrder: po });
+    }
+    return emit([{ body: `Here's your order — please check it's right:\n${orderRecapText(po)}\n\nReply CONFIRM to pay via M-Pesa, or CANCEL to stop.` }], "awaiting_order_confirm", { pendingOrder: po });
   };
 
   const text = input.text.trim();
@@ -604,12 +643,45 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       return emit([{ body: `Sorry, how many ${po.productName} would you like? (Just the number, e.g. "2")` }], "awaiting_order_quantity", ctx);
     }
     const qty = extractQuantity(text);
-    const total = po.unitPrice * qty;
-    return emit(
-      [{ body: `${qty} × ${po.productName} = ${po.currency} ${total.toLocaleString("en-US")}. Reply CONFIRM to pay via M-Pesa, or CANCEL to stop.` }],
-      "awaiting_order_confirm",
-      { pendingOrder: { ...po, quantity: qty } },
-    );
+    return advanceOrder({ ...po, quantity: qty });
+  }
+  if (conversation.status === "awaiting_order_option" && ctx.pendingOrder) {
+    const po = ctx.pendingOrder;
+    if (isDirectReply(lower, /\b(cancel|no|nope|nah|stop|don'?t)\b/i)) {
+      return emit([{ body: "No problem — order cancelled. Let me know if you'd like anything else!" }], "open", { lastResource: ctx.lastResource });
+    }
+    // Any real, non-empty answer counts — this is free text (color/size/etc.),
+    // not something we can validate against a fixed list, so just make sure it
+    // isn't a stray greeting or an unrelated question riding along.
+    const trimmed = text.trim();
+    if (!trimmed || trimmed.length > 100 || /\?/.test(trimmed)) {
+      return emit([{ body: `Sorry, just to be clear — for ${po.productName}, which would you like? (${po.options})` }], "awaiting_order_option", ctx);
+    }
+    return advanceOrder({ ...po, optionChosen: trimmed });
+  }
+  if (conversation.status === "awaiting_order_fulfillment" && ctx.pendingOrder) {
+    const po = ctx.pendingOrder;
+    if (isDirectReply(lower, /\b(cancel|no|nope|nah|stop|don'?t)\b/i) && !isPickupIntent(lower) && !isDeliveryIntent(lower)) {
+      return emit([{ body: "No problem — order cancelled. Let me know if you'd like anything else!" }], "open", { lastResource: ctx.lastResource });
+    }
+    if (isDeliveryIntent(lower) && !isPickupIntent(lower)) {
+      return advanceOrder({ ...po, fulfillment: "delivery" });
+    }
+    if (isPickupIntent(lower) && !isDeliveryIntent(lower)) {
+      return advanceOrder({ ...po, fulfillment: "pickup" });
+    }
+    // Ambiguous or unrelated reply — ask again rather than guessing either way.
+    return emit([{ body: `Sorry — just to confirm, would you like ${po.productName} delivered to you, or will you pick it up yourself?` }], "awaiting_order_fulfillment", ctx);
+  }
+  if (conversation.status === "awaiting_order_address" && ctx.pendingOrder) {
+    const po = ctx.pendingOrder;
+    if (isDirectReply(lower, /\b(cancel|no|nope|nah|stop|don'?t)\b/i)) {
+      return emit([{ body: "No problem — order cancelled. Let me know if you'd like anything else!" }], "open", { lastResource: ctx.lastResource });
+    }
+    if (!isAddressDetailed(text)) {
+      return emit([{ body: `Could you share a bit more detail — area, street, and a landmark nearby — so the delivery actually finds you?` }], "awaiting_order_address", ctx);
+    }
+    return advanceOrder({ ...po, deliveryAddress: text.trim() });
   }
   if (conversation.status === "awaiting_order_confirm" && ctx.pendingOrder) {
     // This gates a REAL money charge — a false positive here means firing an
@@ -629,7 +701,11 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       const total = po.unitPrice * po.quantity;
       const reference = "ORD-" + randomToken(4).toUpperCase();
       const order = await db.order.create({
-        data: { tenantId: tenant.id, contactId: contact.id, reference, totalAmount: total, currency: po.currency, status: "pending", items: { create: [{ productId: po.productId, quantity: po.quantity, unitPrice: po.unitPrice, name: po.productName }] } },
+        data: {
+          tenantId: tenant.id, contactId: contact.id, reference, totalAmount: total, currency: po.currency, status: "pending",
+          fulfillment: po.fulfillment ?? "pickup", deliveryAddress: po.fulfillment === "delivery" ? po.deliveryAddress ?? null : null,
+          items: { create: [{ productId: po.productId, quantity: po.quantity, unitPrice: po.unitPrice, name: po.productName, optionChosen: po.optionChosen ?? null }] },
+        },
       });
       const res = await startOrderPayment({ tenantId: tenant.id, orderId: order.id, phone: senderAddress, amountKes: total, reference });
       if (!res.ok) return emit([{ body: `Couldn't start payment: ${res.error}. Reply CONFIRM to try again, or CANCEL to stop.` }], "awaiting_order_confirm", ctx);
@@ -652,16 +728,14 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     if (qtyMatch && /\b(need|want|make it|change|actually|instead|of them|of it|please)\b/i.test(lower)) {
       const newQty = Math.max(1, parseInt(qtyMatch[1], 10));
       const updated = { ...po, quantity: newQty };
-      const total = updated.unitPrice * newQty;
       return emit(
-        [{ body: `Updated: ${newQty} × ${updated.productName} = ${updated.currency} ${total.toLocaleString("en-US")}. Reply CONFIRM to pay via M-Pesa, or CANCEL to stop.` }],
+        [{ body: `Updated:\n${orderRecapText(updated)}\n\nReply CONFIRM to pay via M-Pesa, or CANCEL to stop.` }],
         "awaiting_order_confirm",
         { pendingOrder: updated },
       );
     }
-    const total = po.unitPrice * po.quantity;
     const stc = aiEnabled() ? await smallTalk(assistant, text, [], history, knownFacts, orgFaqs) : null;
-    const remind = `${po.quantity} × ${po.productName} = ${po.currency} ${total.toLocaleString("en-US")}. Reply CONFIRM to pay via M-Pesa, or CANCEL to stop.`;
+    const remind = `${orderRecapText(po)}\n\nReply CONFIRM to pay via M-Pesa, or CANCEL to stop.`;
     return emit([{ body: stc ? `${stc}\n\n${remind}` : remind }], "awaiting_order_confirm", ctx);
   }
   if (isProductImageRequest(lower)) {
@@ -702,22 +776,17 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
         // Acknowledge a discount/negotiation request honestly instead of
         // silently proceeding at full price as if they never asked.
         const askedDiscount = /\b(discount|cheaper|lower price|reduce|bargain|deal|offer)\b/i.test(lower);
-        const prefix = askedDiscount ? "We don't have discounts set up for this right now. " : "";
+        if (askedDiscount) await announceNow("We don't have discounts set up for this right now.");
         // Never silently assume a quantity — ASK when they didn't say one.
         if (!hasExplicitQuantity(text)) {
           return emit(
-            [{ body: `${prefix}How many ${hit.name} would you like?` }],
+            [{ body: `How many ${hit.name} would you like?` }],
             "awaiting_order_quantity",
-            { pendingOrder: { productId: hit.id, productName: hit.name, quantity: 0, unitPrice: hit.price, currency: hit.currency } },
+            { pendingOrder: { productId: hit.id, productName: hit.name, quantity: 0, unitPrice: hit.price, currency: hit.currency, options: hit.options } },
           );
         }
         const qty = extractQuantity(text);
-        const total = hit.price * qty;
-        return emit(
-          [{ body: `${prefix}${qty} × ${hit.name} = ${hit.currency} ${total.toLocaleString("en-US")}. Reply CONFIRM to pay via M-Pesa, or CANCEL to stop.` }],
-          "awaiting_order_confirm",
-          { pendingOrder: { productId: hit.id, productName: hit.name, quantity: qty, unitPrice: hit.price, currency: hit.currency } },
-        );
+        return advanceOrder({ productId: hit.id, productName: hit.name, quantity: qty, unitPrice: hit.price, currency: hit.currency, options: hit.options });
       }
       // Mentioned buying something but nothing matched a real product — offer the catalog instead of a dead end.
       return emit([{ body: `I couldn't match that to something we sell. ${formatCatalog(assistant, products)}` }], "open", ctx);
@@ -736,16 +805,34 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
         return emit(
           [{ body: `How many ${hit.name} would you like?` }],
           "awaiting_order_quantity",
-          { pendingOrder: { productId: hit.id, productName: hit.name, quantity: 0, unitPrice: hit.price, currency: hit.currency } },
+          { pendingOrder: { productId: hit.id, productName: hit.name, quantity: 0, unitPrice: hit.price, currency: hit.currency, options: hit.options } },
         );
       }
       const qty = extractQuantity(text);
-      const total = hit.price * qty;
-      return emit(
-        [{ body: `${qty} × ${hit.name} = ${hit.currency} ${total.toLocaleString("en-US")}. Reply CONFIRM to pay via M-Pesa, or CANCEL to stop.` }],
-        "awaiting_order_confirm",
-        { pendingOrder: { productId: hit.id, productName: hit.name, quantity: qty, unitPrice: hit.price, currency: hit.currency } },
-      );
+      return advanceOrder({ productId: hit.id, productName: hit.name, quantity: qty, unitPrice: hit.price, currency: hit.currency, options: hit.options });
+    }
+  }
+  if (isProductAttributeQuestion(lower)) {
+    // A question ABOUT a product (price, size, color, description) that isn't
+    // covered by the browse/order/image checks above — must stay in the
+    // commerce domain and be answered from real catalog data, never fall
+    // through to general intent-routing where it can misfire onto an unrelated
+    // action (the exact bug that shipped: "tell me about the price and size"
+    // once got answered with a school fee balance).
+    const products = await db.product.findMany({ where: { tenantId: tenant.id, active: true, inStock: true } });
+    if (products.length > 0) {
+      const { hit, candidates } = matchProduct(text, products);
+      if (hit) {
+        const parts = [`${hit.name} — ${hit.currency} ${hit.price.toLocaleString("en-US")}`];
+        if (hit.description) parts.push(hit.description);
+        if (hit.options) parts.push(`Choices: ${hit.options}`);
+        return emit([{ body: parts.join(". ") }], "open", ctx);
+      }
+      if (candidates && candidates.length) {
+        const list = candidates.map((c, i) => `${i + 1}. ${c.name} — ${c.currency} ${c.price.toLocaleString("en-US")}`).join("\n");
+        return emit([{ body: `Which one did you mean?\n${list}` }], "open", ctx);
+      }
+      return emit([{ body: `Which product did you mean? ${formatCatalog(assistant, products)}` }], "open", ctx);
     }
   }
 

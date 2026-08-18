@@ -14,7 +14,7 @@ import { stkPush, isConfigured } from "./mpesa";
 // a natural next step (per-tenant payment config), not yet built.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type CatalogProduct = { id: string; name: string; description: string | null; price: number; currency: string; category: string | null; inStock: boolean; imageUrl?: string | null };
+export type CatalogProduct = { id: string; name: string; description: string | null; price: number; currency: string; category: string | null; inStock: boolean; imageUrl?: string | null; options?: string | null };
 
 /** Does this message look like someone asking what's for sale? Excludes "do you
  *  have X" when X is a specific different topic (an image, a warranty, delivery,
@@ -32,6 +32,35 @@ export function isCatalogBrowseRequest(lower: string): boolean {
  *  intent). */
 export function isProductImageRequest(lower: string): boolean {
   return /\b(image|images|photo|photos|picture|pictures|pic|pics)\b/i.test(lower);
+}
+
+/** A question ABOUT a product (price, size, color, material, description) that
+ *  should stay in the commerce domain and be answered from real catalog data —
+ *  never leak into an unrelated connector action (a real bug: "tell me about
+ *  the price and size" once got answered with a school fee balance because
+ *  nothing caught it before it reached general intent-routing). Excludes
+ *  messages that are clearly about something else even if they share a word
+ *  ("how much are the fees" contains "how much" but is not a product question). */
+export function isProductAttributeQuestion(lower: string): boolean {
+  const domainExclusions = /\b(fee|fees|balance|attendance|exam|results?|appointment|leave|payslip|salary|admission|grade|arrived|meeting)\b/i;
+  if (domainExclusions.test(lower)) return false;
+  return /\b(price|prize|cost|how much|size|sizes|colou?r|colours?|material|spec|specs|specification|detail|details|description)\b/i.test(lower);
+}
+
+/** Delivery vs pickup — asked once per order so we never silently assume. */
+export function isDeliveryIntent(lower: string): boolean {
+  return /\b(deliver|delivery|drop off|bring it|send it (to|over)|courier)\b/i.test(lower);
+}
+export function isPickupIntent(lower: string): boolean {
+  return /\b(pick ?up|collect|myself|in person|come to the shop|i'?ll come|i will come|at the shop|self ?collect)\b/i.test(lower);
+}
+
+/** Is this address detailed enough to actually find the place, or too vague to
+ *  hand to a driver ("nairobi" alone isn't enough — ask for more, same reasoning
+ *  as never assuming an unspecified quantity). */
+export function isAddressDetailed(text: string): boolean {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  return words.length >= 3;
 }
 
 /** Does this message look like a request to buy something? Catches an explicit
@@ -57,7 +86,7 @@ export function formatCatalog(assistant: string, products: CatalogProduct[]): st
   for (const [cat, items] of byCategory) {
     const lines = items.map((p) => {
       if (p.imageUrl) anyPhotos = true;
-      return `• ${p.name} — ${p.currency} ${p.price.toLocaleString("en-US")}${p.description ? ` (${p.description})` : ""}${p.imageUrl ? " 📷" : ""}`;
+      return `• ${p.name} — ${p.currency} ${p.price.toLocaleString("en-US")}${p.description ? ` (${p.description})` : ""}${p.options ? ` [${p.options}]` : ""}${p.imageUrl ? " 📷" : ""}`;
     });
     parts.push(byCategory.size > 1 ? `*${cat}*\n${lines.join("\n")}` : lines.join("\n"));
   }
