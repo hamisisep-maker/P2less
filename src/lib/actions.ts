@@ -12,6 +12,7 @@ import { PERMISSIONS, DEFAULT_USER_ROLES, DEFAULT_CONTACT_ROLES } from "./permis
 import { computeBill } from "./billing";
 import { stkPush, isConfigured } from "./mpesa";
 import { storeProductImage } from "./documents";
+import { normalizePhone } from "./conversation";
 import type { ParamSpec } from "./connector-engine";
 
 export async function loginAction(_prev: unknown, formData: FormData) {
@@ -253,6 +254,80 @@ export async function toggleProductActiveAction(formData: FormData) {
   if (!product) return;
   await db.product.update({ where: { id }, data: { active: !product.active } });
   revalidatePath("/dashboard/products");
+}
+
+// ── Delivery zones — manual pricing tiers the assistant matches a customer's
+// address against ("Within Nairobi CBD" = KES 200) since no Maps/geocoding API
+// is wired in yet ─────────────────────────────────────────────────────────────
+const deliveryZoneSchema = z.object({
+  name: z.string().min(1).max(120),
+  description: z.string().max(300).optional().default(""),
+  fee: z.coerce.number().int().min(0),
+});
+
+export async function saveDeliveryZoneAction(_prev: unknown, formData: FormData) {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.DELIVERY_MANAGE)) return { error: "You don't have permission to manage delivery zones." };
+  const parsed = deliveryZoneSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid delivery zone details." };
+  const d = parsed.data;
+  const id = String(formData.get("id") ?? "");
+  const data = { name: d.name, description: d.description || null, fee: d.fee };
+  if (id) {
+    await db.deliveryZone.updateMany({ where: { id, tenantId: user.tenantId! }, data });
+  } else {
+    await db.deliveryZone.create({ data: { tenantId: user.tenantId!, ...data } });
+  }
+  revalidatePath("/dashboard/delivery");
+  return { ok: true, editedId: id || undefined };
+}
+
+export async function toggleDeliveryZoneActiveAction(formData: FormData) {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.DELIVERY_MANAGE)) return;
+  const id = String(formData.get("id") ?? "");
+  const zone = await db.deliveryZone.findFirst({ where: { id, tenantId: user.tenantId! } });
+  if (!zone) return;
+  await db.deliveryZone.update({ where: { id }, data: { active: !zone.active } });
+  revalidatePath("/dashboard/delivery");
+}
+
+// ── Drivers — the business's own delivery roster. Availability is set by the
+// driver conversationally (see conversation.ts handleDriverMessage), NOT typed
+// in here by the owner — only identity (name, phone) is dashboard-managed ────
+const driverSchema = z.object({
+  name: z.string().min(1).max(120),
+  phone: z.string().min(7).max(20),
+});
+
+export async function saveDriverAction(_prev: unknown, formData: FormData) {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.DRIVERS_MANAGE)) return { error: "You don't have permission to manage drivers." };
+  const parsed = driverSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid driver details." };
+  const d = parsed.data;
+  const id = String(formData.get("id") ?? "");
+  const phone = normalizePhone(d.phone);
+  const data = { name: d.name, phone };
+  if (id) {
+    await db.driver.updateMany({ where: { id, tenantId: user.tenantId! }, data });
+  } else {
+    const existing = await db.driver.findFirst({ where: { tenantId: user.tenantId!, phone } });
+    if (existing) return { error: "A driver with this phone number already exists." };
+    await db.driver.create({ data: { tenantId: user.tenantId!, ...data } });
+  }
+  revalidatePath("/dashboard/drivers");
+  return { ok: true, editedId: id || undefined };
+}
+
+export async function toggleDriverActiveAction(formData: FormData) {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.DRIVERS_MANAGE)) return;
+  const id = String(formData.get("id") ?? "");
+  const driver = await db.driver.findFirst({ where: { id, tenantId: user.tenantId! } });
+  if (!driver) return;
+  await db.driver.update({ where: { id }, data: { active: !driver.active } });
+  revalidatePath("/dashboard/drivers");
 }
 
 // ── Connector Builder ─────────────────────────────────────────────────────────

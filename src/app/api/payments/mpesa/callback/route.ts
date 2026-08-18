@@ -3,6 +3,7 @@ import { parseCallback } from "@/lib/mpesa";
 import { dispatchWebhook } from "@/lib/webhooks";
 import { creditsForAmount } from "@/lib/wallet";
 import { sendWhatsAppText } from "@/lib/transport";
+import { tryAssignTrip } from "@/lib/dispatch";
 
 // Safaricom Daraja posts the final STK-push result here. We match it to the
 // pending Payment by CheckoutRequestID and mark it paid or failed.
@@ -43,9 +44,18 @@ export async function POST(req: Request) {
             include: { contact: true, tenant: { include: { numbers: true } }, items: true },
           });
           const orgNumber = order.tenant.numbers.find((n) => n.status === "active");
+          const isDelivery = order.fulfillment === "delivery";
           if (orgNumber?.phoneNumberId) {
             const itemsLine = order.items.map((i) => `${i.quantity} × ${i.name}`).join(", ");
-            await sendWhatsAppText(orgNumber.phoneNumberId, order.contact.address, `✅ Payment received! Your order ${order.reference} is confirmed — ${itemsLine}. Total: ${order.currency} ${order.totalAmount.toLocaleString("en-US")}. Thank you! 🎉`);
+            const driverNote = isDelivery ? " Looking for a driver now — I'll update you as soon as one is confirmed." : "";
+            await sendWhatsAppText(orgNumber.phoneNumberId, order.contact.address, `✅ Payment received! Your order ${order.reference} is confirmed — ${itemsLine}. Total: ${order.currency} ${order.totalAmount.toLocaleString("en-US")}. Thank you! 🎉${driverNote}`);
+          }
+          // Only NOW that payment is genuinely confirmed do we start looking for
+          // a driver — never before, so a failed/abandoned STK push never wastes
+          // a driver's time on an order that was never actually paid for.
+          if (isDelivery) {
+            const trip = await db.deliveryTrip.create({ data: { tenantId: order.tenantId, orderId: order.id, status: "searching" } });
+            void tryAssignTrip(trip.id).catch(() => {});
           }
         }
       }

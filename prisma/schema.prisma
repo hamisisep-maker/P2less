@@ -59,6 +59,9 @@ model Tenant {
   payments      Payment[]
   products      Product[]
   orders        Order[]
+  deliveryZones DeliveryZone[]
+  drivers       Driver[]
+  deliveryTrips DeliveryTrip[]
 }
 
 /// Configurable subscription plan. Not hard-coded — Super Admin edits these.
@@ -166,12 +169,77 @@ model Order {
   status      String      @default("pending") // pending | paid | failed | cancelled
   fulfillment String      @default("pickup") // pickup | delivery
   deliveryAddress String? // free text, only set when fulfillment = delivery
+  deliveryFee Int         @default(0) // matched from a DeliveryZone; included in totalAmount, charged for real
+  deliveryZoneName String? // snapshot of the matched zone's name at order time
   payment     Payment?
+  deliveryTrip DeliveryTrip?
   createdAt   DateTime    @default(now())
   paidAt      DateTime?
 
   @@index([tenantId])
   @@index([contactId])
+}
+
+// A manually-defined delivery pricing tier, e.g. "Within Nairobi CBD" — KES 200,
+// "CBD to Embakasi" — KES 500. Set by the business in the dashboard; the
+// assistant matches the customer's delivery address against these by name/
+// description. Deliberately manual — no Maps/geocoding API is wired in yet.
+model DeliveryZone {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String // e.g. "Nairobi CBD"
+  description String? // extra area names/landmarks to help matching, e.g. "CBD, Moi Avenue, Tom Mboya Street"
+  fee         Int // whole units of the tenant's currency
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+// A driver on the business's own roster. Availability is a single "today's
+// window" (start/end time + the date it applies to) — reset conversationally,
+// not managed by the owner (too much manual overhead for the owner otherwise).
+model Driver {
+  id             String   @id @default(cuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name           String
+  phone          String // WhatsApp-reachable number, used to recognize inbound messages as FROM this driver
+  active         Boolean  @default(true) // soft-disable without deleting
+  availableDate  String? // ISO date (YYYY-MM-DD) the window below applies to — a new day means no window set yet
+  availableFrom  String? // "HH:MM"
+  availableUntil String? // "HH:MM"
+  busy           Boolean  @default(false) // currently on an assigned, undelivered trip — never double-booked
+  createdAt      DateTime @default(now())
+
+  trips DeliveryTrip[]
+
+  @@index([tenantId])
+  @@unique([tenantId, phone])
+}
+
+// One delivery's real lifecycle — who it was offered to, who accepted, when it
+// was delivered, and the customer's own account of how it went (for driver
+// accountability). Never inferred — every transition is a real confirmed event.
+model DeliveryTrip {
+  id               String    @id @default(cuid())
+  tenantId         String
+  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orderId          String    @unique
+  order            Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status           String    @default("searching") // searching | offered | assigned | delivered | failed | cancelled
+  driverId         String?
+  driver           Driver?   @relation(fields: [driverId], references: [id])
+  offeredDriverIds Json? // driver IDs already offered this trip (declined or timed out) — never re-offered
+  offerExpiresAt   DateTime? // sender has this long to accept before the trip moves to the next driver
+  assignedAt       DateTime?
+  deliveredAt      DateTime?
+  customerFeedback String? // the customer's own free-text answer to "how was the delivery?"
+  createdAt        DateTime  @default(now())
+
+  @@index([tenantId])
+  @@index([status])
 }
 
 model OrderItem {

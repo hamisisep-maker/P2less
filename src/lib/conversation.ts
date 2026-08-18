@@ -6,7 +6,8 @@ import { issueOtp, verifyOtp, hasVerifiedSession } from "./otp";
 import { hasPermission } from "./permissions";
 import { audit } from "./audit";
 import { meter, checkLimit } from "./usage";
-import { deliver } from "./transport";
+import { deliver, sendWhatsAppText } from "./transport";
+import { handleDriverMessage, matchDeliveryZone, tryAssignTrip } from "./dispatch";
 import { generateReportCard, generatePayslipPdf, generateLeavePdf, generateFeeStatementPdf, generateCvPdf, type GeneratedDoc } from "./documents";
 import { isCvRequest, extractCvData } from "./cv-writer";
 import { requestId as newRequestId, randomToken } from "./crypto";
@@ -79,12 +80,17 @@ type ConvContext = {
     optionChosen?: string; // their free-text answer to `options`
     fulfillment?: "pickup" | "delivery";
     deliveryAddress?: string;
+    deliveryFee?: number; // matched from a DeliveryZone once the address is known; 0/unset = not matched
+    deliveryZoneName?: string;
   };
   // The most recently PLACED order (pending payment or paid) — kept in context so
   // a follow-up question right after ("which number did you send it to?") can be
   // answered from real data instead of the AI having nothing to go on and
   // denying the order ever happened.
   lastOrder?: { reference: string; productName: string; quantity: number; total: number; currency: string; phone: string; status: "pending_payment" | "paid" };
+  // Set by dispatch.ts when a driver reports a delivery complete — the
+  // customer's next message is their real feedback on THIS trip.
+  awaitingFeedbackTripId?: string;
 };
 
 // The user signalling they didn't want this pending flow / are confused by the
@@ -113,7 +119,7 @@ type LastResource = { id: string; name: string; grade?: string; grantKey?: strin
 
 /** Canonicalize a phone/address to E.164 with a leading "+". WhatsApp delivers
  *  senders without the "+"; stored contacts keep it — this makes them match. */
-function normalizePhone(n: string): string {
+export function normalizePhone(n: string): string {
   const t = n.trim();
   if (t.startsWith("+")) return "+" + t.slice(1).replace(/[^\d]/g, "");
   const digits = t.replace(/[^\d]/g, "");
@@ -148,6 +154,20 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // Normalize to canonical E.164 so a WhatsApp sender ("254739536255") and a
   // stored contact ("+254739536255") resolve to the same person across channels.
   const senderAddress = normalizePhone(input.fromNumber);
+
+  // ── Driver routing: a registered driver messaging this SAME number is never
+  // treated as a customer — no Contact/Conversation is created for them, their
+  // messages are structured commands (accept/decline/available/delivered)
+  // handled entirely separately, never AI small talk. ──────────────────────
+  const driver = await db.driver.findFirst({ where: { tenantId: tenant.id, active: true, phone: senderAddress } });
+  if (driver) {
+    const body = await handleDriverMessage(driver, input.text);
+    if (input.channelType === "whatsapp" && number.phoneNumberId) {
+      await sendWhatsAppText(number.phoneNumberId, input.fromNumber, body);
+    }
+    return { ok: true, replies: [{ body }], conversationId: `driver:${driver.id}`, from: fromIdentity };
+  }
+
   // Identity spans channels: a person's number is who they are whether they reach
   // the org via WhatsApp, the web simulator, or SMS. Reuse an existing contact for
   // this number (and its grants/roles) rather than forking one per transport.
@@ -229,15 +249,28 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body, fromNumberId: number.phoneNumberId });
   };
 
+  // The REAL amount to charge — product total plus a matched delivery fee, if
+  // any. If delivery was chosen but no zone matched, the fee is NOT charged
+  // here (nothing invented) — the shop confirms it separately, as stated to
+  // the customer in the recap below.
+  const orderGrandTotal = (po: NonNullable<ConvContext["pendingOrder"]>) => po.unitPrice * po.quantity + (po.fulfillment === "delivery" ? po.deliveryFee ?? 0 : 0);
+
   // Full recap of a pending order — restates EVERYTHING the customer chose
-  // (product, option, quantity, delivery/pickup) so CONFIRM is on the real
-  // order, never a guess.
+  // (product, option, quantity, delivery/pickup, delivery fee) so CONFIRM is on
+  // the real order, never a guess.
   const orderRecapText = (po: NonNullable<ConvContext["pendingOrder"]>) => {
-    const total = po.unitPrice * po.quantity;
-    const lines = [
-      `${po.quantity} × ${po.productName}${po.optionChosen ? ` (${po.optionChosen})` : ""} = ${po.currency} ${total.toLocaleString("en-US")}`,
-      po.fulfillment === "delivery" ? `Delivery to: ${po.deliveryAddress} (delivery fee not yet calculated — the shop will confirm it separately)` : `Pickup in person — no delivery`,
-    ];
+    const itemTotal = po.unitPrice * po.quantity;
+    const lines = [`${po.quantity} × ${po.productName}${po.optionChosen ? ` (${po.optionChosen})` : ""} = ${po.currency} ${itemTotal.toLocaleString("en-US")}`];
+    if (po.fulfillment === "delivery") {
+      if (po.deliveryFee != null) {
+        lines.push(`Delivery to: ${po.deliveryAddress} — fee: ${po.currency} ${po.deliveryFee.toLocaleString("en-US")} (${po.deliveryZoneName})`);
+        lines.push(`Total to pay: ${po.currency} ${orderGrandTotal(po).toLocaleString("en-US")}`);
+      } else {
+        lines.push(`Delivery to: ${po.deliveryAddress} (delivery fee not yet set up for this area — the shop will confirm it separately, not included in this payment)`);
+      }
+    } else {
+      lines.push(`Pickup in person — no delivery`);
+    }
     return lines.join("\n");
   };
 
@@ -681,7 +714,10 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     if (!isAddressDetailed(text)) {
       return emit([{ body: `Could you share a bit more detail — area, street, and a landmark nearby — so the delivery actually finds you?` }], "awaiting_order_address", ctx);
     }
-    return advanceOrder({ ...po, deliveryAddress: text.trim() });
+    const address = text.trim();
+    const zones = await db.deliveryZone.findMany({ where: { tenantId: tenant.id, active: true } });
+    const zone = matchDeliveryZone(address, zones);
+    return advanceOrder({ ...po, deliveryAddress: address, deliveryFee: zone?.fee, deliveryZoneName: zone?.name });
   }
   if (conversation.status === "awaiting_order_confirm" && ctx.pendingOrder) {
     // This gates a REAL money charge — a false positive here means firing an
@@ -698,20 +734,31 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     }
     if (affirm) {
       const po = ctx.pendingOrder;
-      const total = po.unitPrice * po.quantity;
+      const total = orderGrandTotal(po);
       const reference = "ORD-" + randomToken(4).toUpperCase();
+      const isDelivery = po.fulfillment === "delivery";
       const order = await db.order.create({
         data: {
           tenantId: tenant.id, contactId: contact.id, reference, totalAmount: total, currency: po.currency, status: "pending",
-          fulfillment: po.fulfillment ?? "pickup", deliveryAddress: po.fulfillment === "delivery" ? po.deliveryAddress ?? null : null,
+          fulfillment: po.fulfillment ?? "pickup", deliveryAddress: isDelivery ? po.deliveryAddress ?? null : null,
+          deliveryFee: isDelivery ? po.deliveryFee ?? 0 : 0, deliveryZoneName: isDelivery ? po.deliveryZoneName ?? null : null,
           items: { create: [{ productId: po.productId, quantity: po.quantity, unitPrice: po.unitPrice, name: po.productName, optionChosen: po.optionChosen ?? null }] },
         },
       });
       const res = await startOrderPayment({ tenantId: tenant.id, orderId: order.id, phone: senderAddress, amountKes: total, reference });
       if (!res.ok) return emit([{ body: `Couldn't start payment: ${res.error}. Reply CONFIRM to try again, or CANCEL to stop.` }], "awaiting_order_confirm", ctx);
       if (res.mock) {
+        // Mock marks the order paid immediately (unlike real STK, which only
+        // confirms asynchronously) — so this is the right moment to start
+        // looking for a driver, same rule as the real-payment path: never
+        // before payment is actually confirmed.
+        if (isDelivery) {
+          const trip = await db.deliveryTrip.create({ data: { tenantId: tenant.id, orderId: order.id, status: "searching" } });
+          void tryAssignTrip(trip.id).catch(() => {});
+        }
         const lastOrder: ConvContext["lastOrder"] = { reference, productName: po.productName, quantity: po.quantity, total, currency: po.currency, phone: senderAddress, status: "paid" };
-        return emit([{ body: `✅ Payment received (demo mode — no real M-Pesa configured)! Order ${reference} confirmed: ${po.quantity} × ${po.productName}. Thank you! 🎉` }], "open", { lastOrder });
+        const driverNote = isDelivery ? " Looking for a driver now — I'll update you as soon as one is confirmed." : "";
+        return emit([{ body: `✅ Payment received (demo mode — no real M-Pesa configured)! Order ${reference} confirmed: ${po.quantity} × ${po.productName}. Thank you! 🎉${driverNote}` }], "open", { lastOrder });
       }
       // Keep this order in context (NOT wiped to {}) so an immediate follow-up
       // question ("which number did you send it to?") can be answered from real
@@ -737,6 +784,13 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     const stc = aiEnabled() ? await smallTalk(assistant, text, [], history, knownFacts, orgFaqs) : null;
     const remind = `${orderRecapText(po)}\n\nReply CONFIRM to pay via M-Pesa, or CANCEL to stop.`;
     return emit([{ body: stc ? `${stc}\n\n${remind}` : remind }], "awaiting_order_confirm", ctx);
+  }
+  // A driver just reported this delivery as complete (see dispatch.ts) — the
+  // customer's very next message is their real account of how it went, real
+  // accountability data for the driver, never inferred.
+  if (conversation.status === "awaiting_delivery_feedback") {
+    if (ctx.awaitingFeedbackTripId) await db.deliveryTrip.updateMany({ where: { id: ctx.awaitingFeedbackTripId }, data: { customerFeedback: text.trim() } });
+    return emit([{ body: "Thanks so much for letting us know — really appreciate it! 🙏" }], "open", {});
   }
   if (isProductImageRequest(lower)) {
     // Only relevant for a tenant that actually sells things — otherwise this is
