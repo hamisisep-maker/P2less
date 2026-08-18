@@ -286,6 +286,18 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     return lines.join(". ");
   };
 
+  // Deterministic (no-AI-required) answer for a common product-attribute
+  // question (size/color/material/etc.) asked mid-order. AI can be down or
+  // rate-limited exactly when a customer asks something real — without this,
+  // that question got silently dropped and the canned pending-step question
+  // repeated verbatim, which is the "hard-coded, repeats itself" complaint.
+  // Only fires when the message actually asks about an attribute; a genuine
+  // answer to the pending step is handled before this is ever reached.
+  const productAttributeFallback = (po: NonNullable<ConvContext["pendingOrder"]>, msgLower: string): string | null => {
+    if (!/\b(size|sizes|colou?rs?|material|materials?|option|options|choice|choices|spec|specs?)\b/i.test(msgLower)) return null;
+    return po.options ? `We have: ${po.options}.` : `We don't have extra size/colour options listed for ${po.productName} — just the standard one.`;
+  };
+
   // Full recap of a pending order — restates EVERYTHING the customer chose
   // (product, option, quantity, delivery/pickup, delivery fee) so CONFIRM is on
   // the real order, never a guess.
@@ -758,7 +770,8 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
           return emit([{ body: resolved.reply }], "awaiting_order_quantity", ctx);
         }
       }
-      return emit([{ body: `Sorry, how many ${po.productName} would you like? (Just the number, e.g. "2")` }], "awaiting_order_quantity", ctx);
+      const attrInfo = productAttributeFallback(po, lower);
+      return emit([{ body: attrInfo ? `${attrInfo} And how many ${po.productName} would you like?` : `Sorry, how many ${po.productName} would you like? (Just the number, e.g. "2")` }], "awaiting_order_quantity", ctx);
     }
     const qty = extractQuantity(text);
     return advanceOrder({ ...po, quantity: qty });
@@ -814,7 +827,10 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       }
     }
     // Ambiguous or unrelated reply — ask again rather than guessing either way.
-    return emit([{ body: `Sorry — just to confirm, would you like ${po.productName} delivered to you, or will you pick it up yourself?` }], "awaiting_order_fulfillment", ctx);
+    // If it was actually a product-attribute question (size/color/etc.), answer
+    // it first — deterministically, so an AI outage never leaves it unanswered.
+    const attrInfo = productAttributeFallback(po, lower);
+    return emit([{ body: attrInfo ? `${attrInfo} Now, would you like ${po.productName} delivered to you, or will you pick it up yourself?` : `Sorry — just to confirm, would you like ${po.productName} delivered to you, or will you pick it up yourself?` }], "awaiting_order_fulfillment", ctx);
   }
   if (conversation.status === "awaiting_order_address" && ctx.pendingOrder) {
     const po = ctx.pendingOrder;
@@ -841,7 +857,8 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
           return emit([{ body: resolved.reply }], "awaiting_order_address", ctx);
         }
       }
-      return emit([{ body: `Could you share a bit more detail — area, street, and a landmark nearby — so the delivery actually finds you?` }], "awaiting_order_address", ctx);
+      const attrInfo = productAttributeFallback(po, lower);
+      return emit([{ body: attrInfo ? `${attrInfo} Now, could you share the delivery address — area, street, and a landmark nearby — so it actually finds you?` : `Could you share a bit more detail — area, street, and a landmark nearby — so the delivery actually finds you?` }], "awaiting_order_address", ctx);
     }
     const address = text.trim();
     const zones = await db.deliveryZone.findMany({ where: { tenantId: tenant.id, active: true } });
