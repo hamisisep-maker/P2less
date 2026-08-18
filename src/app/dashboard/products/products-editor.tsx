@@ -14,6 +14,7 @@ type Product = {
   sku: string | null;
   inStock: boolean;
   active: boolean;
+  imageUrl: string | null;
 };
 type State = { ok?: boolean; error?: string; editedId?: string } | null;
 
@@ -58,6 +59,17 @@ export function ProductsEditor({ initial, canManage }: { initial: Product[]; can
               <label className="mb-1 block text-xs text-muted">Description (optional)</label>
               <textarea name="description" defaultValue={editing?.description ?? ""} rows={2} placeholder="What customers see when they ask about it" className="w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent" />
             </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted">Photo (optional)</label>
+              <div className="flex items-center gap-3">
+                {editing?.imageUrl && (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={editing.imageUrl} alt="" className="h-14 w-14 rounded-lg border border-line object-cover" />
+                )}
+                <input name="image" type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-surface-2 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-line" />
+              </div>
+              {editing?.imageUrl && <p className="mt-1 text-xs text-faint">Choose a new file to replace the current photo, or leave blank to keep it.</p>}
+            </div>
             <label className="flex items-center gap-2 text-sm text-muted">
               <input type="checkbox" name="inStock" value="true" defaultChecked={editing?.inStock ?? true} className="rounded border-line" />
               In stock
@@ -82,15 +94,23 @@ export function ProductsEditor({ initial, canManage }: { initial: Product[]; can
         {initial.map((p) => (
           <Card key={p.id} className={`p-4 ${!p.active ? "opacity-60" : ""}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{p.name}</span>
-                  {p.category && <Badge tone="neutral">{p.category}</Badge>}
-                  {!p.inStock && <Badge tone="amber">Out of stock</Badge>}
-                  {!p.active && <Badge tone="rose">Inactive</Badge>}
+              <div className="flex min-w-0 gap-3">
+                {p.imageUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={p.imageUrl} alt="" className="h-12 w-12 shrink-0 rounded-lg border border-line object-cover" />
+                ) : (
+                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg border border-dashed border-line text-faint" title="No photo yet">—</span>
+                )}
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{p.name}</span>
+                    {p.category && <Badge tone="neutral">{p.category}</Badge>}
+                    {!p.inStock && <Badge tone="amber">Out of stock</Badge>}
+                    {!p.active && <Badge tone="rose">Inactive</Badge>}
+                  </div>
+                  {p.description && <p className="mt-1 text-sm text-muted">{p.description}</p>}
+                  <p className="mt-1 text-sm font-medium text-ink">{p.currency} {p.price.toLocaleString("en-US")}</p>
                 </div>
-                {p.description && <p className="mt-1 text-sm text-muted">{p.description}</p>}
-                <p className="mt-1 text-sm font-medium text-ink">{p.currency} {p.price.toLocaleString("en-US")}</p>
               </div>
               {canManage && (
                 <div className="flex shrink-0 items-center gap-2">

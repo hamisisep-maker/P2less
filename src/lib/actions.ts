@@ -11,6 +11,7 @@ import { WEBHOOK_EVENTS } from "./webhooks";
 import { PERMISSIONS, DEFAULT_USER_ROLES, DEFAULT_CONTACT_ROLES } from "./permissions";
 import { computeBill } from "./billing";
 import { stkPush, isConfigured } from "./mpesa";
+import { storeProductImage } from "./documents";
 import type { ParamSpec } from "./connector-engine";
 
 export async function loginAction(_prev: unknown, formData: FormData) {
@@ -204,6 +205,9 @@ const productSchema = z.object({
   inStock: z.coerce.boolean().optional().default(true),
 });
 
+const IMAGE_MIME_EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif" };
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB — plenty for a product photo, keeps the DB blob small
+
 // One action for both create and edit — presence of "id" decides which. Keeps
 // the client form simple (a single useActionState, no hook-swapping on edit).
 export async function saveProductAction(_prev: unknown, formData: FormData) {
@@ -213,7 +217,22 @@ export async function saveProductAction(_prev: unknown, formData: FormData) {
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid product details." };
   const d = parsed.data;
   const id = String(formData.get("id") ?? "");
-  const data = { name: d.name, description: d.description || null, price: d.price, currency: d.currency, category: d.category || null, sku: d.sku || null, inStock: d.inStock };
+  const data: { name: string; description: string | null; price: number; currency: string; category: string | null; sku: string | null; inStock: boolean; imageUrl?: string } = {
+    name: d.name, description: d.description || null, price: d.price, currency: d.currency, category: d.category || null, sku: d.sku || null, inStock: d.inStock,
+  };
+
+  // A new photo is optional — an empty file input submits a zero-byte File, and
+  // editing without touching the photo must NOT clear the existing one.
+  const imageFile = formData.get("image");
+  if (imageFile instanceof File && imageFile.size > 0) {
+    if (imageFile.size > MAX_IMAGE_BYTES) return { error: "Image is too large (max 5MB)." };
+    const ext = IMAGE_MIME_EXT[imageFile.type];
+    if (!ext) return { error: "Image must be JPEG, PNG, WEBP or GIF." };
+    const buf = Buffer.from(await imageFile.arrayBuffer());
+    const stored = await storeProductImage({ tenantId: user.tenantId!, filename: `product-${randomToken(4)}.${ext}`, base64: buf.toString("base64") });
+    data.imageUrl = stored.url;
+  }
+
   if (id) {
     await db.product.updateMany({ where: { id, tenantId: user.tenantId! }, data });
   } else {

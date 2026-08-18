@@ -156,7 +156,13 @@ function Message({ b }: { b: Bubble }) {
   return (
     <div className={`flex ${isIn ? "justify-end" : "justify-start"}`}>
       <div className={`max-w-[80%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm shadow-sm ${isIn ? "rounded-br-none bg-[#d9fdd3]" : "rounded-bl-none bg-white"}`}>
-        {b.url ? (
+        {b.url && b.kind === "image" ? (
+          <span className="block">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={b.url} alt="" className="mb-1 max-h-64 rounded-md" />
+            {b.body}
+          </span>
+        ) : b.url ? (
           <span>{b.body.replace(b.url, "").trim()} <a href={b.url} target="_blank" rel="noreferrer" className="font-medium text-accent underline">Open document</a></span>
         ) : b.body}
       </div>

@@ -48,6 +48,25 @@ async function store(opts: {
   return { url: `${base}/d/${token}`, filename: opts.filename, token };
 }
 
+// Product photos are an admin-uploaded asset, not a per-conversation generated
+// document — reuses the same token-addressed storage but with a long, effectively
+// permanent expiry (the Document model requires a non-null expiresAt) and no
+// usage metering (uploading a photo isn't a billable generated-document action).
+const IMAGE_TTL_MS = 50 * 365 * 24 * 60 * 60 * 1000;
+
+export async function storeProductImage(opts: { tenantId: string; filename: string; base64: string }): Promise<GeneratedDoc> {
+  const token = randomToken();
+  await db.document.create({
+    data: {
+      tenantId: opts.tenantId, kind: "product_image",
+      filename: opts.filename, content: opts.base64, token,
+      expiresAt: new Date(Date.now() + IMAGE_TTL_MS),
+    },
+  });
+  const base = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+  return { url: `${base}/d/${token}`, filename: opts.filename, token };
+}
+
 // Shared PDF chrome: branded header band + footer.
 function pdfHeader(doc: PDFKit.PDFDocument, org: string, title: string, color: string) {
   doc.rect(0, 0, doc.page.width, 90).fill(color);

@@ -38,7 +38,7 @@ export type InboundInput = {
   attachment?: { base64: string; filename: string; mimeType: string };
 };
 
-export type Reply = { body: string; kind?: "text" | "otp_hint" | "document" | "system"; meta?: Record<string, unknown>; document?: { url: string; filename: string } };
+export type Reply = { body: string; kind?: "text" | "otp_hint" | "document" | "image" | "system"; meta?: Record<string, unknown>; document?: { url: string; filename: string }; image?: { url: string } };
 export type HandleResult = {
   ok: boolean;
   replies: Reply[];
@@ -208,7 +208,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     for (const r of replies) {
       // otp_hint / system notes are demo aids and are not re-metered as separate sends
       if (r.kind === "otp_hint" || r.kind === "system") continue;
-      await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body: r.body, meta: r.meta, fromNumberId: number.phoneNumberId, document: r.document });
+      await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body: r.body, meta: r.meta, fromNumberId: number.phoneNumberId, document: r.document, image: r.image });
     }
     return { ok: true, replies, conversationId: conversation!.id, from: fromIdentity } satisfies HandleResult;
   };
@@ -668,8 +668,20 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     // Only relevant for a tenant that actually sells things — otherwise this is
     // about something else entirely ("photo of the campus") and should fall
     // through to normal handling instead of talking about a nonexistent catalog.
-    const hasCatalog = (await db.product.count({ where: { tenantId: tenant.id, active: true } })) > 0;
-    if (hasCatalog) {
+    const products = await db.product.findMany({ where: { tenantId: tenant.id, active: true, inStock: true } });
+    if (products.length > 0) {
+      const withPhotos = products.filter((p) => p.imageUrl);
+      const { hit } = matchProduct(text, products);
+      if (hit?.imageUrl) {
+        return emit([{ body: `${hit.name} — ${hit.currency} ${hit.price.toLocaleString("en-US")}`, kind: "image", image: { url: hit.imageUrl }, meta: { url: hit.imageUrl } }], "open", ctx);
+      }
+      if (hit && !hit.imageUrl) {
+        return emit([{ body: `We don't have a photo of ${hit.name} uploaded yet — happy to describe it, or ask about price and sizes!` }], "open", ctx);
+      }
+      if (withPhotos.length > 0) {
+        const list = withPhotos.map((p) => p.name).join(", ");
+        return emit([{ body: `Sure — which one? We have photos of: ${list}.` }], "open", ctx);
+      }
       return emit([{ body: "We don't have photos of our products uploaded yet — happy to describe any of them, or you can ask about price, sizes, or anything else!" }], "open", ctx);
     }
   }

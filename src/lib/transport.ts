@@ -25,6 +25,8 @@ export type OutboundMessage = {
   fromNumberId?: string | null;
   // When set, deliver this as a document (PDF) attachment, not just text.
   document?: { url: string; filename: string };
+  // When set, deliver this as an image attachment (e.g. a product photo).
+  image?: { url: string };
 };
 
 const GRAPH_VERSION = process.env.WHATSAPP_GRAPH_VERSION || "v21.0";
@@ -118,9 +120,11 @@ export async function deliver(msg: OutboundMessage): Promise<{ delivered: boolea
         if (process.env.NODE_ENV !== "production") console.log(`[whatsapp:not-configured →${msg.to}] ${msg.body}`);
         return { delivered: false, transport: "whatsapp:not-configured", error: "WhatsApp credentials not configured" };
       }
-      // A document attachment (PDF) is sent as a WhatsApp document message; the
+      // A document/image attachment is sent as its own WhatsApp message type; the
       // media is fetched by WhatsApp from the public link (needs PUBLIC_BASE_URL).
-      const payload = msg.document && /^https?:\/\//.test(msg.document.url)
+      const payload = msg.image && /^https?:\/\//.test(msg.image.url)
+        ? { messaging_product: "whatsapp", recipient_type: "individual", to: msg.to, type: "image", image: { link: msg.image.url, caption: msg.body } }
+        : msg.document && /^https?:\/\//.test(msg.document.url)
         ? { messaging_product: "whatsapp", recipient_type: "individual", to: msg.to, type: "document", document: { link: msg.document.url, filename: msg.document.filename, caption: msg.body } }
         : { messaging_product: "whatsapp", recipient_type: "individual", to: msg.to, type: "text", text: { preview_url: true, body: msg.body } };
       try {

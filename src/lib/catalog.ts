@@ -14,7 +14,7 @@ import { stkPush, isConfigured } from "./mpesa";
 // a natural next step (per-tenant payment config), not yet built.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type CatalogProduct = { id: string; name: string; description: string | null; price: number; currency: string; category: string | null; inStock: boolean };
+export type CatalogProduct = { id: string; name: string; description: string | null; price: number; currency: string; category: string | null; inStock: boolean; imageUrl?: string | null };
 
 /** Does this message look like someone asking what's for sale? Excludes "do you
  *  have X" when X is a specific different topic (an image, a warranty, delivery,
@@ -25,10 +25,11 @@ export function isCatalogBrowseRequest(lower: string): boolean {
   return /\b(what).{0,15}\b(sell|have|offer|sale|stock)\b/i.test(lower) || genericHave.test(lower) || /\b(show|see|list).{0,10}\b(product|item|menu|catalog|stock)\b/i.test(lower) || /\bprice list\b/i.test(lower) || /\bwhat'?s (on|for) (offer|sale)\b/i.test(lower);
 }
 
-/** Asking specifically about PRODUCT PHOTOS — needs its own honest answer (the
- *  catalog has no images wired up), not a "couldn't match" dump from tripping
- *  the order-matching path (e.g. "i need images of those catalog" contains
- *  "need", which would otherwise read as buy intent). */
+/** Asking about PRODUCT PHOTOS — needs its own handling (find the specific
+ *  product and send its real photo, or answer honestly if it has none), not a
+ *  "couldn't match" dump from tripping the order-matching path (e.g. "i need
+ *  images of those catalog" contains "need", which would otherwise read as buy
+ *  intent). */
 export function isProductImageRequest(lower: string): boolean {
   return /\b(image|images|photo|photos|picture|pictures|pic|pics)\b/i.test(lower);
 }
@@ -52,11 +53,16 @@ export function formatCatalog(assistant: string, products: CatalogProduct[]): st
     byCategory.get(cat)!.push(p);
   }
   const parts: string[] = [];
+  let anyPhotos = false;
   for (const [cat, items] of byCategory) {
-    const lines = items.map((p) => `• ${p.name} — ${p.currency} ${p.price.toLocaleString("en-US")}${p.description ? ` (${p.description})` : ""}`);
+    const lines = items.map((p) => {
+      if (p.imageUrl) anyPhotos = true;
+      return `• ${p.name} — ${p.currency} ${p.price.toLocaleString("en-US")}${p.description ? ` (${p.description})` : ""}${p.imageUrl ? " 📷" : ""}`;
+    });
     parts.push(byCategory.size > 1 ? `*${cat}*\n${lines.join("\n")}` : lines.join("\n"));
   }
-  return `Here's what we have:\n\n${parts.join("\n\n")}\n\nJust tell me what you'd like and how many, e.g. "2 of the navy sweater".`;
+  const photoHint = anyPhotos ? ` (📷 = photo available, just ask e.g. "photo of the navy sweater")` : "";
+  return `Here's what we have${photoHint}:\n\n${parts.join("\n\n")}\n\nJust tell me what you'd like and how many, e.g. "2 of the navy sweater".`;
 }
 
 /** Find the best-matching product(s) for free text. Scores by the PROPORTION of
