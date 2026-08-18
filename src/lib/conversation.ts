@@ -10,7 +10,7 @@ import { deliver } from "./transport";
 import { generateReportCard, generatePayslipPdf, generateLeavePdf, generateFeeStatementPdf, generateCvPdf, type GeneratedDoc } from "./documents";
 import { isCvRequest, extractCvData } from "./cv-writer";
 import { requestId as newRequestId, randomToken } from "./crypto";
-import { isCatalogBrowseRequest, isOrderRequest, formatCatalog, matchProduct, extractQuantity, startOrderPayment, findExactProductMention } from "./catalog";
+import { isCatalogBrowseRequest, isOrderRequest, formatCatalog, matchProduct, extractQuantity, startOrderPayment, findExactProductMention, hasExplicitQuantity } from "./catalog";
 import { dispatchWebhook } from "./webhooks";
 import { extractDate, extractTime, isGreeting, type IntentAction } from "./intent-engine";
 import { pickTool, allTools } from "./tools";
@@ -72,6 +72,11 @@ type ConvContext = {
   cvBuilder?: { rawText: string; asides?: number };
   // A product order awaiting CONFIRM before the real M-Pesa charge fires.
   pendingOrder?: { productId: string; productName: string; quantity: number; unitPrice: number; currency: string };
+  // The most recently PLACED order (pending payment or paid) — kept in context so
+  // a follow-up question right after ("which number did you send it to?") can be
+  // answered from real data instead of the AI having nothing to go on and
+  // denying the order ever happened.
+  lastOrder?: { reference: string; productName: string; quantity: number; total: number; currency: string; phone: string; status: "pending_payment" | "paid" };
 };
 
 // The user signalling they didn't want this pending flow / are confused by the
@@ -193,7 +198,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // straight from this contact's grants — not sensitive data like fees/grades,
   // which still require an authorized lookup). Lets it answer "what's my child's
   // name?" like a person, without inventing anything.
-  const knownFacts = buildKnownFacts(contact.displayName, grants);
+  const knownFacts = buildKnownFacts(contact.displayName, grants, ctx.lastOrder);
   // Org-approved FAQs (school hours, term dates, payment methods…). The org owns
   // these; the AI may answer from them verbatim but never invents beyond them.
   const orgFaqs = ((tenant.faqs as { q: string; a: string }[] | null) ?? []).filter((f) => f && f.q && f.a);
@@ -589,6 +594,23 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // Native P2Less data (not a connector), tenant-scoped by the SAME routing
   // already used everywhere (destination number → tenant). Universal like the
   // file tools and CV writer — works for anyone messaging this number.
+  if (conversation.status === "awaiting_order_quantity" && ctx.pendingOrder) {
+    const po = ctx.pendingOrder;
+    if (isDirectReply(lower, /\b(cancel|no|nope|nah|stop|don'?t)\b/i)) {
+      return emit([{ body: "No problem — order cancelled. Let me know if you'd like anything else!" }], "open", { lastResource: ctx.lastResource });
+    }
+    if (!hasExplicitQuantity(text)) {
+      // Still didn't say a number — ask again rather than guessing.
+      return emit([{ body: `Sorry, how many ${po.productName} would you like? (Just the number, e.g. "2")` }], "awaiting_order_quantity", ctx);
+    }
+    const qty = extractQuantity(text);
+    const total = po.unitPrice * qty;
+    return emit(
+      [{ body: `${qty} × ${po.productName} = ${po.currency} ${total.toLocaleString("en-US")}. Reply CONFIRM to pay via M-Pesa, or CANCEL to stop.` }],
+      "awaiting_order_confirm",
+      { pendingOrder: { ...po, quantity: qty } },
+    );
+  }
   if (conversation.status === "awaiting_order_confirm" && ctx.pendingOrder) {
     // This gates a REAL money charge — a false positive here means firing an
     // unintended M-Pesa payment prompt. Requires a short, direct reply, not
@@ -612,9 +634,15 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       const res = await startOrderPayment({ tenantId: tenant.id, orderId: order.id, phone: senderAddress, amountKes: total, reference });
       if (!res.ok) return emit([{ body: `Couldn't start payment: ${res.error}. Reply CONFIRM to try again, or CANCEL to stop.` }], "awaiting_order_confirm", ctx);
       if (res.mock) {
-        return emit([{ body: `✅ Payment received (demo mode — no real M-Pesa configured)! Order ${reference} confirmed: ${po.quantity} × ${po.productName}. Thank you! 🎉` }], "open", {});
+        const lastOrder: ConvContext["lastOrder"] = { reference, productName: po.productName, quantity: po.quantity, total, currency: po.currency, phone: senderAddress, status: "paid" };
+        return emit([{ body: `✅ Payment received (demo mode — no real M-Pesa configured)! Order ${reference} confirmed: ${po.quantity} × ${po.productName}. Thank you! 🎉` }], "open", { lastOrder });
       }
-      return emit([{ body: `📲 ${res.customerMessage}\n\nOnce you enter your M-Pesa PIN, I'll confirm order ${reference} right away.` }], "open", {});
+      // Keep this order in context (NOT wiped to {}) so an immediate follow-up
+      // question ("which number did you send it to?") can be answered from real
+      // data — without this the AI has nothing to go on and denies the order
+      // ever happened, which is exactly the kind of hallucination we must avoid.
+      const lastOrder: ConvContext["lastOrder"] = { reference, productName: po.productName, quantity: po.quantity, total, currency: po.currency, phone: senderAddress, status: "pending_payment" };
+      return emit([{ body: `📲 ${res.customerMessage}\n\nOnce you enter your M-Pesa PIN, I'll confirm order ${reference} right away.` }], "open", { lastOrder });
     }
     // Not a plain yes/no — they might be adjusting the order ("I need 5 of
     // them", "make it 3") rather than confirming/cancelling. Handle that
@@ -650,12 +678,20 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
         return emit([{ body: `I found a few matches — which one did you mean?\n${list}` }], "open", ctx);
       }
       if (hit) {
-        const qty = extractQuantity(text);
-        const total = hit.price * qty;
         // Acknowledge a discount/negotiation request honestly instead of
         // silently proceeding at full price as if they never asked.
         const askedDiscount = /\b(discount|cheaper|lower price|reduce|bargain|deal|offer)\b/i.test(lower);
-        const prefix = askedDiscount ? "We don't have discounts set up for this right now, but here's the price: " : "";
+        const prefix = askedDiscount ? "We don't have discounts set up for this right now. " : "";
+        // Never silently assume a quantity — ASK when they didn't say one.
+        if (!hasExplicitQuantity(text)) {
+          return emit(
+            [{ body: `${prefix}How many ${hit.name} would you like?` }],
+            "awaiting_order_quantity",
+            { pendingOrder: { productId: hit.id, productName: hit.name, quantity: 0, unitPrice: hit.price, currency: hit.currency } },
+          );
+        }
+        const qty = extractQuantity(text);
+        const total = hit.price * qty;
         return emit(
           [{ body: `${prefix}${qty} × ${hit.name} = ${hit.currency} ${total.toLocaleString("en-US")}. Reply CONFIRM to pay via M-Pesa, or CANCEL to stop.` }],
           "awaiting_order_confirm",
@@ -675,6 +711,13 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     const products = await db.product.findMany({ where: { tenantId: tenant.id, active: true, inStock: true } });
     const hit = findExactProductMention(text, products);
     if (hit) {
+      if (!hasExplicitQuantity(text)) {
+        return emit(
+          [{ body: `How many ${hit.name} would you like?` }],
+          "awaiting_order_quantity",
+          { pendingOrder: { productId: hit.id, productName: hit.name, quantity: 0, unitPrice: hit.price, currency: hit.currency } },
+        );
+      }
       const qty = extractQuantity(text);
       const total = hit.price * qty;
       return emit(
@@ -891,7 +934,7 @@ function toolCapabilityLines(): string[] {
   return allTools().map((t) => `${t.name} — ${t.description} (the user just needs to SEND the file, no need to ask first)`);
 }
 
-function buildKnownFacts(displayName: string | null | undefined, grants: Record<string, ResourceGrant[]>): string {
+function buildKnownFacts(displayName: string | null | undefined, grants: Record<string, ResourceGrant[]>, lastOrder?: ConvContext["lastOrder"]): string {
   const lines: string[] = [];
   if (displayName) lines.push(`- The CONTACT you're chatting with (their own name) is ${displayName}.`);
   else lines.push(`- We do not have the CONTACT's own name on file — do not guess or assign them one.`);
@@ -900,6 +943,10 @@ function buildKnownFacts(displayName: string | null | undefined, grants: Record<
     // Explicit so the model never conflates the contact with their dependent —
     // a parent is NOT their child, an HR contact is NOT the employee, etc.
     if (names.length) lines.push(`- Linked ${key} (these are records the CONTACT looks after / is associated with — NOT the contact's own identity): ${names.join(", ")}.`);
+  }
+  if (lastOrder) {
+    const statusText = lastOrder.status === "paid" ? "paid" : "an M-Pesa payment prompt was sent to this number and we're waiting for them to enter their PIN";
+    lines.push(`- Their most recent order (this really happened, it is NOT a test or a mistake — state it as fact if asked): ${lastOrder.quantity} × ${lastOrder.productName} = ${lastOrder.currency} ${lastOrder.total.toLocaleString("en-US")}, reference ${lastOrder.reference}, STK push sent to ${lastOrder.phone}, status: ${statusText}.`);
   }
   return lines.join("\n");
 }

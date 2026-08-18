@@ -88,6 +88,16 @@ export function findExactProductMention(text: string, products: CatalogProduct[]
   return hits.length === 1 ? hits[0] : null;
 }
 
+/** Was a quantity actually said, or would extractQuantity() just be silently
+ *  defaulting to 1? Lets the order flow ASK how many instead of assuming —
+ *  the person should never have to notice afterwards that we guessed. */
+export function hasExplicitQuantity(text: string): boolean {
+  if (/\b\d+\b/.test(text)) return true;
+  const words = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+  const lower = text.toLowerCase();
+  return words.some((w) => new RegExp(`\\b${w}\\b`).test(lower));
+}
+
 /** Pull a quantity from free text ("2 of the sweater", "three sweaters"); default 1. */
 export function extractQuantity(text: string): number {
   const digit = text.match(/\b(\d+)\b/);
