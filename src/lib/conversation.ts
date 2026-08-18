@@ -92,6 +92,16 @@ type ConvContext = {
   // Set by dispatch.ts when a driver reports a delivery complete — the
   // customer's next message is their real feedback on THIS trip.
   awaitingFeedbackTripId?: string;
+  // A "which student/employee/patient do you mean?" list is pending — a bare
+  // "1"/"2" reply (or the name) must resume the ORIGINAL action with that
+  // resource, not be reprocessed as a fresh message (which just re-triggers
+  // the same ambiguous match and repeats the identical question forever).
+  pendingDisambiguation?: { actionId: string; entities: Record<string, string>; candidates: { id: string; name: string }[] };
+  // The most recently completed WRITE action (booking, cancellation, leave
+  // request, etc.) — same reasoning as lastOrder: a follow-up right after
+  // ("did you actually book it?") must be answered from real data, not a
+  // generic capability denial or an invented confirmation either way.
+  lastAction?: { description: string; key: string };
 };
 
 // The user signalling they didn't want this pending flow / are confused by the
@@ -111,6 +121,15 @@ function isDirectReply(lower: string, pattern: RegExp): boolean {
   const trimmed = lower.trim().replace(/[.!]+$/, "");
   const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
   return wordCount <= 6 && !OTHER_TOPIC_HINT.test(trimmed) && pattern.test(trimmed);
+}
+
+/** Is this a genuine question, even without a "?" — real, reported bug: "which
+ *  one is available" (no question mark) slipped past a punctuation-only check
+ *  in an order-flow state and got silently treated as a literal answer value.
+ *  Never trust "?" alone to detect a question. */
+function looksLikeAQuestion(text: string): boolean {
+  const t = text.trim();
+  return /\?/.test(t) || /^\s*(which|what|who|why|how|when|where|do you|does it|is there|are there|can (i|you)|could (i|you)|any idea|any of)\b/i.test(t);
 }
 
 // A resource the contact is authorized to reference — a student, employee,
@@ -227,7 +246,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // straight from this contact's grants — not sensitive data like fees/grades,
   // which still require an authorized lookup). Lets it answer "what's my child's
   // name?" like a person, without inventing anything.
-  const knownFacts = buildKnownFacts(contact.displayName, grants, ctx.lastOrder);
+  const knownFacts = buildKnownFacts(contact.displayName, grants, ctx.lastOrder, ctx.lastAction);
   // Org-approved FAQs (school hours, term dates, payment methods…). The org owns
   // these; the AI may answer from them verbatim but never invents beyond them.
   const orgFaqs = ((tenant.faqs as { q: string; a: string }[] | null) ?? []).filter((f) => f && f.q && f.a);
@@ -456,7 +475,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       const resumed = await runAction({
         tenantId: tenant.id, reqId, contact, permissions, grants, assistant, channelType: input.channelType, contactName: contact.displayName ?? undefined, userText: text, history,
         actionId: ctx.pendingActionId!, resolved: ctx.pendingResolved ?? {}, alreadyConfirmed: false,
-        lastResource: ctx.lastResource,
+        lastResource: ctx.lastResource, lastAction: ctx.lastAction,
       });
       return emit([{ body: "✓ Verification successful." }, ...resumed.replies], resumed.status, resumed.ctx);
     }
@@ -481,7 +500,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       const resumed = await runAction({
         tenantId: tenant.id, reqId, contact, permissions, grants, assistant, channelType: input.channelType, contactName: contact.displayName ?? undefined, userText: text, history,
         actionId: ctx.pendingActionId, resolved: ctx.pendingResolved ?? {}, alreadyConfirmed: true,
-        lastResource: ctx.lastResource,
+        lastResource: ctx.lastResource, lastAction: ctx.lastAction,
       });
       return emit(resumed.replies, resumed.status, resumed.ctx);
     }
@@ -504,6 +523,27 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     }
     const remind = "Whenever you're ready, reply CONFIRM to go ahead, or CANCEL to drop it.";
     return emit([{ body: stc ? `${stc}\n\n${remind}` : `Please reply CONFIRM to proceed, or CANCEL to stop.` }], "awaiting_confirm", { ...ctx, paramAsides: cAsides });
+  }
+
+  // ── Resume: a "which student/employee/patient do you mean?" list is pending —
+  // a bare number or the name must resume the ORIGINAL action with that
+  // resource, not be reprocessed as a brand-new message (a real, previously
+  // broken bug: it just re-triggered the same ambiguous match and repeated the
+  // identical question forever, no matter what number was picked). ──────────
+  if (conversation.status === "awaiting_resource_pick" && ctx.pendingDisambiguation) {
+    const pd = ctx.pendingDisambiguation;
+    if (/^(cancel|stop|nevermind|never mind)$/i.test(lower)) {
+      return emit([{ body: "No problem, I've cancelled that." }], "open", { lastResource: ctx.lastResource });
+    }
+    const numMatch = /^\s*(\d{1,2})\s*$/.exec(text);
+    const picked = numMatch ? pd.candidates[parseInt(numMatch[1], 10) - 1] : pd.candidates.find((c) => c.name.toLowerCase().includes(lower.trim()) || lower.trim().includes(c.name.toLowerCase()));
+    if (picked) {
+      const cBase: CollectBase = { tenantId: tenant.id, reqId, contact, permissions, grants, assistant, channelType: input.channelType, contactName: contact.displayName ?? undefined, userText: text, history };
+      const run = await dispatchAction(cBase, pd.actionId, { ...pd.entities, name: picked.name }, { lastResource: ctx.lastResource, lastAction: ctx.lastAction });
+      return emit(run.replies, run.status, run.ctx);
+    }
+    const list = pd.candidates.map((c, i) => `${i + 1}. ${c.name}`).join("\n");
+    return emit([{ body: `Sorry, just reply with the number: \n${list}` }], "awaiting_resource_pick", ctx);
   }
 
   // ── Resume: collecting a missing parameter (multi-step slot filling) ─────
@@ -700,10 +740,12 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     if (isDirectReply(lower, /\b(cancel|no|nope|nah|stop|don'?t)\b/i)) {
       return emit([{ body: "No problem — order cancelled. Let me know if you'd like anything else!" }], "open", { lastResource: ctx.lastResource });
     }
-    if (!hasExplicitQuantity(text)) {
-      // Didn't recognize a number by the fast check — before just repeating the
-      // same line, let the AI actually read what they said (another language,
-      // a word-number, or a real question) rather than assume it's unclear.
+    if (!hasExplicitQuantity(text) || looksLikeAQuestion(text)) {
+      // Didn't recognize a number by the fast check — OR it has a number but is
+      // still phrased as a question ("do you have 2 in stock" is NOT "I want
+      // 2"). Before just repeating the same line, let the AI actually read what
+      // they said (another language, a word-number, or a real question) rather
+      // than assume it's unclear, or worse, misread a question as an answer.
       if (aiEnabled()) {
         const resolved = await resolveOrderStepAnswer({
           assistant, question: `how many ${po.productName} they'd like (a number)`, userText: text, history,
@@ -728,9 +770,10 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     }
     // Any real, non-empty answer counts — this is free text (color/size/etc.),
     // not something we can validate against a fixed list, so just make sure it
-    // isn't a stray greeting or an unrelated question riding along.
+    // isn't a stray greeting or an unrelated question riding along. A "?" alone
+    // is NOT enough to detect a question — "which one is available" has none.
     const trimmed = text.trim();
-    if (!trimmed || trimmed.length > 100 || /\?/.test(trimmed)) {
+    if (!trimmed || trimmed.length > 100 || looksLikeAQuestion(trimmed)) {
       if (aiEnabled()) {
         const resolved = await resolveOrderStepAnswer({
           assistant, question: `which option they want for ${po.productName} (choices: ${po.options})`, userText: text, history,
@@ -778,12 +821,12 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     if (isDirectReply(lower, /\b(cancel|no|nope|nah|stop|don'?t)\b/i)) {
       return emit([{ body: "No problem — order cancelled. Let me know if you'd like anything else!" }], "open", { lastResource: ctx.lastResource });
     }
-    if (!isAddressDetailed(text) || /\?/.test(text)) {
+    if (!isAddressDetailed(text) || looksLikeAQuestion(text)) {
       // Either too short/vague to be a real address, OR phrased as a question
-      // ("why do you need it?") — a word-count check alone can't tell those
-      // apart, so a real question gets a real answer instead of being wrongly
-      // accepted as an address.
-      if (/\?/.test(text) && aiEnabled()) {
+      // ("why do you need it", no "?" required) — a word-count check alone
+      // can't tell those apart, so a real question gets a real answer instead
+      // of being wrongly accepted as an address.
+      if (looksLikeAQuestion(text) && aiEnabled()) {
         const resolved = await resolveOrderStepAnswer({
           assistant, question: `their delivery address (area, street, and a landmark)`, userText: text, history,
           knownFacts: await productKnownFacts(po),
@@ -1144,7 +1187,11 @@ async function dispatchAction(
       if (hits.length === 1) chosen = hits[0];
       else if (hits.length > 1) {
         const list = hits.map((h, i) => `${i + 1}. ${resourceLabel(h)}`).join("\n");
-        return { replies: [{ body: `I found more than one match. Please tell me which one:\n${list}` }], status: "open", ctx: prevCtx };
+        return {
+          replies: [{ body: `I found more than one match. Please tell me which one:\n${list}` }],
+          status: "awaiting_resource_pick",
+          ctx: { ...prevCtx, pendingDisambiguation: { actionId, entities, candidates: hits.map((h) => ({ id: h.id, name: h.name })) } },
+        };
       } else {
         return { replies: [{ body: `I couldn't find a ${noun} matching "${name}" linked to your account.` }], status: "open", ctx: { lastResource } };
       }
@@ -1156,7 +1203,11 @@ async function dispatchAction(
       return { replies: [{ body: `There are no ${noun} records linked to your account. Please contact the organization.` }], status: "open", ctx: prevCtx };
     } else {
       const list = options.map((h, i) => `${i + 1}. ${resourceLabel(h)}`).join("\n");
-      return { replies: [{ body: `Which ${noun} do you mean?\n${list}` }], status: "open", ctx: prevCtx };
+      return {
+        replies: [{ body: `Which ${noun} do you mean?\n${list}` }],
+        status: "awaiting_resource_pick",
+        ctx: { ...prevCtx, pendingDisambiguation: { actionId, entities, candidates: options.map((h) => ({ id: h.id, name: h.name })) } },
+      };
     }
     resolved[resourceParam] = chosen.id;
     lastResource = { id: chosen.id, name: chosen.name, grade: chosen.grade, grantKey };
@@ -1211,7 +1262,7 @@ function localCommerceIntent(lower: string, text: string, products: Parameters<t
   return { kind: "none" };
 }
 
-function buildKnownFacts(displayName: string | null | undefined, grants: Record<string, ResourceGrant[]>, lastOrder?: ConvContext["lastOrder"]): string {
+function buildKnownFacts(displayName: string | null | undefined, grants: Record<string, ResourceGrant[]>, lastOrder?: ConvContext["lastOrder"], lastAction?: ConvContext["lastAction"]): string {
   const lines: string[] = [];
   if (displayName) lines.push(`- The CONTACT you're chatting with (their own name) is ${displayName}.`);
   else lines.push(`- We do not have the CONTACT's own name on file — do not guess or assign them one.`);
@@ -1224,6 +1275,9 @@ function buildKnownFacts(displayName: string | null | undefined, grants: Record<
   if (lastOrder) {
     const statusText = lastOrder.status === "paid" ? "paid" : "an M-Pesa payment prompt was sent to this number and we're waiting for them to enter their PIN";
     lines.push(`- Their most recent order (this really happened, it is NOT a test or a mistake — state it as fact if asked): ${lastOrder.quantity} × ${lastOrder.productName} = ${lastOrder.currency} ${lastOrder.total.toLocaleString("en-US")}, reference ${lastOrder.reference}, STK push sent to ${lastOrder.phone}, status: ${statusText}.`);
+  }
+  if (lastAction) {
+    lines.push(`- The most recent thing you actually did for them (this really happened — state it as fact, e.g. if asked "did you book it?"): ${lastAction.description}`);
   }
   return lines.join("\n");
 }
@@ -1412,6 +1466,7 @@ type RunArgs = {
   resolved: Record<string, unknown>;
   alreadyConfirmed: boolean;
   lastResource?: { id: string; name: string; grade?: string };
+  lastAction?: ConvContext["lastAction"];
 };
 
 async function runAction(args: RunArgs): Promise<{ replies: Reply[]; status: string; ctx: ConvContext }> {
@@ -1519,7 +1574,19 @@ async function runAction(args: RunArgs): Promise<{ replies: Reply[]; status: str
     }
   }
 
-  return { replies, status: "open", ctx: baseCtx };
+  // Real WRITE actions (booking, cancelling, submitting, etc.) get remembered
+  // the same way a paid order does — so a follow-up like "did you actually
+  // book it?" is answered from what genuinely happened, never a generic "I
+  // can't do that" (this DID happen) or an invented confirmation (be precise
+  // about what, when, for whom).
+  const wasWrite = action.requiresConfirm || /^(BOOK|CANCEL|SUBMIT|RESCHEDULE|CREATE|UPDATE|REQUEST)/i.test(action.key);
+  let lastAction: ConvContext["lastAction"] | undefined;
+  if (wasWrite) {
+    const values = { ...args.resolved, resourceName: args.lastResource?.name ?? "", studentName: args.lastResource?.name ?? "" };
+    const description = action.confirmTemplate ? fillTemplate(action.confirmTemplate, values) : (action.description ?? action.name);
+    lastAction = { description, key: action.key };
+  }
+  return { replies, status: "open", ctx: { ...baseCtx, lastAction: lastAction ?? args.lastAction } };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
