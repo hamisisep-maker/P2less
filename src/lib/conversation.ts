@@ -82,6 +82,7 @@ type ConvContext = {
     deliveryAddress?: string;
     deliveryFee?: number; // matched from a DeliveryZone once the address is known; 0/unset = not matched
     deliveryZoneName?: string;
+    questionsAsked?: number; // how many order-flow questions asked so far — so a long chain gets a warm acknowledgment, not silence
   };
   // The most recently PLACED order (pending payment or paid) — kept in context so
   // a follow-up question right after ("which number did you send it to?") can be
@@ -304,14 +305,19 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
         : `Sorry — ${po.productName} is actually out of stock right now. Would you like something else, or should I let you know once it's back?`;
       return emit([{ body }], "awaiting_order_quantity", { pendingOrder: { ...po, quantity: 0 } });
     }
+    // A short, warm heads-up once a few questions have stacked up in a row —
+    // never let a genuinely-necessary chain of "never assume" questions start
+    // to feel like an interrogation.
+    const asked = po.questionsAsked ?? 0;
+    const askPrefix = asked === 2 ? "I know that's a couple of questions in a row — just want to get this exactly right for you! " : asked >= 3 ? "Thanks for bearing with me, almost there — " : "";
     if (po.options && !po.optionChosen) {
-      return emit([{ body: `For ${po.productName}, which would you like — ${po.options}?` }], "awaiting_order_option", { pendingOrder: po });
+      return emit([{ body: `${askPrefix}For ${po.productName}, which would you like — ${po.options}?` }], "awaiting_order_option", { pendingOrder: { ...po, questionsAsked: asked + 1 } });
     }
     if (!po.fulfillment) {
-      return emit([{ body: `Would you like this delivered, or will you pick it up yourself?` }], "awaiting_order_fulfillment", { pendingOrder: po });
+      return emit([{ body: `${askPrefix}Would you like this delivered, or will you pick it up yourself?` }], "awaiting_order_fulfillment", { pendingOrder: { ...po, questionsAsked: asked + 1 } });
     }
     if (po.fulfillment === "delivery" && !po.deliveryAddress) {
-      return emit([{ body: `What's the delivery address? Please be specific — area, street, and a landmark — so it actually gets to you.` }], "awaiting_order_address", { pendingOrder: po });
+      return emit([{ body: `${askPrefix}What's the delivery address? Please be specific — area, street, and a landmark — so it actually gets to you.` }], "awaiting_order_address", { pendingOrder: { ...po, questionsAsked: asked + 1 } });
     }
     return emit([{ body: `Here's your order — please check it's right:\n${orderRecapText(po)}\n\nReply CONFIRM to pay via M-Pesa, or CANCEL to stop.` }], "awaiting_order_confirm", { pendingOrder: po });
   };
@@ -952,7 +958,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
             return emit(
               [{ body: `How many ${hit.name} would you like?` }],
               "awaiting_order_quantity",
-              { pendingOrder: { productId: hit.id, productName: hit.name, quantity: 0, unitPrice: hit.price, currency: hit.currency, options: hit.options, optionChosen: intent.optionAnswer } },
+              { pendingOrder: { productId: hit.id, productName: hit.name, quantity: 0, unitPrice: hit.price, currency: hit.currency, options: hit.options, optionChosen: intent.optionAnswer, questionsAsked: 1 } },
             );
           }
           return advanceOrder({ productId: hit.id, productName: hit.name, quantity: intent.quantity, unitPrice: hit.price, currency: hit.currency, options: hit.options, optionChosen: intent.optionAnswer });
