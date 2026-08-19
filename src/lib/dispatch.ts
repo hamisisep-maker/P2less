@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "./db";
 import { sendWhatsAppText } from "./transport";
 import type { Driver } from "@prisma/client";
+import { registerJob, startJobPoller } from "./job-runner";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Delivery dispatch — real driver-matching for a delivery order. Every step is
@@ -221,17 +222,17 @@ export async function handleDriverMessage(driver: Driver, text: string): Promise
 }
 
 const POLL_INTERVAL_MS = 30 * 1000;
-declare global {
-  // eslint-disable-next-line no-var
-  var __p2lessDispatchPoller: NodeJS.Timeout | undefined;
-}
 
-/** Starts the ONE background loop that advances trips whose driver-offer timed
- *  out. Guarded against double-starting (Next dev mode can re-run
- *  instrumentation on hot reload) via a global flag. */
+/** Starts the ONE background loop that advances trips whose driver-offer
+ *  timed out. Every execution is now a real JobRun row via job-runner.ts —
+ *  same interval and underlying logic, just observed instead of fire-and-forget. */
 export function startDispatchPoller(): void {
-  if (globalThis.__p2lessDispatchPoller) return;
-  globalThis.__p2lessDispatchPoller = setInterval(() => {
-    advanceExpiredOffers().catch((e) => console.error("[dispatch-poller]", e));
-  }, POLL_INTERVAL_MS);
+  registerJob({
+    key: "dispatch_poller",
+    name: "Delivery dispatch — advance expired offers",
+    category: "delivery",
+    intervalMs: POLL_INTERVAL_MS,
+    run: async () => ({ advanced: await advanceExpiredOffers() }),
+  });
+  startJobPoller("dispatch_poller");
 }

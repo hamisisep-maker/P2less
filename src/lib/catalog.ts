@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "./db";
 import { stkPush, isConfigured } from "./mpesa";
+import { assertChannelEnabled } from "./payment-channels";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Business catalog — conversational browsing + ordering of a tenant's own
@@ -212,12 +213,14 @@ export type OrderPaymentResult =
  *  the Daraja callback, which marks the Order paid. Falls back to an instant
  *  mock (and marks the order paid immediately) when M-Pesa isn't configured. */
 export async function startOrderPayment(opts: { tenantId: string; orderId: string; phone: string; amountKes: number; reference: string }): Promise<OrderPaymentResult> {
+  const channelCheck = await assertChannelEnabled("mpesa_stk");
+  if (!channelCheck.ok) return { ok: false, error: channelCheck.error };
   if (!isConfigured()) {
-    await db.payment.create({ data: { tenantId: opts.tenantId, orderId: opts.orderId, reference: opts.reference, amount: opts.amountKes, currency: "KES", purpose: "order", method: "mpesa", provider: "mock", status: "paid", paidAt: new Date() } });
+    await db.payment.create({ data: { tenantId: opts.tenantId, orderId: opts.orderId, reference: opts.reference, amount: opts.amountKes, currency: "KES", purpose: "order", method: "mpesa", channelKey: "mpesa_stk", provider: "mock", status: "paid", paidAt: new Date() } });
     await db.order.update({ where: { id: opts.orderId }, data: { status: "paid", paidAt: new Date() } });
     return { ok: true, mock: true };
   }
-  await db.payment.create({ data: { tenantId: opts.tenantId, orderId: opts.orderId, reference: opts.reference, amount: opts.amountKes, currency: "KES", purpose: "order", method: "mpesa", provider: "daraja", status: "pending" } });
+  await db.payment.create({ data: { tenantId: opts.tenantId, orderId: opts.orderId, reference: opts.reference, amount: opts.amountKes, currency: "KES", purpose: "order", method: "mpesa", channelKey: "mpesa_stk", provider: "daraja", status: "pending" } });
   const res = await stkPush({ phone: opts.phone, amount: opts.amountKes, accountRef: opts.reference, description: "Order payment" });
   if (!res.ok) {
     await db.payment.updateMany({ where: { reference: opts.reference }, data: { status: "failed" } });

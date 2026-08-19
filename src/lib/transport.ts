@@ -113,6 +113,12 @@ export async function deliver(msg: OutboundMessage): Promise<{ delivered: boolea
       return { delivered: true, transport: "webchat" };
 
     case "whatsapp": {
+      // Real functional gate: an admin disabling WhatsApp at /admin/integrations
+      // genuinely stops outbound sends, not just a display badge.
+      const integration = await db.integration.findUnique({ where: { key: "whatsapp_cloud_api" }, select: { enabled: true } });
+      if (integration && !integration.enabled) {
+        return { delivered: false, transport: "whatsapp:disabled", error: "WhatsApp integration is disabled by an administrator" };
+      }
       const token = await resolveToken(msg.fromNumberId);
       if (!token || !msg.fromNumberId) {
         // Not configured yet (no Cloud API credentials): log so local dev still

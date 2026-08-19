@@ -3,6 +3,7 @@ import { handleInbound } from "@/lib/conversation";
 import { sendTyping, fetchWhatsAppMedia, sendWhatsAppText } from "@/lib/transport";
 import { transcribeAudio } from "@/lib/ai";
 import { db } from "@/lib/db";
+import { recordInboundEvent, finishInboundEvent } from "@/lib/inbound-events";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WhatsApp Cloud API channel adapter. Same shared engine as web chat — the only
@@ -63,6 +64,16 @@ export async function POST(req: Request) {
     payload = JSON.parse(raw) as WaPayload;
   } catch {
     return Response.json({ received: true }); // ack malformed to avoid retry storms
+  }
+
+  // Real health signal, independent of message-processing success: this is
+  // the "is the webhook actually receiving events" fact system-health needs —
+  // decoupled from the in-memory wamid dedupe below (which guards against a
+  // double REPLY, not against double-counting the webhook hit itself).
+  const startedAt = Date.now();
+  const eventRecord = await recordInboundEvent({ source: "whatsapp_webhook", rawBody: raw });
+  if (!eventRecord.duplicate) {
+    void finishInboundEvent(eventRecord.eventRecordId, { processingStatus: "processed", startedAt, responseStatus: 200 });
   }
 
   // Process WITHOUT blocking the 200 ack. Our pipeline makes AI calls that can

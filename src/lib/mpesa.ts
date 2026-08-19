@@ -116,3 +116,32 @@ export function parseCallback(body: unknown): { checkoutId: string; success: boo
     return null;
   }
 }
+
+export type C2BConfirmation = {
+  transId: string; amount: number; billRefNumber: string;
+  msisdn: string; firstName?: string; lastName?: string; transTime?: string; businessShortCode?: string;
+};
+
+/** Parse a Daraja C2B (PayBill/Till) confirmation body — a customer paid the
+ *  shortcode directly, without P2Less ever sending an STK push first, so
+ *  there is no pre-existing pending Payment to match by CheckoutRequestID.
+ *  Matching happens by BillRefNumber instead — see the confirmation route. */
+export function parseC2BConfirmation(body: unknown): C2BConfirmation | null {
+  try {
+    const b = body as Record<string, unknown>;
+    const transId = String(b.TransID ?? "");
+    const amount = Number(b.TransAmount ?? 0);
+    const billRefNumber = String(b.BillRefNumber ?? "").trim();
+    const msisdn = String(b.MSISDN ?? "");
+    if (!transId || !amount || !msisdn) return null;
+    return {
+      transId, amount, billRefNumber, msisdn,
+      firstName: b.FirstName ? String(b.FirstName) : undefined,
+      lastName: b.LastName ? String(b.LastName) : undefined,
+      transTime: b.TransTime ? String(b.TransTime) : undefined,
+      businessShortCode: b.BusinessShortCode ? String(b.BusinessShortCode) : undefined,
+    };
+  } catch {
+    return null;
+  }
+}

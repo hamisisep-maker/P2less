@@ -29,6 +29,20 @@ export const SETTING_DEFAULTS = {
   billing_auto_suspend_enabled: 1, // 0/1 — kill switch for automated suspension specifically (suspension is the most consequential automated action)
   billing_auto_renew_charge_enabled: 1, // 0/1 — kill switch for firing automated STK pushes at all
   billing_reconciliation_window_hours: 1, // how long to wait for a payment webhook before flagging "unknown, needs investigation" instead of assuming failure
+
+  // ── Priority 4: incident detection thresholds (src/lib/incident-detection.ts) ──
+  incident_job_consecutive_failures: 5, // a background job failing this many times in a row opens an incident
+  incident_ai_error_rate_pct: 10, // AI provider error rate over the window below that counts as "degraded"
+  incident_ai_window_minutes: 15, // rolling window for the AI error-rate calculation
+  incident_mpesa_callback_silence_minutes: 15, // no M-Pesa callback at all in this window = incident
+  incident_reconciliation_unresolved_threshold: 10, // unresolved reconciliation items before an incident opens
+
+  // ── Priority 4: maintenance mode (src/lib/maintenance-actions.ts) ──────
+  maintenance_enabled: 0, // 0/1 — whole-PLATFORM maintenance, distinct from a single Integration.enabled toggle
+  maintenance_reason: "",
+  maintenance_started_at: "",
+  maintenance_expected_duration_minutes: 30,
+  maintenance_message: "P2Less is undergoing scheduled maintenance. We'll be back shortly.",
 } as const;
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;

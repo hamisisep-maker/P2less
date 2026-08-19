@@ -3,6 +3,7 @@ import { db } from "./db";
 import { matchIntent, type IntentAction, type IntentMatch } from "./intent-engine";
 import { getAiTenantId } from "./ai-context";
 import { getSettingNumber } from "./platform-settings";
+import { randomToken } from "./crypto";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AI layer — provider-agnostic (Claude / OpenAI / Gemini). It does three jobs:
@@ -51,18 +52,26 @@ function hasKey(p: Provider): boolean {
 async function providerChain(): Promise<Provider[]> {
   const all: Provider[] = ["google", "groq", "cerebras", "openrouter", "anthropic", "openai", "xai"];
   let dbOverride = "";
+  // A provider an admin disabled at /admin/integrations is skipped from the
+  // chain entirely — a real functional gate, not just a display toggle.
+  let disabled = new Set<string>();
   try {
-    const row = await db.platformSetting.findUnique({ where: { key: "ai_primary_provider" } });
+    const [row, rows] = await Promise.all([
+      db.platformSetting.findUnique({ where: { key: "ai_primary_provider" } }),
+      db.integration.findMany({ where: { key: { startsWith: "ai_" }, enabled: false }, select: { key: true } }),
+    ]);
     dbOverride = row?.value ?? "";
+    disabled = new Set(rows.map((r) => r.key.replace("ai_", "")));
   } catch {
     // Table not migrated yet / DB hiccup — fall through to env, never block a reply on this.
   }
   const configured = (dbOverride || process.env.AI_PROVIDER || "").toLowerCase();
-  const primary = all.find((p) => p === configured && hasKey(p))
-    ?? all.find(hasKey); // auto-detect if unset/keyless
+  const usable = (p: Provider) => hasKey(p) && !disabled.has(p);
+  const primary = all.find((p) => p === configured && usable(p))
+    ?? all.find(usable); // auto-detect if unset/keyless/disabled
   const chain: Provider[] = [];
   if (primary) chain.push(primary);
-  for (const p of all) if (hasKey(p) && !chain.includes(p)) chain.push(p);
+  for (const p of all) if (usable(p) && !chain.includes(p)) chain.push(p);
   return chain;
 }
 
@@ -186,6 +195,39 @@ function recordAiStat(provider: Provider, ok: boolean, status?: number, errorSni
     .catch(() => {});
 }
 
+// ── Priority 4: per-attempt event stream + audited failover ─────────────────
+// Correlates every attempt within ONE callLLM() invocation (across retries
+// AND provider failover) so "primary failed, fallback activated" is a real,
+// traceable fact — not inferable only by eyeballing two providers' daily
+// counters on the same day. Does not replace recordAiStat/recordAiCost
+// (still called exactly as before); this is additive telemetry only, never
+// allowed to affect which branch executes or slow down a real reply.
+type AttemptTrack = { correlationId: string; providerRank: number; attemptNumber: number; tenantId: string | null };
+
+function recordAiCallEvent(track: AttemptTrack, provider: Provider, model: string, feature: string, ok: boolean, info: { statusCode?: number; errorSnippet?: string; latencyMs: number; requestId?: string }) {
+  db.aiCallEvent.create({
+    data: {
+      correlationId: track.correlationId, tenantId: track.tenantId, provider, model, feature,
+      providerRank: track.providerRank, attemptNumber: track.attemptNumber, ok,
+      statusCode: info.statusCode, errorSnippet: info.errorSnippet?.slice(0, 500), latencyMs: info.latencyMs, requestId: info.requestId,
+    },
+  }).catch(() => {});
+}
+
+/** Writes to the tenant's own audit trail (via audit.ts, same writer every
+ *  other privileged/system event uses) — "Primary model unavailable,
+ *  fallback activated" becomes a real, queryable audit row, not just an
+ *  inference from two separate counters. Skipped when no tenant is known yet
+ *  (e.g. voice-note transcription before routing) since AuditLog requires one. */
+function aiFailoverAudit(tenantId: string | null, detail: Record<string, unknown>) {
+  if (!tenantId) return;
+  (async () => {
+    const { audit } = await import("./audit");
+    const { requestId: newRequestId } = await import("./crypto");
+    await audit({ tenantId, requestId: newRequestId(), actorType: "system", action: "ai.provider_failover", success: true, detail });
+  })().catch(() => {});
+}
+
 // A hung or slow model must NEVER hold up the user's reply — on a real channel
 // that means no WhatsApp message arrives at all. Any call that exceeds this
 // budget is aborted and the caller falls back to the deterministic template.
@@ -211,20 +253,39 @@ async function fetchT(url: string, init: RequestInit, timeoutMs = LLM_TIMEOUT_MS
 async function callLLM(system: string, user: string, opts: LLMOpts = {}): Promise<string | null> {
   const chain = await providerChain();
   const perProvider = Number(process.env.AI_ATTEMPTS || 2);
-  for (const p of chain) {
+  const correlationId = randomToken(6);
+  const tenantId = getAiTenantId() ?? null;
+  for (let rank = 0; rank < chain.length; rank++) {
+    const p = chain[rank];
     for (let i = 0; i < perProvider; i++) {
-      const out = await callOnce(p, system, user, opts);
-      if (out) return out;
+      const out = await callOnce(p, system, user, opts, { correlationId, providerRank: rank, attemptNumber: i, tenantId });
+      if (out) {
+        // Succeeded, but NOT on the primary provider (rank 0) — this is a
+        // real, audited failover, and the successful request's cost still
+        // lands in AiRequestLog exactly as it would for the primary (recordAiCost
+        // was already called inside callOnce on the same success path).
+        if (rank > 0) {
+          aiFailoverAudit(tenantId, {
+            primaryProvider: chain[0], fallbackProvider: p, providerRank: rank,
+            feature: opts.feature ?? "unknown", reason: "primary provider unavailable", correlationId,
+          });
+        }
+        return out;
+      }
       if (i < perProvider - 1) await new Promise((r) => setTimeout(r, 300 * (i + 1))); // 300ms, 600ms…
     }
     // This provider failed every attempt → fall over to the next configured one.
+  }
+  if (chain.length > 0) {
+    aiFailoverAudit(tenantId, { primaryProvider: chain[0], fallbackProvider: null, feature: opts.feature ?? "unknown", reason: "all configured providers failed", correlationId });
   }
   return null;
 }
 
 /** Single completion attempt against ONE provider, with optional multi-turn history. */
-async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts = {}): Promise<string | null> {
+async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts = {}, track?: AttemptTrack): Promise<string | null> {
   const { maxTokens = 300, temperature = 0.4 } = opts;
+  const attemptStartedAt = Date.now();
   // Gemini and Anthropic REQUIRE the first turn to be a user turn. Our history is
   // a raw slice of recent messages, so it may start with an assistant reply —
   // passing that verbatim makes the whole call 400 and the AI silently falls back.
@@ -274,11 +335,13 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
         const body = res ? (await res.text()).slice(0, 300) : "no response";
         console.error(`[ai:${p}] status=${res?.status} body=${body}`);
         recordAiStat(p, false, res?.status, body);
+        if (track) recordAiCallEvent(track, p, compat.model, opts.feature ?? "unknown", false, { statusCode: res?.status, errorSnippet: body, latencyMs: Date.now() - attemptStartedAt });
         return null;
       }
       recordAiStat(p, true, res.status, undefined, extractRateLimit(res));
       const j = (await res.json()) as { id?: string; choices?: { message?: { content?: string } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number } };
       recordAiCost(p, compat.model, opts.feature ?? "unknown", j.usage ? { input: j.usage.prompt_tokens, output: j.usage.completion_tokens } : null, j.id);
+      if (track) recordAiCallEvent(track, p, compat.model, opts.feature ?? "unknown", true, { statusCode: res.status, latencyMs: Date.now() - attemptStartedAt, requestId: j.id });
       return j.choices?.[0]?.message?.content?.trim() ?? null;
     }
     if (p === "google" && process.env.GEMINI_API_KEY) {
@@ -303,11 +366,13 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
       });
       if (!res || !res.ok) {
         recordAiStat(p, false, res?.status);
+        if (track) recordAiCallEvent(track, p, model, opts.feature ?? "unknown", false, { statusCode: res?.status, latencyMs: Date.now() - attemptStartedAt });
         return null;
       }
       recordAiStat(p, true, res.status);
       const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[]; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
       recordAiCost(p, model, opts.feature ?? "unknown", j.usageMetadata ? { input: j.usageMetadata.promptTokenCount, output: j.usageMetadata.candidatesTokenCount } : null);
+      if (track) recordAiCallEvent(track, p, model, opts.feature ?? "unknown", true, { statusCode: res.status, latencyMs: Date.now() - attemptStartedAt });
       return j.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
     }
     if (p === "anthropic" && process.env.ANTHROPIC_API_KEY) {
@@ -327,15 +392,19 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
       });
       if (!res || !res.ok) {
         recordAiStat(p, false, res?.status);
+        if (track) recordAiCallEvent(track, p, process.env.ANTHROPIC_MODEL || "claude-sonnet-5", opts.feature ?? "unknown", false, { statusCode: res?.status, latencyMs: Date.now() - attemptStartedAt });
         return null;
       }
       recordAiStat(p, true, res.status, undefined, extractRateLimit(res));
       const j = (await res.json()) as { id?: string; content?: { text?: string }[]; usage?: { input_tokens?: number; output_tokens?: number } };
       recordAiCost(p, process.env.ANTHROPIC_MODEL || "claude-sonnet-5", opts.feature ?? "unknown", j.usage ? { input: j.usage.input_tokens, output: j.usage.output_tokens } : null, j.id);
+      if (track) recordAiCallEvent(track, p, process.env.ANTHROPIC_MODEL || "claude-sonnet-5", opts.feature ?? "unknown", true, { statusCode: res.status, latencyMs: Date.now() - attemptStartedAt, requestId: j.id });
       return j.content?.[0]?.text?.trim() ?? null;
     }
   } catch (e) {
-    recordAiStat(p, false, undefined, e instanceof Error ? e.message.slice(0, 200) : "unknown exception");
+    const errorSnippet = e instanceof Error ? e.message.slice(0, 200) : "unknown exception";
+    recordAiStat(p, false, undefined, errorSnippet);
+    if (track) recordAiCallEvent(track, p, "unknown", opts.feature ?? "unknown", false, { errorSnippet, latencyMs: Date.now() - attemptStartedAt });
     return null;
   }
   return null;

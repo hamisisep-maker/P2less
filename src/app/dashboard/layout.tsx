@@ -1,13 +1,24 @@
 import { requireTenantUser } from "@/lib/auth";
 import { logoutAction } from "@/lib/actions";
 import { db } from "@/lib/db";
+import { getSetting } from "@/lib/platform-settings";
 import { Logo, Badge } from "@/components/ui";
 import { NotificationBell, UserMenu, LiveClock, type NotifItem } from "@/components/dashboard-ui";
 import { SidebarNav } from "@/components/sidebar-nav";
+import { MaintenanceScreen } from "@/components/maintenance-screen";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const user = await requireTenantUser();
   const tenantId = user.tenantId!;
+
+  // Whole-platform maintenance (src/lib/maintenance-actions.ts) blocks tenant
+  // staff from the dashboard — platform admins are unaffected (separate
+  // /admin layout) so they can always turn it back off.
+  const maintenanceEnabled = await getSetting("maintenance_enabled");
+  if (maintenanceEnabled === "1") {
+    const message = await getSetting("maintenance_message");
+    return <MaintenanceScreen message={message} onLogout={logoutAction} />;
+  }
 
   const [escalated, lowStock, outOfStock] = await Promise.all([
     db.conversation.count({ where: { tenantId, status: "escalated" } }),

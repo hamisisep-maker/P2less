@@ -179,6 +179,254 @@ model AiProviderStat {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// OPERATIONAL HEALTH & INTEGRATIONS (Priority 4) — the "common operational
+// event/health model". No model here re-stores a fact that already lives
+// elsewhere (AiProviderStat, AiRequestLog, Connector.lastOk,
+// Subscription.reconciliationNeeded) — these are either genuinely new record
+// types (a job execution, an inbound webhook delivery, an incident) or thin
+// config/pointer rows. System-health status is COMPUTED at read time by
+// joining these with the existing tables, not duplicated into a new cache.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One row per external dependency the platform relies on — WhatsApp, each AI
+/// provider, each payment channel, email/SMS (honestly "not configured" where
+/// true), database, storage. This is CONFIG (name/links/enabled/environment),
+/// never the live health number — see admin-authz.ts-gated actions in
+/// integrations-actions.ts for enable/disable, and system-health.ts for how
+/// live status is actually computed per category.
+model Integration {
+  id                   String   @id @default(cuid())
+  key                  String   @unique
+  category             String   // messaging | payments | ai | notification | infrastructure
+  name                 String
+  provider             String   // real vendor name: Meta, Safaricom, Google, Groq, ...
+  environment          String   @default("production")
+  // Real functional gate — assertChannelEnabled()/assertIntegrationEnabled()
+  // check this before doing the thing, not just before showing a badge.
+  enabled              Boolean  @default(true)
+  docsUrl              String?
+  providerDashboardUrl String?
+  billingUrl           String?
+  configJson           Json?    // NON-secret config only (webhook URL, shortcode, timeouts) — never credentials
+  // List-view cache only, written by the integration_health_sweep job. Detail
+  // pages always recompute live from the real underlying tables — never
+  // trust this alone for a page that claims to "prove" health.
+  lastCheckedAt        DateTime?
+  lastCheckOk          Boolean?
+  lastCheckDetail      String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  credentials    IntegrationCredential[]
+  paymentChannel PaymentChannel?
+
+  @@index([category])
+}
+
+/// Secrets for an Integration, encrypted at rest via crypto.ts's
+/// encryptJSON/decryptJSON — the SAME AES-256-GCM scheme Connector.authConfigEnc
+/// already uses, not a new one. maskedPreview is precomputed once at write
+/// time and is the ONLY form ever sent to a client component; the real value
+/// never crosses the server/client boundary after creation.
+model IntegrationCredential {
+  id            String    @id @default(cuid())
+  integrationId String
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  label         String    // "consumer_key" | "webhook_secret" | "passkey" | ...
+  valueEnc      String
+  maskedPreview String    // e.g. "••••••••••92AF"
+  active        Boolean   @default(true)
+  rotatedFromId String?   // previous credential row's id — a real rotation chain, not an overwrite
+  createdById   String
+  createdAt     DateTime  @default(now())
+  revokedAt     DateTime?
+
+  @@index([integrationId, active])
+}
+
+/// Static registry row for a background job (see job-runner.ts's
+/// registerJob/runJobNow) — counters here answer "is the poller itself even
+/// running" (staleness), separate from any single JobRun's outcome.
+model JobDefinition {
+  key                 String   @id
+  name                String
+  category            String
+  intervalMs          Int
+  enabled             Boolean  @default(true)
+  lastRunAt           DateTime?
+  lastSuccessAt       DateTime?
+  lastFailureAt       DateTime?
+  consecutiveFailures Int      @default(0)
+  updatedAt           DateTime @updatedAt
+
+  runs JobRun[]
+}
+
+/// One row per actual job EXECUTION — this is what lets an incident review
+/// answer "why wasn't this tenant suspended?" with "the suspension job
+/// failed at 03:14 because X, retried three times, recovered at 03:18."
+model JobRun {
+  id          String    @id @default(cuid())
+  jobKey      String
+  job         JobDefinition @relation(fields: [jobKey], references: [key])
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  durationMs  Int?
+  status      String    @default("running") // running | success | failed
+  resultJson  Json?     // whatever the job returns, e.g. runBillingCycle's {reminders,renewalsAttempted,suspended,...}
+  error       String?
+  triggeredBy String    @default("scheduler") // scheduler | manual:<adminId>
+
+  @@index([jobKey, startedAt])
+  @@index([status])
+}
+
+/// Ledger of every INBOUND webhook/callback delivery FROM a provider (M-Pesa
+/// STK/C2B, WhatsApp) — idempotencyKey gives real event-id-based duplicate
+/// detection (the STK callback route today only dedupes by Payment.status,
+/// which this closes). Distinct from the tenant-owned OUTBOUND `Webhook`
+/// model below (P2Less -> tenant's own systems) — different direction,
+/// different concern, not to be conflated.
+model InboundEvent {
+  id               String   @id @default(cuid())
+  source           String   // mpesa_stk_callback | mpesa_c2b_confirmation | mpesa_c2b_validation | whatsapp_webhook
+  eventId          String?
+  idempotencyKey   String   @unique // `${source}:${eventId ?? sha256(rawBody)}`
+  receivedAt       DateTime @default(now())
+  processingStatus String   @default("received") // received | processed | ignored_duplicate | failed | reconciliation_required
+  processingMs     Int?
+  responseStatus   Int?
+  retryCount       Int      @default(0)
+  error            String?
+  relatedPaymentId String?
+  relatedTenantId  String?
+  rawBody          String   // sanitized payload — needed to investigate a failed payment event
+  createdAt        DateTime @default(now())
+
+  @@index([source, receivedAt])
+  @@index([relatedTenantId])
+  @@index([processingStatus])
+}
+
+/// Per-attempt AI call event stream, correlated across a single callLLM()
+/// invocation's full provider chain — what AiProviderStat (daily upsert
+/// counter) and AiRequestLog (success-only, no correlation) can't answer:
+/// "7 failures in the last 15 minutes" or "primary failed for tenant X's
+/// request, fallback activated." Does not re-store cost/tokens — that stays
+/// in AiRequestLog; requestId joins the two when ok=true.
+model AiCallEvent {
+  id            String   @id @default(cuid())
+  correlationId String   // one callLLM() call = one correlationId across every provider attempt
+  tenantId      String?
+  provider      String
+  model         String
+  feature       String
+  providerRank  Int      // 0 = primary in the chain, 1 = first fallback, ...
+  attemptNumber Int      // retry count within THIS provider
+  ok            Boolean
+  statusCode    Int?
+  errorSnippet  String?
+  latencyMs     Int?
+  requestId     String?  // joins AiRequestLog.requestId when ok=true
+  createdAt     DateTime @default(now())
+
+  @@index([correlationId])
+  @@index([provider, createdAt])
+  @@index([createdAt])
+}
+
+/// A detected operational problem, with a real lifecycle
+/// (detected -> acknowledged -> investigating -> resolved) — never silently
+/// re-opened as a duplicate; repeated detections bump occurrenceCount and
+/// lastDetectedAt on the same row instead (see incident-detection.ts).
+model Incident {
+  id                    String    @id @default(cuid())
+  severity              String    // critical | warning | info
+  source                String    // mpesa_paybill | ai_google | background_job:billing_poller | database | whatsapp
+  title                 String
+  status                String    @default("detected") // detected | acknowledged | investigating | resolved
+  firstDetectedAt       DateTime  @default(now())
+  lastDetectedAt        DateTime  @default(now())
+  occurrenceCount       Int       @default(1)
+  relatedIntegrationKey String?
+  relatedJobKey         String?
+  acknowledgedById      String?
+  acknowledgedAt        DateTime?
+  investigatingAt       DateTime?
+  resolvedById          String?
+  resolvedAt            DateTime?
+  cause                 String?   // required on resolve
+  resolutionNote        String?   // required on resolve
+  detail                Json?     // structured evidence AT DETECTION TIME — the "actual reason", not a bare status
+
+  events IncidentEvent[]
+
+  @@index([status])
+  @@index([source])
+}
+
+/// Timeline entry for an Incident — this plus PlatformAuditLog (written
+/// alongside every lifecycle transition via logPrivilegedAction) is what
+/// makes incident resolution "part of the audit trail" per the spec.
+model IncidentEvent {
+  id         String   @id @default(cuid())
+  incidentId String
+  incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  type       String   // detected | reoccurred | acknowledged | investigating | resolved | comment
+  actorId    String?  // null = system-detected
+  note       String?
+  detail     Json?
+  createdAt  DateTime @default(now())
+
+  @@index([incidentId])
+}
+
+/// Per-payment-channel config + rollup, one row per payments-category
+/// Integration (M-Pesa STK / PayBill / Till, bank transfer, card). Real FK
+/// to Integration, not a naming convention — "STK Push is working, PayBill
+/// callbacks are delayed" requires channels to be independently trackable,
+/// never one giant "M-Pesa" switch.
+model PaymentChannel {
+  key            String   @id // == Integration.key for the matching payments-category row
+  integration    Integration @relation(fields: [key], references: [key])
+  providerGroup  String   // mpesa | bank | card
+  implemented    Boolean  @default(true) // false for "card" — never faked as available
+  configJson     Json?    // shortcode/paybill/till number, bank account, fee schedule, limits
+  lastSuccessAt  DateTime?
+  lastFailureAt  DateTime?
+  lastCallbackAt DateTime? // last INBOUND confirmation on this channel specifically
+  updatedAt      DateTime @updatedAt
+}
+
+/// A payment-provider-reported transaction that arrived WITHOUT a
+/// pre-existing pending Payment row to match against — a PayBill/Till direct
+/// pay (no STK push was ever sent by us) or a bank-statement line an admin
+/// entered by hand. The "reconciliation_required" philosophy generalized:
+/// never invent a match, never drop the evidence. See reconciliation.ts.
+model UnmatchedTransaction {
+  id               String    @id @default(cuid())
+  channelKey       String    // mpesa_paybill | mpesa_till | bank_transfer
+  providerRef      String    // M-Pesa TransID, or a bank statement reference
+  amount           Int
+  currency         String    @default("KES")
+  occurredAt       DateTime
+  senderMsisdn     String?
+  senderName       String?
+  reference        String?   // BillRefNumber / bank narration — may be wrong, blank, or unmatched on purpose
+  rawPayload       Json
+  status           String    @default("unmatched") // unmatched | matched | ignored
+  matchedTenantId  String?
+  matchedPaymentId String?   @unique
+  matchedById      String?
+  matchedAt        DateTime?
+  matchReason      String?
+  createdAt        DateTime  @default(now())
+
+  @@index([channelKey, status])
+  @@index([providerRef])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PLATFORM: Tenancy, billing, branding
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -271,7 +519,17 @@ model Subscription {
   // true = "we sent an STK push but don't yet know if it succeeded or
   // failed" (no webhook received within the reconciliation window) — NEVER
   // auto-suspend while this is true; it means investigate, not "failed".
+  // DERIVED, not independently written: synced from whether this tenant has
+  // any subscription-purpose Payment at status="unknown" — see
+  // payment-channels.ts's syncReconciliationFlag(). Kept because existing
+  // read sites (runBillingCycle, clearReconciliationAction, the automation
+  // page) already depend on it; the real state now lives on Payment itself
+  // so order/topup payments get the same safety net subscriptions always had.
   reconciliationNeeded Boolean   @default(false)
+  // Admin-assigned per tenant so a PayBill direct-pay (no STK push, no
+  // pre-existing pending Payment) can be matched to this tenant by BillRefNumber
+  // in the C2B confirmation webhook — see src/app/api/payments/mpesa/c2b/confirmation/route.ts.
+  paybillReference     String?   @unique
 }
 
 /// A payment the organization makes to P2Less (subscription + usage). P2Less in
@@ -293,10 +551,19 @@ model Payment {
   amount      Int // WHOLE units of `currency` (KES) — NOT cents; M-Pesa/Daraja amounts are whole-shilling, so this matches real STK push amounts directly.
   currency    String   @default("KES")
   purpose     String   @default("subscription") // subscription | usage | topup | order
-  method      String   @default("mpesa") // mpesa | card | bank
-  status      String   @default("pending") // pending | paid | failed | refunded
+  method      String   @default("mpesa") // mpesa | card | bank — legacy/loose; channelKey below is the real channel
+  // "unknown" = a definitive success/failure was never received (timeout,
+  // silence, network error) — NOT the same as "failed". The money may still
+  // have moved on the provider's side. See src/lib/classify-outcome.ts —
+  // "unknown" must never by itself feed a tenant-suspending path.
+  status      String   @default("pending") // pending | paid | failed | refunded | unknown
   provider    String? // stripe | daraja | manual
   providerRef String? // gateway transaction id
+  // Real payment channel — "mpesa_stk" | "mpesa_paybill" | "mpesa_till" |
+  // "bank_transfer" | "card" — matches Integration.key/PaymentChannel.key.
+  // Nullable so pre-Priority-4 rows and any call site not yet updated still
+  // read/write fine; see src/lib/payment-channels.ts's assertChannelEnabled().
+  channelKey  String?
   periodLabel String? // e.g. "2026-08"
   createdAt   DateTime @default(now())
   paidAt      DateTime?

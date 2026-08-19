@@ -14,6 +14,7 @@ import { stkPush, isConfigured } from "./mpesa";
 import { storeProductImage } from "./documents";
 import { normalizePhone } from "./conversation";
 import { handleSubscriptionPaymentConfirmed } from "./billing-lifecycle";
+import { assertChannelEnabled } from "./payment-channels";
 import type { ParamSpec } from "./connector-engine";
 
 export async function loginAction(_prev: unknown, formData: FormData) {
@@ -67,8 +68,11 @@ export async function startPaymentAction(_prev: unknown, formData: FormData) {
   const reference = "PAY-" + randomToken(4).toUpperCase();
   const period = new Date().toISOString().slice(0, 7);
 
+  const channelCheck = await assertChannelEnabled("mpesa_stk");
+  if (!channelCheck.ok) return { error: channelCheck.error };
+
   if (!isConfigured()) {
-    const payment = await db.payment.create({ data: { tenantId: user.tenantId!, reference, amount, currency: "KES", purpose: "subscription", method: "mpesa", status: "paid", provider: "mock", periodLabel: period, paidAt: new Date() } });
+    const payment = await db.payment.create({ data: { tenantId: user.tenantId!, reference, amount, currency: "KES", purpose: "subscription", method: "mpesa", channelKey: "mpesa_stk", status: "paid", provider: "mock", periodLabel: period, paidAt: new Date() } });
     // Mock mode still drives the REAL billing lifecycle (renewsAt extension,
     // reactivation, receipt generation) — only the payment gateway call
     // itself is mocked, nothing about what happens after "paid" is faked.
@@ -77,7 +81,7 @@ export async function startPaymentAction(_prev: unknown, formData: FormData) {
     return { ok: true, ref: reference, mock: true, message: "Recorded (demo mode — set M-Pesa keys in .env for a real STK push)." };
   }
 
-  await db.payment.create({ data: { tenantId: user.tenantId!, reference, amount, currency: "KES", purpose: "subscription", method: "mpesa", status: "pending", provider: "daraja", periodLabel: period } });
+  await db.payment.create({ data: { tenantId: user.tenantId!, reference, amount, currency: "KES", purpose: "subscription", method: "mpesa", channelKey: "mpesa_stk", status: "pending", provider: "daraja", periodLabel: period } });
   const res = await stkPush({ phone, amount, accountRef: reference, description: "P2Less bill" });
   if (!res.ok) {
     await db.payment.updateMany({ where: { reference }, data: { status: "failed" } });

@@ -6,6 +6,9 @@ import { computeBill } from "./billing";
 import { getSettingNumber } from "./platform-settings";
 import { stkPush, isConfigured as mpesaConfigured } from "./mpesa";
 import { generateReceiptPdf } from "./documents";
+import { registerJob, startJobPoller } from "./job-runner";
+import { assertChannelEnabled, syncReconciliationFlag } from "./payment-channels";
+import { classifyOutcome } from "./classify-outcome";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The subscription billing lifecycle — a real state machine, not scattered
@@ -192,17 +195,19 @@ export async function handleSubscriptionPaymentFailed(payment: { tenantId: strin
  *  wait for the Daraja callback route to resolve it. */
 async function attemptAutomatedCharge(sub: { tenantId: string; billingPhone: string | null }, amount: number, reference: string): Promise<{ ok: boolean; skipped?: string; confirmed?: boolean }> {
   if (!sub.billingPhone) return { ok: false, skipped: "no billing phone on file" };
+  const channelCheck = await assertChannelEnabled("mpesa_stk");
+  if (!channelCheck.ok) return { ok: false, skipped: channelCheck.error };
   const periodLabel = new Date().toISOString().slice(0, 7);
   if (!mpesaConfigured()) {
     // Demo/no-keys mode — record it as an instant mock success and drive it
     // through the SAME confirmation handler a real webhook would use, so the
     // lifecycle is genuinely exercisable end to end without real Daraja
     // creds — never a shortcut that skips reactivation/receipt/notification.
-    const payment = await db.payment.create({ data: { tenantId: sub.tenantId, reference, amount, currency: "KES", purpose: "subscription", method: "mpesa", status: "paid", provider: "mock", periodLabel, paidAt: new Date() } });
+    const payment = await db.payment.create({ data: { tenantId: sub.tenantId, reference, amount, currency: "KES", purpose: "subscription", method: "mpesa", channelKey: "mpesa_stk", status: "paid", provider: "mock", periodLabel, paidAt: new Date() } });
     await handleSubscriptionPaymentConfirmed({ id: payment.id, tenantId: sub.tenantId, reference, amount, currency: "KES", method: "mpesa", periodLabel });
     return { ok: true, confirmed: true };
   }
-  await db.payment.create({ data: { tenantId: sub.tenantId, reference, amount, currency: "KES", purpose: "subscription", method: "mpesa", status: "pending", provider: "daraja", periodLabel } });
+  await db.payment.create({ data: { tenantId: sub.tenantId, reference, amount, currency: "KES", purpose: "subscription", method: "mpesa", channelKey: "mpesa_stk", status: "pending", provider: "daraja", periodLabel } });
   const res = await stkPush({ phone: sub.billingPhone, amount, accountRef: reference, description: "P2Less renewal" });
   if (!res.ok) {
     await db.payment.updateMany({ where: { reference }, data: { status: "failed" } });
@@ -234,17 +239,20 @@ export async function runBillingCycle(): Promise<{ reminders: number; renewalsAt
     // enough ago that we should have heard back by now, but didn't. This is
     // "we don't know", not "it failed" — flag it and stop treating it as a
     // normal pending payment; a real admin needs to look, not the poller.
+    // Payment.status becomes the real source of truth ("unknown"); Subscription
+    // .reconciliationNeeded is kept in sync as a derived read-cache (see
+    // payment-channels.ts's syncReconciliationFlag) for existing read sites.
     if (sub.status === "payment_pending" && !sub.reconciliationNeeded) {
-      const lastAttempt = sub.nextPaymentAttemptAt ?? sub.startedAt; // best available anchor
       const pendingPayment = await db.payment.findFirst({ where: { tenantId: sub.tenantId, purpose: "subscription", status: "pending" }, orderBy: { createdAt: "desc" } });
       if (pendingPayment) {
-        const ageHours = (now.getTime() - pendingPayment.createdAt.getTime()) / (1000 * 60 * 60);
-        if (ageHours > settings.reconcileHours) {
-          await db.subscription.update({ where: { tenantId: sub.tenantId }, data: { reconciliationNeeded: true } });
-          await billingAudit(sub.tenantId, "reconciliation_needed", { paymentReference: pendingPayment.reference, ageHours: Math.round(ageHours) }, false);
+        const ageMs = now.getTime() - pendingPayment.createdAt.getTime();
+        const outcome = classifyOutcome({ definitiveResponseReceived: false, ageMs, reconciliationWindowMs: settings.reconcileHours * 3_600_000 });
+        if (outcome.kind === "unknown" && ageMs > settings.reconcileHours * 3_600_000) {
+          await db.payment.update({ where: { id: pendingPayment.id }, data: { status: "unknown" } });
+          await syncReconciliationFlag(sub.tenantId);
+          await billingAudit(sub.tenantId, "reconciliation_needed", { paymentReference: pendingPayment.reference, ageHours: Math.round(ageMs / 3_600_000) }, false);
         }
       }
-      void lastAttempt;
     }
     if (sub.reconciliationNeeded) continue; // never auto-progress an ambiguous case
 
@@ -310,19 +318,13 @@ export async function runBillingCycle(): Promise<{ reminders: number; renewalsAt
   return { reminders, renewalsAttempted, suspended, reactivatedFromReconciliation };
 }
 
-let pollerStarted = false;
-
-/** Starts the periodic billing cycle — mirrors dispatch.ts's
- *  startDispatchPoller() pattern (guarded against Next dev-mode hot-reload
- *  double-start via a globalThis flag, same as that file). Real interval,
- *  not a manual admin trigger — this is what makes it "automated" rather
- *  than "a report someone has to remember to run". */
+/** Starts the periodic billing cycle. Every execution — success or failure,
+ *  scheduled or manually triggered from /admin/system-health — now goes
+ *  through job-runner.ts's runJobNow(), which records a real JobRun row
+ *  (duration, result, error) instead of a fire-and-forget setInterval
+ *  callback. This is what lets an incident review answer "why wasn't this
+ *  tenant suspended?" with a real timestamped answer. */
 export function startBillingPoller(intervalMs = 15 * 60 * 1000) {
-  const g = globalThis as unknown as { __p2lessBillingPollerStarted?: boolean };
-  if (g.__p2lessBillingPollerStarted || pollerStarted) return;
-  g.__p2lessBillingPollerStarted = true;
-  pollerStarted = true;
-  setInterval(() => {
-    runBillingCycle().catch((e) => console.error("[billing-poller] cycle failed:", e));
-  }, intervalMs);
+  registerJob({ key: "billing_poller", name: "Billing lifecycle cycle", category: "billing", intervalMs, run: runBillingCycle });
+  startJobPoller("billing_poller");
 }

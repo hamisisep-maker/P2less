@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "./db";
 import { stkPush, isConfigured } from "./mpesa";
 import { randomToken } from "./crypto";
+import { assertChannelEnabled } from "./payment-channels";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Super-app WALLET — per-CONTACT credits (distinct from the org-level billing in
@@ -29,16 +30,19 @@ export async function startTopup(opts: { tenantId: string; contactId: string; ph
   const credits = creditsForAmount(opts.amountKes);
   const reference = "TOPUP-" + randomToken(4).toUpperCase();
 
+  const channelCheck = await assertChannelEnabled("mpesa_stk");
+  if (!channelCheck.ok) return { ok: false, error: channelCheck.error };
+
   if (!isConfigured()) {
     await db.payment.create({
-      data: { tenantId: opts.tenantId, contactId: opts.contactId, reference, amount: opts.amountKes, currency: "KES", purpose: "topup", method: "mpesa", provider: "mock", status: "paid", paidAt: new Date() },
+      data: { tenantId: opts.tenantId, contactId: opts.contactId, reference, amount: opts.amountKes, currency: "KES", purpose: "topup", method: "mpesa", channelKey: "mpesa_stk", provider: "mock", status: "paid", paidAt: new Date() },
     });
     const updated = await db.contact.update({ where: { id: opts.contactId }, data: { credits: { increment: credits } } });
     return { ok: true, mock: true, credits, newBalance: updated.credits };
   }
 
   await db.payment.create({
-    data: { tenantId: opts.tenantId, contactId: opts.contactId, reference, amount: opts.amountKes, currency: "KES", purpose: "topup", method: "mpesa", provider: "daraja", status: "pending" },
+    data: { tenantId: opts.tenantId, contactId: opts.contactId, reference, amount: opts.amountKes, currency: "KES", purpose: "topup", method: "mpesa", channelKey: "mpesa_stk", provider: "daraja", status: "pending" },
   });
   const res = await stkPush({ phone: opts.phone, amount: opts.amountKes, accountRef: reference, description: "P2Less credits" });
   if (!res.ok) {

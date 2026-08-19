@@ -6,7 +6,8 @@ import { clsx } from "clsx";
 import {
   LayoutDashboard, Smartphone, Plug, MessagesSquare, ScrollText, Users,
   HelpCircle, Package, LineChart, MapPinned, Truck, Code2, CreditCard,
-  Building2, Wallet, BrainCircuit, Settings, Boxes, ShieldCheck, Lock, type LucideIcon,
+  Building2, Wallet, BrainCircuit, Settings, Boxes, ShieldCheck, Lock,
+  GitMerge, HeartPulse, AlertTriangle, type LucideIcon,
 } from "lucide-react";
 import { NAV, type NavIconName } from "@/lib/nav";
 
@@ -16,6 +17,7 @@ const ICONS: Record<NavIconName, LucideIcon> = {
   LayoutDashboard, Smartphone, Plug, MessagesSquare, ScrollText, Users,
   HelpCircle, Package, LineChart, MapPinned, Truck, Code2, CreditCard,
   Building2, Wallet, BrainCircuit, Settings, Boxes, ShieldCheck, Lock,
+  GitMerge, HeartPulse, AlertTriangle,
 };
 
 type NavItem = { href: string; label: string; icon: NavIconName };

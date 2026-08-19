@@ -5,20 +5,42 @@ import { creditsForAmount } from "@/lib/wallet";
 import { sendWhatsAppText } from "@/lib/transport";
 import { tryAssignTrip } from "@/lib/dispatch";
 import { handleSubscriptionPaymentConfirmed, handleSubscriptionPaymentFailed } from "@/lib/billing-lifecycle";
+import { recordInboundEvent, finishInboundEvent } from "@/lib/inbound-events";
+import { recordChannelOutcome, recordChannelCallback } from "@/lib/payment-channels";
 
 // Safaricom Daraja posts the final STK-push result here. We match it to the
-// pending Payment by CheckoutRequestID and mark it paid or failed.
+// pending Payment by CheckoutRequestID and mark it paid or failed. Every
+// delivery is logged as a real InboundEvent BEFORE processing — a
+// unique-constraint violation on the idempotency key is the honest signal
+// that Safaricom re-delivered the same callback, and we stop right there
+// instead of re-running side effects (wallet credit, order fulfillment, ...).
 export async function POST(req: Request) {
+  const startedAt = Date.now();
+  const rawBody = await req.text();
   let body: unknown;
   try {
-    body = await req.json();
+    body = JSON.parse(rawBody);
   } catch {
     return Response.json({ ResultCode: 0, ResultDesc: "Accepted" });
   }
   const parsed = parseCallback(body);
+  const eventRecord = await recordInboundEvent({ source: "mpesa_stk_callback", eventId: parsed?.checkoutId, rawBody });
+  if (eventRecord.duplicate) {
+    return Response.json({ ResultCode: 0, ResultDesc: "Accepted" });
+  }
+  await recordChannelCallback("mpesa_stk");
+
+  let relatedPaymentId: string | undefined;
+  let relatedTenantId: string | undefined;
+  let matched = false;
+
   if (parsed) {
     const payment = await db.payment.findFirst({ where: { providerRef: parsed.checkoutId } });
     if (payment && payment.status === "pending") {
+      matched = true;
+      relatedPaymentId = payment.id;
+      relatedTenantId = payment.tenantId;
+      await recordChannelOutcome("mpesa_stk", parsed.success);
       await db.payment.update({
         where: { id: payment.id },
         data: {
@@ -88,6 +110,10 @@ export async function POST(req: Request) {
       }
     }
   }
+  await finishInboundEvent(eventRecord.eventRecordId, {
+    processingStatus: matched ? "processed" : "reconciliation_required",
+    startedAt, responseStatus: 200, relatedPaymentId, relatedTenantId,
+  });
   // Always 200 so Safaricom doesn't retry.
   return Response.json({ ResultCode: 0, ResultDesc: "Accepted" });
 }
