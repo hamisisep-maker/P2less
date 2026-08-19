@@ -11,7 +11,7 @@ import { handleDriverMessage, matchDeliveryZone, tryAssignTrip } from "./dispatc
 import { generateReportCard, generatePayslipPdf, generateLeavePdf, generateFeeStatementPdf, generateCvPdf, type GeneratedDoc } from "./documents";
 import { isCvRequest, extractCvData } from "./cv-writer";
 import { requestId as newRequestId, randomToken } from "./crypto";
-import { isCatalogBrowseRequest, isOrderRequest, formatCatalog, matchProduct, extractQuantity, startOrderPayment, findExactProductMention, hasExplicitQuantity, isProductImageRequest, isProductAttributeQuestion, isDeliveryIntent, isPickupIntent, isAddressDetailed, reserveStock, isAvailable } from "./catalog";
+import { isCatalogBrowseRequest, isOrderRequest, formatCatalog, matchProduct, extractQuantity, startOrderPayment, findExactProductMention, hasExplicitQuantity, isProductImageRequest, isProductAttributeQuestion, isStockQuestion, isDeliveryIntent, isPickupIntent, isAddressDetailed, reserveStock, isAvailable } from "./catalog";
 import { dispatchWebhook } from "./webhooks";
 import { extractDate, extractTime, isGreeting, type IntentAction } from "./intent-engine";
 import { pickTool, allTools } from "./tools";
@@ -82,6 +82,7 @@ type ConvContext = {
     deliveryAddress?: string;
     deliveryFee?: number; // matched from a DeliveryZone once the address is known; 0/unset = not matched
     deliveryZoneName?: string;
+    paymentPhone?: string; // the M-Pesa number to charge — asked explicitly, never assumed to be the sender's own WhatsApp number
     questionsAsked?: number; // how many order-flow questions asked so far — so a long chain gets a warm acknowledgment, not silence
   };
   // The most recently PLACED order (pending payment or paid) — kept in context so
@@ -286,14 +287,19 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     return lines.join(". ");
   };
 
-  // Deterministic (no-AI-required) answer for a common product-attribute
-  // question (size/color/material/etc.) asked mid-order. AI can be down or
-  // rate-limited exactly when a customer asks something real — without this,
-  // that question got silently dropped and the canned pending-step question
-  // repeated verbatim, which is the "hard-coded, repeats itself" complaint.
-  // Only fires when the message actually asks about an attribute; a genuine
-  // answer to the pending step is handled before this is ever reached.
-  const productAttributeFallback = (po: NonNullable<ConvContext["pendingOrder"]>, msgLower: string): string | null => {
+  // Deterministic (no-AI-required) answer for a common product-attribute or
+  // stock question asked mid-order. AI can be down or rate-limited exactly
+  // when a customer asks something real — without this, that question got
+  // silently dropped and the canned pending-step question repeated verbatim,
+  // which is the "hard-coded, repeats itself" complaint. Only fires when the
+  // message actually asks about an attribute/stock; a genuine answer to the
+  // pending step is handled before this is ever reached. Stock is checked
+  // live against the DB — never a stale or invented number.
+  const productAttributeFallback = async (po: NonNullable<ConvContext["pendingOrder"]>, msgLower: string): Promise<string | null> => {
+    if (isStockQuestion(msgLower)) {
+      const product = await db.product.findUnique({ where: { id: po.productId } });
+      return product?.stockQuantity != null ? `We have ${product.stockQuantity} ${po.productName} in stock right now.` : `${po.productName} is in stock.`;
+    }
     if (!/\b(size|sizes|colou?rs?|material|materials?|option|options|choice|choices|spec|specs?)\b/i.test(msgLower)) return null;
     return po.options ? `We have: ${po.options}.` : `We don't have extra size/colour options listed for ${po.productName} — just the standard one.`;
   };
@@ -314,6 +320,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     } else {
       lines.push(`Pickup in person — no delivery`);
     }
+    if (po.paymentPhone) lines.push(`M-Pesa prompt will be sent to: ${po.paymentPhone}`);
     return lines.join("\n");
   };
 
@@ -349,6 +356,12 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     }
     if (po.fulfillment === "delivery" && !po.deliveryAddress) {
       return emit([{ body: `${askPrefix}What's the delivery address? Please be specific — area, street, and a landmark — so it actually gets to you.` }], "awaiting_order_address", { pendingOrder: { ...po, questionsAsked: asked + 1 } });
+    }
+    // Never assume the M-Pesa prompt should go to the number they're chatting
+    // from — someone often orders from their own WhatsApp but pays from a
+    // spouse's/shop till number. Ask explicitly, once, before the recap.
+    if (!po.paymentPhone) {
+      return emit([{ body: `${askPrefix}Which number should I send the M-Pesa payment request to — this number (${senderAddress}), or a different one?` }], "awaiting_order_payment_phone", { pendingOrder: { ...po, questionsAsked: asked + 1 } });
     }
     return emit([{ body: `Here's your order — please check it's right:\n${orderRecapText(po)}\n\nReply CONFIRM to pay via M-Pesa, or CANCEL to stop.` }], "awaiting_order_confirm", { pendingOrder: po });
   };
@@ -770,7 +783,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
           return emit([{ body: resolved.reply }], "awaiting_order_quantity", ctx);
         }
       }
-      const attrInfo = productAttributeFallback(po, lower);
+      const attrInfo = await productAttributeFallback(po, lower);
       return emit([{ body: attrInfo ? `${attrInfo} And how many ${po.productName} would you like?` : `Sorry, how many ${po.productName} would you like? (Just the number, e.g. "2")` }], "awaiting_order_quantity", ctx);
     }
     const qty = extractQuantity(text);
@@ -829,7 +842,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     // Ambiguous or unrelated reply — ask again rather than guessing either way.
     // If it was actually a product-attribute question (size/color/etc.), answer
     // it first — deterministically, so an AI outage never leaves it unanswered.
-    const attrInfo = productAttributeFallback(po, lower);
+    const attrInfo = await productAttributeFallback(po, lower);
     return emit([{ body: attrInfo ? `${attrInfo} Now, would you like ${po.productName} delivered to you, or will you pick it up yourself?` : `Sorry — just to confirm, would you like ${po.productName} delivered to you, or will you pick it up yourself?` }], "awaiting_order_fulfillment", ctx);
   }
   if (conversation.status === "awaiting_order_address" && ctx.pendingOrder) {
@@ -857,13 +870,47 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
           return emit([{ body: resolved.reply }], "awaiting_order_address", ctx);
         }
       }
-      const attrInfo = productAttributeFallback(po, lower);
+      const attrInfo = await productAttributeFallback(po, lower);
       return emit([{ body: attrInfo ? `${attrInfo} Now, could you share the delivery address — area, street, and a landmark nearby — so it actually finds you?` : `Could you share a bit more detail — area, street, and a landmark nearby — so the delivery actually finds you?` }], "awaiting_order_address", ctx);
     }
     const address = text.trim();
     const zones = await db.deliveryZone.findMany({ where: { tenantId: tenant.id, active: true } });
     const zone = matchDeliveryZone(address, zones);
     return advanceOrder({ ...po, deliveryAddress: address, deliveryFee: zone?.fee, deliveryZoneName: zone?.name });
+  }
+  if (conversation.status === "awaiting_order_payment_phone" && ctx.pendingOrder) {
+    const po = ctx.pendingOrder;
+    // Deliberately excludes a bare "no" here — after "this number or a
+    // different one?", a bare "no" almost always means "not this one, let me
+    // give another" rather than "cancel the whole order".
+    if (isDirectReply(lower, /\b(cancel|stop|don'?t want|forget it)\b/i)) {
+      return emit([{ body: "No problem — order cancelled. Let me know if you'd like anything else!" }], "open", { lastResource: ctx.lastResource });
+    }
+    if (isDirectReply(lower, /\b(this (one|number)|same( one| number)?|yes|yeah|yep|ok|okay|use this|my number|this)\b/i)) {
+      return advanceOrder({ ...po, paymentPhone: senderAddress });
+    }
+    const phoneMatch = text.match(/(?:\+?254|0)\d{9}\b|\+\d{9,12}\b/);
+    if (phoneMatch) {
+      return advanceOrder({ ...po, paymentPhone: normalizePhone(phoneMatch[0]) });
+    }
+    if (aiEnabled()) {
+      const resolved = await resolveOrderStepAnswer({
+        assistant, question: `which phone number to send the M-Pesa payment request to — their current number (${senderAddress}), or a different number they'll type out`, userText: text, history,
+        knownFacts: await productKnownFacts(po),
+      });
+      if (resolved.answered) {
+        const v = resolved.value.toLowerCase();
+        if (/this|same|current|my (own )?number/.test(v) && !/\d{7,}/.test(v)) {
+          return advanceOrder({ ...po, paymentPhone: senderAddress });
+        }
+        const m = resolved.value.match(/(?:\+?254|0)\d{9}\b|\+\d{9,12}\b/);
+        if (m) return advanceOrder({ ...po, paymentPhone: normalizePhone(m[0]) });
+      } else if (resolved.reply) {
+        return emit([{ body: resolved.reply }], "awaiting_order_payment_phone", ctx);
+      }
+    }
+    const attrInfo = await productAttributeFallback(po, lower);
+    return emit([{ body: attrInfo ? `${attrInfo} Now, should I send the M-Pesa payment request to this number (${senderAddress}), or would you like to give a different one?` : `Sorry — just to confirm, should I send the M-Pesa payment request to this number (${senderAddress}), or would you like to give a different one?` }], "awaiting_order_payment_phone", ctx);
   }
   if (conversation.status === "awaiting_order_confirm" && ctx.pendingOrder) {
     // This gates a REAL money charge — a false positive here means firing an
@@ -903,7 +950,8 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
           : `Sorry — ${po.productName} just sold out. Would you like something else, or should I let you know once it's back?`;
         return emit([{ body }], "awaiting_order_quantity", { pendingOrder: { ...po, quantity: 0 } });
       }
-      const res = await startOrderPayment({ tenantId: tenant.id, orderId: order.id, phone: senderAddress, amountKes: total, reference });
+      const payPhone = po.paymentPhone ?? senderAddress;
+      const res = await startOrderPayment({ tenantId: tenant.id, orderId: order.id, phone: payPhone, amountKes: total, reference });
       if (!res.ok) {
         // The stock hold was never consumed — release it back rather than
         // leaving it permanently short by a unit nobody actually bought.
@@ -919,7 +967,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
           const trip = await db.deliveryTrip.create({ data: { tenantId: tenant.id, orderId: order.id, status: "searching" } });
           void tryAssignTrip(trip.id).catch(() => {});
         }
-        const lastOrder: ConvContext["lastOrder"] = { reference, productName: po.productName, quantity: po.quantity, total, currency: po.currency, phone: senderAddress, status: "paid" };
+        const lastOrder: ConvContext["lastOrder"] = { reference, productName: po.productName, quantity: po.quantity, total, currency: po.currency, phone: payPhone, status: "paid" };
         const driverNote = isDelivery ? " Looking for a driver now — I'll update you as soon as one is confirmed." : "";
         return emit([{ body: `✅ Payment received (demo mode — no real M-Pesa configured)! Order ${reference} confirmed: ${po.quantity} × ${po.productName}. Thank you! 🎉${driverNote}` }], "open", { lastOrder });
       }
@@ -927,7 +975,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       // question ("which number did you send it to?") can be answered from real
       // data — without this the AI has nothing to go on and denies the order
       // ever happened, which is exactly the kind of hallucination we must avoid.
-      const lastOrder: ConvContext["lastOrder"] = { reference, productName: po.productName, quantity: po.quantity, total, currency: po.currency, phone: senderAddress, status: "pending_payment" };
+      const lastOrder: ConvContext["lastOrder"] = { reference, productName: po.productName, quantity: po.quantity, total, currency: po.currency, phone: payPhone, status: "pending_payment" };
       return emit([{ body: `📲 ${res.customerMessage}\n\nOnce you enter your M-Pesa PIN, I'll confirm order ${reference} right away.` }], "open", { lastOrder });
     }
     // Not a plain yes/no — they might be adjusting the order ("I need 5 of
@@ -995,7 +1043,11 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
         if (hit) {
           const parts = [`${hit.name} — ${hit.currency} ${hit.price.toLocaleString("en-US")}`];
           if (!isAvailable(hit)) parts.push("currently OUT OF STOCK");
-          else if (hit.description) parts.push(hit.description);
+          else if (isStockQuestion(lower)) {
+            // Real number only — a product with untracked stock (null) simply
+            // isn't quantified rather than a number being invented for it.
+            parts.push(hit.stockQuantity != null ? `${hit.stockQuantity} in stock right now` : "in stock");
+          } else if (hit.description) parts.push(hit.description);
           if (isAvailable(hit) && hit.options) parts.push(`Choices: ${hit.options}`);
           return emit([{ body: parts.join(". ") }], "open", ctx);
         }

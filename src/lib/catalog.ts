@@ -52,7 +52,14 @@ export function isProductImageRequest(lower: string): boolean {
 export function isProductAttributeQuestion(lower: string): boolean {
   const domainExclusions = /\b(fee|fees|balance|attendance|exam|results?|appointment|leave|payslip|salary|admission|grade|arrived|meeting)\b/i;
   if (domainExclusions.test(lower)) return false;
-  return /\b(price|prize|cost|how much|size|sizes|colou?r|colours?|material|spec|specs|specification|detail|details|description)\b/i.test(lower);
+  return /\b(price|prize|cost|how much|size|sizes|colou?r|colours?|material|spec|specs|specification|detail|details|description|stock|available|availability|any left|how many.*(left|remaining|have|got|in stock))\b/i.test(lower);
+}
+
+/** Is this SPECIFICALLY a question about how many/whether something is in
+ *  stock — as opposed to price/color/etc. — so the answer can lead with the
+ *  real remaining quantity instead of a generic price line. */
+export function isStockQuestion(lower: string): boolean {
+  return /\b(stock|available|availability|any left|how many.*(left|remaining|have|got|in stock))\b/i.test(lower);
 }
 
 /** Delivery vs pickup — asked once per order so we never silently assume.
@@ -66,12 +73,23 @@ export function isPickupIntent(lower: string): boolean {
   return /\bpick(ed|ing)? ?up|\bcollect(ed|ing)?\b|\bmyself\b|in person|come to the shop|i'?ll come|i will come|at the shop|self ?collect/i.test(lower);
 }
 
+/** A word or number that actually pins down a real place — a landmark/street
+ *  type, a plot/house/floor number, or a recognizable admin unit (county/town/
+ *  estate/ward) — as opposed to just a general area name on its own. */
+const LOCATION_SIGNAL = /\b(road|rd|street|st|avenue|ave|lane|drive|close|court|estate|building|apartment|apt|flat|plot|floor|block|plaza|mall|market|stage|junction|gate|near|next to|opposite|behind|church|mosque|hospital|school|county|town|ward|village)\b/i;
+
 /** Is this address detailed enough to actually find the place, or too vague to
- *  hand to a driver ("nairobi" alone isn't enough — ask for more, same reasoning
- *  as never assuming an unspecified quantity). */
+ *  hand to a driver? A bare word-count was too easy to fool ("near the shop"
+ *  passes on length alone while still giving a driver nothing to go on) — this
+ *  requires the text to actually name something locatable: a landmark/street
+ *  type, a specific number (house/plot/floor), or just enough words that it's
+ *  very likely to contain real detail even without matching a known keyword
+ *  (e.g. described in another language/style). Same reasoning as never
+ *  assuming an unspecified quantity — "nairobi" alone should never pass. */
 export function isAddressDetailed(text: string): boolean {
   const words = text.trim().split(/\s+/).filter(Boolean);
-  return words.length >= 3;
+  if (words.length < 3) return false;
+  return LOCATION_SIGNAL.test(text) || /\d/.test(text) || words.length >= 6;
 }
 
 /** Does this message look like a request to buy something? Catches an explicit
