@@ -20,6 +20,15 @@ export const SETTING_DEFAULTS = {
   cost_document_kes: 0.2, // estimated PDF generation cost (compute)
   ai_primary_provider: "", // "" = use AI_PROVIDER env var / auto-detect
   usd_to_kes_rate: 129, // for converting provider token pricing (always USD) to KES billing — keep current from an actual FX rate
+
+  // ── Automated billing lifecycle (src/lib/billing-lifecycle.ts) ──────────
+  billing_grace_period_days: 7, // days a tenant keeps service after renewal fails before auto-suspend
+  billing_reminder_days: "7,3,1", // comma list — days before renewsAt to queue a reminder notification
+  billing_max_retries: 3, // automated renewal-charge attempts before entering grace period
+  billing_retry_interval_hours: 24, // gap between automated retry attempts
+  billing_auto_suspend_enabled: 1, // 0/1 — kill switch for automated suspension specifically (suspension is the most consequential automated action)
+  billing_auto_renew_charge_enabled: 1, // 0/1 — kill switch for firing automated STK pushes at all
+  billing_reconciliation_window_hours: 1, // how long to wait for a payment webhook before flagging "unknown, needs investigation" instead of assuming failure
 } as const;
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;

@@ -144,6 +144,106 @@ export async function addModelPricingAction(_prev: unknown, formData: FormData) 
   return { ok: true };
 }
 
+const billingAutomationSchema = z.object({
+  billing_grace_period_days: z.coerce.number().int().min(0),
+  billing_reminder_days: z.string().min(1),
+  billing_max_retries: z.coerce.number().int().min(1),
+  billing_retry_interval_hours: z.coerce.number().int().min(1),
+  billing_reconciliation_window_hours: z.coerce.number().min(0.1),
+  billing_auto_suspend_enabled: z.coerce.boolean().optional(),
+  billing_auto_renew_charge_enabled: z.coerce.boolean().optional(),
+});
+
+export async function updateBillingAutomationAction(_prev: unknown, formData: FormData) {
+  const admin = await requireSuperAdmin();
+  const raw = Object.fromEntries(formData.entries());
+  const parsed = billingAutomationSchema.safeParse({
+    ...raw,
+    billing_auto_suspend_enabled: formData.get("billing_auto_suspend_enabled") === "on",
+    billing_auto_renew_charge_enabled: formData.get("billing_auto_renew_charge_enabled") === "on",
+  });
+  if (!parsed.success) return { error: "Check the automation settings — days/hours must be valid numbers." };
+  for (const [key, value] of Object.entries(parsed.data)) {
+    await setSetting(key as SettingKey, typeof value === "boolean" ? (value ? "1" : "0") : String(value));
+  }
+  await auditPlatform(admin, "admin.billing_automation_update", undefined, parsed.data);
+  revalidatePath("/admin/billing/automation");
+  return { ok: true };
+}
+
+const notificationRuleSchema = z.object({
+  event: z.string().min(1),
+  channel: z.string().min(1),
+  timingDays: z.coerce.number().int().min(0).optional(),
+  template: z.string().optional(),
+});
+
+export async function upsertNotificationRuleAction(_prev: unknown, formData: FormData) {
+  const admin = await requireSuperAdmin();
+  const timingDaysRaw = formData.get("timingDays");
+  const parsed = notificationRuleSchema.safeParse({
+    event: formData.get("event"), channel: formData.get("channel"),
+    timingDays: timingDaysRaw && timingDaysRaw !== "" ? timingDaysRaw : undefined,
+    template: formData.get("template") || undefined,
+  });
+  if (!parsed.success) return { error: "Pick a real event and channel." };
+  const d = parsed.data;
+  const timingDays = d.timingDays ?? 0;
+  await db.notificationRule.upsert({
+    where: { event_channel_timingDays: { event: d.event, channel: d.channel, timingDays } },
+    create: { event: d.event, channel: d.channel, timingDays, template: d.template, enabled: true },
+    update: { template: d.template },
+  });
+  await auditPlatform(admin, "admin.notification_rule_set", `${d.event}/${d.channel}`, d);
+  revalidatePath("/admin/billing/automation");
+  return { ok: true };
+}
+
+export async function toggleNotificationRuleAction(ruleId: string, enabled: boolean) {
+  const admin = await requireSuperAdmin();
+  const rule = await db.notificationRule.update({ where: { id: ruleId }, data: { enabled } });
+  await auditPlatform(admin, "admin.notification_rule_toggle", `${rule.event}/${rule.channel}`, { enabled });
+  revalidatePath("/admin/billing/automation");
+  return { ok: true };
+}
+
+/** A subscription flagged reconciliationNeeded never auto-progresses — this
+ *  is the deliberate manual escape hatch: an admin who has actually verified
+ *  (checked Daraja's own transaction log, called the customer, whatever)
+ *  what really happened clears the flag and the billing engine resumes
+ *  handling that tenant normally on the next cycle. */
+export async function clearReconciliationAction(tenantId: string, resolution: "paid" | "failed") {
+  const admin = await requireSuperAdmin();
+  if (resolution === "paid") {
+    const sub = await db.subscription.findUnique({ where: { tenantId }, include: { plan: true } });
+    if (sub) {
+      const { reactivateAfterPayment } = await import("./billing-lifecycle");
+      await reactivateAfterPayment(tenantId, sub.plan);
+    }
+  } else {
+    await db.subscription.update({ where: { tenantId }, data: { reconciliationNeeded: false } });
+    const { recordFailedPayment } = await import("./billing-lifecycle");
+    await recordFailedPayment(tenantId, "Manually resolved by admin as failed");
+  }
+  await auditPlatform(admin, "admin.reconciliation_resolved", tenantId, { resolution });
+  revalidatePath("/admin/tenants");
+  revalidatePath("/admin/billing/automation");
+  return { ok: true };
+}
+
+/** Runs the billing cycle immediately instead of waiting for the poller's
+ *  next tick — for verifying the automation actually works, or catching up
+ *  right after changing a setting. */
+export async function runBillingCycleNowAction() {
+  const admin = await requireSuperAdmin();
+  const { runBillingCycle } = await import("./billing-lifecycle");
+  const result = await runBillingCycle();
+  await auditPlatform(admin, "admin.billing_cycle_manual_run", undefined, result);
+  revalidatePath("/admin/billing/automation");
+  revalidatePath("/admin/tenants");
+  return { ok: true, ...result };
+}
+
 const passwordSchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: z.string().min(8, "New password must be at least 8 characters."),

@@ -4,6 +4,7 @@ import { dispatchWebhook } from "@/lib/webhooks";
 import { creditsForAmount } from "@/lib/wallet";
 import { sendWhatsAppText } from "@/lib/transport";
 import { tryAssignTrip } from "@/lib/dispatch";
+import { handleSubscriptionPaymentConfirmed, handleSubscriptionPaymentFailed } from "@/lib/billing-lifecycle";
 
 // Safaricom Daraja posts the final STK-push result here. We match it to the
 // pending Payment by CheckoutRequestID and mark it paid or failed.
@@ -32,6 +33,15 @@ export async function POST(req: Request) {
         if (payment.purpose === "topup" && payment.contactId) {
           const credits = creditsForAmount(payment.amount);
           await db.contact.update({ where: { id: payment.contactId }, data: { credits: { increment: credits } } });
+        }
+        // Subscription renewal: the real event that drives the billing
+        // lifecycle forward — reactivates a suspended/grace-period tenant,
+        // extends renewsAt, generates a real receipt. See billing-lifecycle.ts.
+        if (payment.purpose === "subscription") {
+          await handleSubscriptionPaymentConfirmed({
+            id: payment.id, tenantId: payment.tenantId, reference: payment.reference,
+            amount: payment.amount, currency: payment.currency, method: payment.method, periodLabel: payment.periodLabel,
+          }).catch((e) => console.error("[billing] handleSubscriptionPaymentConfirmed failed:", e));
         }
         // Product order: mark it paid and let the customer know on WhatsApp —
         // this confirmation arrives asynchronously (the STK prompt already
@@ -68,6 +78,13 @@ export async function POST(req: Request) {
           await db.product.update({ where: { id: item.productId }, data: { stockQuantity: { increment: item.quantity } } }).catch(() => {});
         }
         await db.order.update({ where: { id: payment.orderId }, data: { status: "failed" } }).catch(() => {});
+      } else if (payment.purpose === "subscription") {
+        // A DEFINITIVE failure from Safaricom (not "no callback yet" — that
+        // ambiguous case is caught separately by the billing poller's
+        // reconciliation check) — real evidence, so it's safe to advance the
+        // retry/grace-period machinery.
+        await handleSubscriptionPaymentFailed({ tenantId: payment.tenantId, reference: payment.reference }, parsed.desc ?? "Daraja reported failure")
+          .catch((e) => console.error("[billing] handleSubscriptionPaymentFailed failed:", e));
       }
     }
   }

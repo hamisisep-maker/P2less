@@ -1,5 +1,7 @@
 import { Wallet, TrendingDown, TrendingUp, PiggyBank } from "lucide-react";
 import { db } from "@/lib/db";
+import Link from "next/link";
+import { Zap } from "lucide-react";
 import { Card, PageHeader } from "@/components/ui";
 import { IconStat, InfoTip } from "@/components/dashboard-ui";
 import { computePlatformPnL, computePlanMargin, loadPricing } from "@/lib/billing";
@@ -30,7 +32,11 @@ export default async function AdminBillingPage() {
 
   return (
     <div>
-      <PageHeader title="Billing & Revenue" subtitle="Real payments, platform profit & loss, and whether each plan actually makes money." />
+      <PageHeader
+        title="Billing & Revenue"
+        subtitle="Real payments, platform profit & loss, and whether each plan actually makes money."
+        action={<Link href="/admin/billing/automation" className="flex items-center gap-1.5 rounded-xl border border-line px-4 py-2.5 text-sm font-medium text-muted hover:bg-surface-2"><Zap size={15} /> Billing automation</Link>}
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <IconStat icon={<Wallet size={17} />} label="Revenue this month" value={pnl.revenueThisMonth} tip="Sum of paid Payment records this calendar month (KES)." tone="accent" />

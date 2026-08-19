@@ -13,6 +13,7 @@ import { computeBill } from "./billing";
 import { stkPush, isConfigured } from "./mpesa";
 import { storeProductImage } from "./documents";
 import { normalizePhone } from "./conversation";
+import { handleSubscriptionPaymentConfirmed } from "./billing-lifecycle";
 import type { ParamSpec } from "./connector-engine";
 
 export async function loginAction(_prev: unknown, formData: FormData) {
@@ -36,6 +37,25 @@ export async function logoutAction() {
 // fall back to an instant mock so the demo still works.
 const paySchema = z.object({ phone: z.string().min(9), amount: z.coerce.number().int().positive() });
 
+const autoRenewSchema = z.object({ billingPhone: z.string().min(9).optional().or(z.literal("")), autoRenew: z.coerce.boolean().optional() });
+
+/** Lets a tenant set the number automated renewal charges should target, and
+ *  opt in/out of auto-renewal — the billing lifecycle engine (see
+ *  billing-lifecycle.ts) NEVER invents or guesses this number; it only
+ *  attempts an automated charge when the tenant has explicitly set one here. */
+export async function updateAutoRenewAction(_prev: unknown, formData: FormData) {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.BILLING_MANAGE)) return { error: "You don't have billing permission." };
+  const parsed = autoRenewSchema.safeParse({ billingPhone: formData.get("billingPhone"), autoRenew: formData.get("autoRenew") === "on" });
+  if (!parsed.success) return { error: "Enter a valid phone number, or leave it blank to disable auto-renewal." };
+  await db.subscription.update({
+    where: { tenantId: user.tenantId! },
+    data: { billingPhone: parsed.data.billingPhone || null, autoRenew: !!parsed.data.autoRenew && !!parsed.data.billingPhone },
+  });
+  revalidatePath("/dashboard/billing");
+  return { ok: true };
+}
+
 export async function startPaymentAction(_prev: unknown, formData: FormData) {
   const user = await requireTenantUser();
   if (!userPermissions(user).includes(PERMISSIONS.BILLING_MANAGE)) return { error: "You don't have billing permission." };
@@ -46,7 +66,11 @@ export async function startPaymentAction(_prev: unknown, formData: FormData) {
   const period = new Date().toISOString().slice(0, 7);
 
   if (!isConfigured()) {
-    await db.payment.create({ data: { tenantId: user.tenantId!, reference, amount, currency: "KES", purpose: "subscription", method: "mpesa", status: "paid", provider: "mock", periodLabel: period, paidAt: new Date() } });
+    const payment = await db.payment.create({ data: { tenantId: user.tenantId!, reference, amount, currency: "KES", purpose: "subscription", method: "mpesa", status: "paid", provider: "mock", periodLabel: period, paidAt: new Date() } });
+    // Mock mode still drives the REAL billing lifecycle (renewsAt extension,
+    // reactivation, receipt generation) — only the payment gateway call
+    // itself is mocked, nothing about what happens after "paid" is faked.
+    await handleSubscriptionPaymentConfirmed({ id: payment.id, tenantId: payment.tenantId, reference: payment.reference, amount: payment.amount, currency: payment.currency, method: payment.method, periodLabel: payment.periodLabel }).catch(() => {});
     revalidatePath("/dashboard/billing");
     return { ok: true, ref: reference, mock: true, message: "Recorded (demo mode — set M-Pesa keys in .env for a real STK push)." };
   }

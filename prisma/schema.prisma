@@ -86,6 +86,47 @@ model ModelPricing {
   @@index([provider, model, effectiveFrom])
 }
 
+/// Admin-configurable rule for WHEN and via WHICH channel a billing event
+/// notifies a tenant — e.g. "renewal_reminder via whatsapp at 7 days before".
+/// The billing engine reads these instead of a hard-coded schedule.
+model NotificationRule {
+  id         String   @id @default(cuid())
+  event      String // renewal_reminder | payment_received | payment_failed | subscription_expired | account_suspended | account_reactivated
+  channel    String // whatsapp | email | sms — see BillingNotification for why dispatch may be a real no-op today
+  timingDays Int      @default(0) // days BEFORE the triggering date (renewal reminders); 0 = fires immediately on the event. Non-nullable deliberately — Prisma's compound @@unique below doesn't handle a nullable member cleanly.
+  enabled    Boolean  @default(true)
+  template   String? // editable message text; {{tenant}}, {{plan}}, {{amount}}, {{date}} placeholders filled at send time
+  updatedAt  DateTime @updatedAt
+
+  @@unique([event, channel, timingDays])
+}
+
+/// The real notification QUEUE/LOG the billing engine writes to — every
+/// notification a rule says should fire is recorded here with its actual
+/// delivery outcome. Honest about "no_provider_configured": P2Less has no
+/// email or SMS provider wired in yet (Advanta SMS is pending real API
+/// keys), so those channels are logged as queued/would-be-sent but not
+/// actually dispatched — never faked as "sent".
+model BillingNotification {
+  id           String    @id @default(cuid())
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event        String
+  channel      String
+  scheduledFor DateTime
+  status       String    @default("queued") // queued | sent | failed | no_provider_configured
+  content      String?
+  error        String?
+  sentAt       DateTime?
+  createdAt    DateTime  @default(now())
+  // Idempotency: the poller runs repeatedly and must never double-queue the
+  // same reminder — one row per tenant/event/channel/day, enforced here
+  // rather than by "check if it exists" application logic that could race.
+  dedupeKey    String    @unique
+
+  @@index([tenantId])
+}
+
 /// Accountability trail for super-admin actions that aren't scoped to one
 /// tenant (pricing changes, plan edits, AI provider switches) — AuditLog
 /// requires a real tenantId (FK), so platform-level actions need their own
@@ -172,6 +213,7 @@ model Tenant {
   deliveryZones DeliveryZone[]
   drivers       Driver[]
   deliveryTrips DeliveryTrip[]
+  billingNotifications BillingNotification[]
 }
 
 /// Configurable subscription plan. Not hard-coded — Super Admin edits these.
@@ -191,6 +233,9 @@ model Plan {
   subscriptions Subscription[]
 }
 
+/// The billing lifecycle state machine lives in src/lib/billing-lifecycle.ts —
+/// every field below exists to support REAL, centralized transitions there
+/// (never scattered `if renewsAt < now` checks elsewhere in the app).
 model Subscription {
   id        String   @id @default(cuid())
   tenantId  String   @unique
@@ -198,10 +243,26 @@ model Subscription {
   planId    String
   plan      Plan     @relation(fields: [planId], references: [id])
   period    String   @default("monthly") // monthly | half_yearly | yearly
-  status    String   @default("active") // trial | active | past_due | canceled
+  status    String   @default("active") // trial | active | renewal_due | payment_pending | grace_period | suspended | cancelled
   startedAt DateTime @default(now())
   renewsAt  DateTime
   createdAt DateTime @default(now())
+
+  // ── Automated billing lifecycle ──────────────────────────────────────────
+  autoRenew            Boolean   @default(true)
+  // M-Pesa number to charge for automated renewal — NEVER inferred/guessed;
+  // null means auto-charge is skipped (falls back to manual "Pay Now") until
+  // the tenant sets one on their Billing page.
+  billingPhone         String?
+  graceEndsAt          DateTime? // set when entering grace_period; auto-suspend fires once this passes
+  lastPaymentAt        DateTime?
+  paymentAttemptCount  Int       @default(0)
+  nextPaymentAttemptAt DateTime?
+  paymentFailureReason String?
+  // true = "we sent an STK push but don't yet know if it succeeded or
+  // failed" (no webhook received within the reconciliation window) — NEVER
+  // auto-suspend while this is true; it means investigate, not "failed".
+  reconciliationNeeded Boolean   @default(false)
 }
 
 /// A payment the organization makes to P2Less (subscription + usage). P2Less in

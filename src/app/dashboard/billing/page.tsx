@@ -3,18 +3,38 @@ import { db } from "@/lib/db";
 import { computeBill } from "@/lib/billing";
 import { Card, Stat, PageHeader, Badge } from "@/components/ui";
 import { PayButton } from "./pay-button";
+import { AutoRenewForm } from "./auto-renew-form";
 
 const kes = (n: number) => `KES ${n.toLocaleString("en-US")}`;
+const STATUS_TONE: Record<string, "green" | "amber" | "rose" | "neutral" | "accent"> = {
+  active: "green", trial: "accent", renewal_due: "amber", payment_pending: "amber", grace_period: "amber", suspended: "rose", cancelled: "neutral",
+};
 
 export default async function BillingPage() {
   const user = await requireTenantUser();
   const tenantId = user.tenantId!;
-  const bill = await computeBill(tenantId);
-  const payments = await db.payment.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: 12 });
+  const [bill, payments, sub] = await Promise.all([
+    computeBill(tenantId),
+    db.payment.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: 12 }),
+    db.subscription.findUnique({ where: { tenantId } }),
+  ]);
 
   return (
     <div>
       <PageHeader title="Billing" subtitle={`Plan + usage for ${bill.periodLabel}. You pay P2Less once — P2Less settles WhatsApp & provider costs for you.`} />
+
+      {sub && (
+        <Card className="mb-4 p-4">
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <span className="text-muted">Subscription status:</span>
+            <Badge tone={STATUS_TONE[sub.status] ?? "neutral"} dot>{sub.status.replace(/_/g, " ")}</Badge>
+            <span className="text-muted">Renews {sub.renewsAt.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</span>
+            {sub.status === "grace_period" && sub.graceEndsAt && (
+              <span className="text-rose">— service pauses automatically on {sub.graceEndsAt.toLocaleDateString("en-GB", { day: "numeric", month: "long" })} unless paid</span>
+            )}
+          </div>
+        </Card>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Stat label="This month" value={kes(bill.total)} sub={`${bill.planName} plan + usage`} />
@@ -52,6 +72,11 @@ export default async function BillingPage() {
           <div className="mt-4">
             <PayButton amount={bill.total} />
             <p className="mt-2 text-xs text-faint">Real M-Pesa STK push (Safaricom Daraja). Enter your number and approve the prompt on your phone. Without Daraja keys set, it records in demo mode.</p>
+          </div>
+          <div className="mt-5 border-t border-line-soft pt-4">
+            <h3 className="mb-2 text-sm font-display font-semibold">Auto-renewal</h3>
+            <AutoRenewForm billingPhone={sub?.billingPhone ?? null} autoRenew={sub?.autoRenew ?? false} />
+            <p className="mt-2 text-xs text-faint">When set, P2Less automatically sends an M-Pesa request to this number on your renewal date — no need to remember to pay manually.</p>
           </div>
         </Card>
 
