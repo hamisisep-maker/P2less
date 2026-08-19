@@ -22,6 +22,7 @@ import { nextTicketNumber } from "./ticket-numbering";
 import { queueNotification } from "./notifications";
 import { resolveNumberBranch } from "./branches";
 import { evaluateCapabilityGate } from "./capability-gate";
+import { evaluateWorkflowAsk } from "./workflow-engine";
 import type { FactSource } from "./provenance";
 import { computeSlaDeadline } from "./ticket-sla";
 
@@ -584,8 +585,36 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       const run = await dispatchAction(cBase, pd.actionId, { ...pd.entities, name: picked.name }, { lastResource: ctx.lastResource, lastAction: ctx.lastAction });
       return emit(run.replies, run.status, run.ctx);
     }
+    // Universal Platform roadmap Phase 5 pilot migration (2026-08-20) — this
+    // handler previously had NO escape besides an exact "cancel": any message
+    // that wasn't a valid pick just repeated "Sorry, just reply with the
+    // number" forever, unlike every other awaiting_* handler (which all
+    // follow a genuine topic switch or abandon after repeated stray
+    // messages). Closes that gap using evaluateWorkflowAsk() — the first
+    // real caller of the Phase 5 primitive, now that the port-mismatch fix
+    // (2026-08-20 earlier) restored a full local regression safety net
+    // (scripts/test.ts hits 73/73 clean) to verify this against.
+    const actionsNow = await loadActions(tenant.id);
+    const reroute = await understand(text, actionsNow, history);
+    // 0.55, matching awaiting_param's threshold rather than awaiting_confirm's
+    // 0.6 — nothing has executed yet at this point (just a pending disambiguation),
+    // so abandoning it for a confident reroute is cheaper to get wrong than
+    // abandoning an already-collected write action.
+    const decision = evaluateWorkflowAsk(
+      { plausibleAnswer: false, rerouteConfident: !!reroute.actionId && reroute.score >= 0.55, isPushback: PUSHBACK.test(lower), asidesSoFar: ctx.paramAsides ?? 0 },
+      { rerouteThreshold: 0.55 },
+    );
+    if (decision.kind === "reroute" && reroute.actionId) {
+      const cBase: CollectBase = { tenantId: tenant.id, reqId, contact, permissions, grants, assistant, channelType: input.channelType, contactName: contact.displayName ?? undefined, userText: text, history };
+      const run = await dispatchAction(cBase, reroute.actionId, reroute.entities, { lastResource: ctx.lastResource });
+      return emit(run.replies, run.status, run.ctx);
+    }
+    if (decision.kind === "abandon") {
+      const stc = aiEnabled() ? await smallTalk(assistant, text, [...actionsNow.map((a) => a.name), ...toolCapabilityLines()], history, knownFacts, orgFaqs) : null;
+      return emit([{ body: stc ?? "No problem — I've set that aside. How can I help you?" }], "open", { lastResource: ctx.lastResource });
+    }
     const list = pd.candidates.map((c, i) => `${i + 1}. ${c.name}`).join("\n");
-    return emit([{ body: `Sorry, just reply with the number: \n${list}` }], "awaiting_resource_pick", ctx);
+    return emit([{ body: `Sorry, just reply with the number: \n${list}` }], "awaiting_resource_pick", { ...ctx, paramAsides: decision.kind === "reask" ? decision.asidesSoFar : ctx.paramAsides });
   }
 
   // ── Resume: collecting a missing parameter (multi-step slot filling) ─────
