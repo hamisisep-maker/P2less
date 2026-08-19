@@ -634,15 +634,27 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     }
     const value = resolveEntityFromText(expected, text);
     const resolved = { ...(ctx.pendingResolved ?? {}), [ctx.missingParam]: value };
-    // "next tuesday at 2pm" answers BOTH date and time — capture every date/time
-    // entity present in the one message so we don't re-ask for what they gave.
+    // "next tuesday at 2pm" answers BOTH date and time — capture the OTHER
+    // entity KIND present in the same message so we don't re-ask for what
+    // they already gave. Deliberately cross-kind ONLY: a single date mention
+    // must never also backfill a SECOND date-type slot (startDate/endDate
+    // are both "date" kind but different slots) — real bug found + fixed
+    // 2026-08-20 while extending extractDate() to parse "DD Month" dates:
+    // that fix un-masked this, since a lone "20 August" for a leave request
+    // previously never matched at all, so the flood into BOTH startDate and
+    // endDate was invisible until extractDate() started succeeding. See
+    // docs/PHASE5-WORKFLOW-ENGINE-SUBROADMAP-2026-08-19.md.
+    const dateKinds = new Set(["date", "startDate", "endDate"]);
+    const expectedKind = dateKinds.has(expected) ? "date" : expected === "time" ? "time" : null;
     const pAction = await db.connectorAction.findUnique({ where: { id: ctx.pendingActionId } });
     for (const spec of ((pAction?.paramSchema as unknown as ParamSpec[]) ?? [])) {
       if (spec.from !== "entity") continue;
       const ent = spec.entity ?? spec.name;
       if (resolved[spec.name] !== undefined && resolved[spec.name] !== "") continue;
-      if (ent === "date" || ent === "startDate" || ent === "endDate") { const d = extractDate(text); if (d) resolved[spec.name] = d; }
-      else if (ent === "time") { const t = extractTime(text); if (t) resolved[spec.name] = t; }
+      const entKind = dateKinds.has(ent) ? "date" : ent === "time" ? "time" : null;
+      if (!entKind || entKind === expectedKind) continue; // never reuse this turn's extraction for a second same-kind slot
+      if (entKind === "date") { const d = extractDate(text); if (d) resolved[spec.name] = d; }
+      else { const t = extractTime(text); if (t) resolved[spec.name] = t; }
     }
     const run = await continueCollection(
       { tenantId: tenant.id, reqId, contact, permissions, grants, assistant, channelType: input.channelType, contactName: contact.displayName ?? undefined, userText: text, history },

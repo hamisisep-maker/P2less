@@ -115,6 +115,8 @@ export function extractTime(text: string): string | undefined {
   return `${hour}:${mins}${ampm}`.trim();
 }
 
+const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+
 export function extractDate(text: string): string | undefined {
   const t = text.toLowerCase();
   if (/\btoday\b/.test(t)) return "today";
@@ -122,7 +124,24 @@ export function extractDate(text: string): string | undefined {
   if (/\byesterday\b/.test(t)) return "yesterday";
   const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
   for (const d of days) if (t.includes(d)) return d;
+  // Absolute calendar date without a year — "20 August" / "August 20" /
+  // "20th August" / "August 20th" — the common WhatsApp phrasing for
+  // near-term dates that the checks above never covered. Missing this was a
+  // real bug: the awaiting_param plausibility check in conversation.ts used
+  // this function to decide whether "20 August" was a valid answer, always
+  // got `undefined`, misclassified a genuine answer as implausible, and lost
+  // the pending write action — see
+  // docs/PHASE5-WORKFLOW-ENGINE-SUBROADMAP-2026-08-19.md's 2026-08-20 update.
+  const monthPattern = MONTHS.join("|");
+  const dayThenMonth = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${monthPattern})\\b`, "i").exec(t);
+  if (dayThenMonth) return `${dayThenMonth[1]} ${capitalize(dayThenMonth[2])}`;
+  const monthThenDay = new RegExp(`\\b(${monthPattern})\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b`, "i").exec(t);
+  if (monthThenDay) return `${monthThenDay[2]} ${capitalize(monthThenDay[1])}`;
   return undefined;
+}
+
+function capitalize(word: string): string {
+  return word.charAt(0).toUpperCase() + word.slice(1);
 }
 
 /**
