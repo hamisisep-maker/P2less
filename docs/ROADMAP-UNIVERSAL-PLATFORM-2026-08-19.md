@@ -53,9 +53,15 @@ Sequencing for `docs/VISION-UNIVERSAL-ACCESS-PLATFORM-2026-08-19.md` against wha
 
 - Full sub-roadmap written after actually reading all 12 `awaiting_*` handlers: **`docs/PHASE5-WORKFLOW-ENGINE-SUBROADMAP-2026-08-19.md`**. Built the genuine shared-decision primitive (`evaluateWorkflowAsk()` in `src/lib/workflow-engine.ts`, 7-case tested against the real observed behavior of `awaiting_confirm`/`awaiting_param`) but **deliberately did NOT migrate any existing flow** — two concrete blockers found while investigating, not assumed: (1) real regression risk to code hardened through many specific prior live bugs, (2) the local dev/test harness can't currently prove parity (every `Connector.baseUrl` is hardcoded to port 3000, this preview harness always runs on 3001 — confirmed as the root cause of 24/73 E2E test failures, unrelated to any code change). See the sub-roadmap for the recommended pilot flow, migration order, and what needs to be true before migration starts.
 
-## Phase 6 — Developer platform: OpenAPI-driven connector drafting
+## Phase 6 — Developer platform: OpenAPI-driven connector drafting — ✅ SHIPPED 2026-08-20
 
-**Goal**: a developer pastes/uploads an OpenAPI spec → P2Less proposes a draft `Capability` set (endpoints→actions, schemas→input/output) → human validates before it goes live. Builds directly on Phase 1's `Capability` schema; no new concept, just an assisted authoring tool for it.
+**Goal**: a developer pastes/uploads an OpenAPI spec → P2Less proposes a draft capability set (endpoints→actions, schemas→input/output) → human validates before it goes live. Builds directly on the existing `ConnectorAction` model (Phase 1 extended it in place rather than a separate `Capability` table — see that phase's entry); no new concept, just an assisted authoring tool for it.
+
+- **Investigated the existing manual Connector Builder first** (`/dashboard/connectors/new`) — confirmed it can only create ONE `Connector` with exactly ONE `ConnectorAction` per form submission, with a naive param-schema derivation that special-cases the literal string `"studentId"`. Every OTHER action on an existing connector (10 for the Riverside School System, for example) was only ever created via `prisma/seed.ts`, never through any UI. This is the real gap Phase 6 closes: adding several capabilities from one external system previously required either resubmitting the form N times (wrongly creating N separate `Connector` rows for one real system) or direct DB/seed access.
+- `parseOpenApiSpec()` (`src/lib/openapi-import.ts`, new) — a pure function, no DB or network access, parsing pasted OpenAPI 3.x (and basic Swagger 2.0) JSON into a draft capability list: per path+method, derives a suggested key (from `operationId` if present, else method+path), collects path/query parameters and top-level JSON request-body properties into the same `ParamSpec` shape the engine already uses, and defaults `riskLevel`/`requiresConfirm` the same way `backfill-capability-risk-levels.ts` (Phase 3) does (GET→low/no-confirm, everything else→medium/confirm). Deliberately does NOT guess `resourceGrantKey`/`resourceParam` (which grant type authorizes a request) — the existing manual form only ever special-cased one hardcoded field name, and guessing wrong here would silently create an under-authorized capability; left for the human to set during review. Deliberately **paste-only, never a URL the server fetches** — accepting and fetching an admin-supplied URL server-side is a textbook SSRF vector. 10 unit tests (error cases: invalid JSON, missing `paths`, missing version field; success case: operationId-derived key, path-derived fallback key, path+query+body param extraction, correct risk defaults, empty paramSchema for no-param endpoints) before wiring into any UI.
+- `/dashboard/connectors/import` (new page + client form) — two-step: paste spec → parsed entirely in the browser (no round-trip, since the parser has no server-only dependency) → an editable review table (per-draft-action checkbox to include/exclude, editable key/name/required-permission/risk-level/confirm/step-up) → submit creates ONE real `Connector` + only the CHECKED `ConnectorAction` rows via `createConnectorFromDraftAction` (new, `src/lib/actions.ts`), which reuses the exact same auth-config/`encryptJSON` path as the original manual form — no separate "imported connector" runtime code path. An action a human unchecks is never created at all, not created-then-disabled.
+- **Live-verified end-to-end**, not just unit tests: logged in as a real tenant user, pasted a real 2-endpoint spec (GET with a path param, POST with a request body), confirmed the review step correctly pre-filled the connector name/description/base URL and both draft capabilities with correct keys/params, submitted, and confirmed a real `Connector` + 2 `ConnectorAction` rows were created and correctly listed on `/dashboard/connectors` — then cleaned up the test data.
+- **Full regression suite run clean at 73/73** on a freshly reseeded database — the first fully green run this session, confirming Phase 6 (and every fix made earlier the same day) introduced zero regressions.
 
 ## Phase 7 (Future-strategic, deliberately unscoped) — new verticals
 
@@ -68,13 +74,13 @@ Connector marketplace, social-media connectors + content pipeline, document/OCR 
 | | Status |
 |---|---|
 | Connector engine, grounded AI, 7-provider failover, RBAC, audit, Incident/Notification event model | **Existing** — reused as-is by every phase above |
-| `Organization`/`Region`/`Branch` schema, `Capability` schema, provenance schema | **Planned — Phase 1** |
-| Branch-scoped permissions/routing/config-cascade | **Planned — Phase 2** |
-| Capability gate function, approval-via-Notification-Engine | **Planned — Phase 3** |
-| Provenance-tagged replies, conflict resolution | **Planned — Phase 4** |
-| Generalized workflow engine | **Recommended, not yet scoped in detail — Phase 5** |
-| OpenAPI-driven connector drafting | **Recommended — Phase 6** |
-| Marketplace, social media, OCR pipeline, research tooling | **Future-strategic** — do not start before Phases 1-3 are live |
+| `Branch` hierarchy schema, `ConnectorAction` risk/approval fields, `FactSource` provenance type | **Shipped — Phase 1** |
+| Branch-scoped routing/RBAC dimension | **Shipped — Phase 2** |
+| Capability gate function (`evaluateCapabilityGate`) | **Shipped — Phase 3** |
+| Provenance-typed known-facts, `resolveFieldConflict()` (unwired, no live caller yet) | **Shipped — Phase 4** |
+| Workflow-engine primitive (`evaluateWorkflowAsk`) + sub-roadmap | **Primitive shipped — Phase 5**; existing-flow migration NOT started, blocked on a real pilot tenant |
+| OpenAPI-driven connector drafting | **Shipped — Phase 6** |
+| Marketplace, social media, OCR pipeline, research tooling | **Future-strategic** — do not start before a real need exists |
 
 ## Open questions only the user can answer before Phase 1 starts
 

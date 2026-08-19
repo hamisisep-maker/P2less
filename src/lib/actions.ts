@@ -456,3 +456,103 @@ export async function createConnectorAction(_prev: unknown, formData: FormData) 
   revalidatePath("/dashboard/connectors");
   redirect("/dashboard/connectors");
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Universal Platform roadmap Phase 6 (2026-08-20) — OpenAPI-driven connector
+// drafting. Parsing (parseOpenApiSpec, src/lib/openapi-import.ts) happens
+// client-side — it's a pure function with no DB access or side effects, so
+// there's nothing to gate server-side and no need for a round-trip just to
+// preview a draft. The action below is the one real write: creates the
+// Connector + ConnectorAction rows, but ONLY from whatever the human kept/
+// edited in the review step (never rows nobody looked at). Reuses the exact
+// same auth-config/encryptJSON path as createConnectorAction above — there
+// is no separate "imported connector" code path at runtime.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const draftParamSpecSchema = z.object({
+  name: z.string(),
+  in: z.enum(["path", "query", "body"]),
+  required: z.boolean().optional(),
+  from: z.enum(["entity", "grant", "const"]).optional(),
+  entity: z.string().optional(),
+});
+
+const draftActionSchema = z.object({
+  key: z.string().min(1),
+  name: z.string().min(1),
+  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
+  path: z.string().min(1),
+  paramSchema: z.array(draftParamSpecSchema),
+  requiredPermission: z.string().optional(),
+  requiresConfirm: z.boolean(),
+  requiresStepUp: z.boolean(),
+  riskLevel: z.enum(["low", "medium", "high"]),
+});
+
+const createFromDraftSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  baseUrl: z.string().url(),
+  authType: z.enum(["none", "api_key", "bearer", "basic"]),
+  apiKeyHeader: z.string().optional(),
+  apiKeyValue: z.string().optional(),
+  bearerToken: z.string().optional(),
+  basicUser: z.string().optional(),
+  basicPass: z.string().optional(),
+  actionsJson: z.string().min(1),
+});
+
+/** Creates one Connector + N ConnectorActions from the reviewed/edited draft
+ *  — only actions the human kept checked in the review step ever reach this
+ *  (filtered client-side before the request), so an import can never
+ *  silently activate a capability nobody looked at. */
+export async function createConnectorFromDraftAction(_prev: unknown, formData: FormData) {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.CONNECTORS_MANAGE)) {
+    return { error: "You don't have permission to manage connectors." };
+  }
+  const raw = Object.fromEntries(formData.entries());
+  const parsed = createFromDraftSchema.safeParse(raw);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  const d = parsed.data;
+
+  let draftActions: unknown;
+  try {
+    draftActions = JSON.parse(d.actionsJson);
+  } catch {
+    return { error: "Invalid capability data." };
+  }
+  const actionsParsed = z.array(draftActionSchema).min(1, "Select at least one capability.").safeParse(draftActions);
+  if (!actionsParsed.success) return { error: actionsParsed.error.issues[0]?.message ?? "Invalid capability data." };
+
+  let authConfig: unknown = { type: "none" };
+  if (d.authType === "api_key") authConfig = { type: "api_key", header: d.apiKeyHeader || "x-api-key", value: d.apiKeyValue || "" };
+  else if (d.authType === "bearer") authConfig = { type: "bearer", token: d.bearerToken || "" };
+  else if (d.authType === "basic") authConfig = { type: "basic", username: d.basicUser || "", password: d.basicPass || "" };
+
+  await db.connector.create({
+    data: {
+      tenantId: user.tenantId!,
+      name: d.name,
+      description: d.description,
+      baseUrl: d.baseUrl,
+      authType: d.authType,
+      authConfigEnc: encryptJSON(authConfig),
+      actions: {
+        create: actionsParsed.data.map((a) => ({
+          key: a.key.toUpperCase().replace(/\s+/g, "_"),
+          name: a.name,
+          method: a.method,
+          path: a.path,
+          paramSchema: a.paramSchema as unknown as object,
+          requiredPermission: a.requiredPermission || null,
+          requiresConfirm: a.requiresConfirm,
+          requiresStepUp: a.requiresStepUp,
+          riskLevel: a.riskLevel,
+        })),
+      },
+    },
+  });
+  revalidatePath("/dashboard/connectors");
+  redirect("/dashboard/connectors");
+}
