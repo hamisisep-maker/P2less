@@ -14,7 +14,14 @@ function run(cmd) {
   execSync(cmd, { stdio: "inherit" });
 }
 
-run("npx prisma db push --skip-generate");
+// TEMPORARY: Priority 5 added nullable `@unique` columns (Incident.number,
+// SupportTicket.number) to tables that already have production rows —
+// Prisma flags this as a generic "data loss" risk since SQLite must rebuild
+// the table, but it's provably safe here: every existing row gets NULL, and
+// SQLite treats NULLs as distinct under a unique index, so no real data is
+// lost. Same one-time pattern used for Subscription.paybillReference —
+// revert this flag in the very next commit once this deploy lands.
+run("npx prisma db push --skip-generate --accept-data-loss");
 
 const db = new PrismaClient();
 const tenantCount = await db.tenant.count();
