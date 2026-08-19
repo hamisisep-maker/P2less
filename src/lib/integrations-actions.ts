@@ -22,10 +22,11 @@ export async function checkIntegrationNowAction(key: string) {
   }
   void admin;
   const verdict = await computeIntegrationHealth(key);
-  await db.integration.update({
+  const updated = await db.integration.updateMany({
     where: { key },
     data: { lastCheckedAt: new Date(), lastCheckOk: verdict.ok, lastCheckDetail: verdict.detail },
   });
+  if (updated.count === 0) return { error: "Integration not found." };
   revalidatePath("/admin/integrations");
   return { ok: true, verdict };
 }

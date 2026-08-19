@@ -16,7 +16,16 @@ export type JobResult = Record<string, unknown> | void;
 export type JobFn = () => Promise<JobResult>;
 export type JobSpec = { key: string; name: string; category: string; intervalMs: number; run: JobFn };
 
-const REGISTRY = new Map<string, JobSpec>();
+// Module-scoped state doesn't survive across Next.js's separate bundles for
+// the instrumentation hook vs. server actions — each gets its own module
+// instance. registerJob() runs once in instrumentation.ts's bundle; runJobNow()
+// is called from server actions in a DIFFERENT bundle, so a plain module-level
+// Map here would look empty from there ("Unknown job: X" for every manual run).
+// globalThis is the one thing actually shared across bundles in one process —
+// same fix already applied to startJobPoller's double-start guard below.
+const registryHolder = globalThis as unknown as { __p2lessJobRegistry?: Map<string, JobSpec> };
+registryHolder.__p2lessJobRegistry ??= new Map<string, JobSpec>();
+const REGISTRY = registryHolder.__p2lessJobRegistry;
 
 export function registerJob(spec: JobSpec): void {
   REGISTRY.set(spec.key, spec);
