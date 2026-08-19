@@ -14,16 +14,7 @@ function run(cmd) {
   execSync(cmd, { stdio: "inherit" });
 }
 
-// TEMPORARY for this one boot: Priority 4 added Subscription.paybillReference
-// as a nullable @unique column. SQLite has no native ALTER-ADD-UNIQUE, so
-// Prisma rebuilds the table and — being conservative about ANY unique
-// constraint addition via rebuild — refuses without --accept-data-loss, even
-// though it's provably safe here: every existing row gets NULL, and SQLite
-// treats each NULL as distinct under a unique index, so nothing collides and
-// nothing is lost. This flag is removed again in the very next commit once
-// this one boot has applied it — the safety guard above (deliberately no
-// --accept-data-loss) stays the standing default for every future deploy.
-run("npx prisma db push --skip-generate --accept-data-loss");
+run("npx prisma db push --skip-generate");
 
 const db = new PrismaClient();
 const tenantCount = await db.tenant.count();
