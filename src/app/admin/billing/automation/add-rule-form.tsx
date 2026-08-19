@@ -6,7 +6,10 @@ import { upsertNotificationRuleAction } from "@/lib/admin-actions";
 
 type State = { error?: string; ok?: boolean } | null;
 
-const EVENTS = ["renewal_reminder", "payment_received", "payment_failed", "subscription_expired", "account_suspended", "account_reactivated"];
+const EVENTS = [
+  "renewal_reminder", "payment_received", "payment_failed", "subscription_expired", "account_suspended", "account_reactivated", "payment_reconciliation_needed",
+  "incident_critical", "incident_opened", "ticket_created", "ticket_sla_breached", "whatsapp_connection_failed", "ai_provider_degraded", "usage_limit_exceeded",
+];
 const CHANNELS = ["email", "whatsapp", "sms"];
 
 export function AddRuleForm() {

@@ -85,7 +85,10 @@ export const INTEGRATIONS_CATALOG: IntegrationCatalogEntry[] = [
     key: "email_provider",
     category: "notification",
     name: "Email",
-    provider: "Not configured",
+    provider: "Resend",
+    docsUrl: "https://resend.com/docs",
+    providerDashboardUrl: "https://resend.com/emails",
+    billingUrl: "https://resend.com/settings/billing",
   },
   {
     key: "sms_provider",

@@ -6,6 +6,8 @@ import { assertAdminPermission, logPrivilegedAction, ForbiddenError } from "./ad
 import { nextTicketNumber } from "./ticket-numbering";
 import { computeSlaDeadline } from "./ticket-sla";
 import { storeTicketAttachment } from "./documents";
+import { deliver } from "./transport";
+import { queueNotification } from "./notifications";
 
 function isForbidden(e: unknown): e is ForbiddenError {
   return e instanceof ForbiddenError;
@@ -41,6 +43,7 @@ export async function createTicketAction(input: {
   });
   await db.ticketEvent.create({ data: { ticketId: ticket.id, type: "created", actorId: admin.id, visibility: "internal" } });
   await logPrivilegedAction({ admin, permission: "tickets.manage", tenantId: input.tenantId, action: "admin.ticket_created", target: ticket.number ?? ticket.id });
+  await queueNotification("ticket_created", `New ticket ${ticket.number ?? ticket.id}: ${ticket.subject}`).catch(() => {});
   revalidateTicket(ticket.id);
   return { ok: true, ticketId: ticket.id };
 }
@@ -66,6 +69,9 @@ export async function assignTicketAction(ticketId: string, assignedAdminId: stri
   await db.supportTicket.update({ where: { id: ticketId }, data: { assignedAdminId, status: found.ticket.status === "open" ? "assigned" : found.ticket.status } });
   await db.ticketEvent.create({ data: { ticketId, type: "assigned", actorId: admin.id, detail: { assignedAdminId, assignedAdminEmail: assignee.email } } });
   await logPrivilegedAction({ admin, permission: "tickets.manage", tenantId: found.ticket.tenantId, action: "admin.ticket_assigned", target: found.ticket.number ?? ticketId, detail: { assignedTo: assignee.email } });
+  // Goes straight to the assignee's own email, not the general
+  // tickets.manage-holder pool a normal ticket_created notification reaches.
+  await queueNotification("ticket_assigned", `Ticket ${found.ticket.number ?? ticketId} assigned to you: ${found.ticket.subject}`, { recipientEmailOverride: assignee.email }).catch(() => {});
   revalidateTicket(ticketId);
   return { ok: true };
 }
@@ -113,6 +119,14 @@ export async function addInternalNoteAction(ticketId: string, body: string) {
 /** Customer-visible response — a distinct visibility on the SAME TicketEvent
  *  stream as internal notes, so the two interleave chronologically instead of
  *  living in separate arrays (see TicketEvent's schema comment). */
+/** A "customer-visible response" that only exists in the admin dashboard
+ *  isn't a response at all — this genuinely delivers it over WhatsApp, using
+ *  the SAME transport.deliver() every other outbound message goes through
+ *  (so it's persisted as a real Message, appears in the conversation/AI
+ *  history, and is metered), not the lighter fire-and-forget
+ *  sendWhatsAppText(). If the ticket has no linked contact, or the tenant has
+ *  no active WhatsApp number, this says so honestly in the ticket timeline
+ *  rather than silently only writing a DB row. */
 export async function addCustomerResponseAction(ticketId: string, body: string) {
   if (!body?.trim()) return { error: "Response cannot be empty." };
   const found = await loadTicketOrError(ticketId);
@@ -124,9 +138,31 @@ export async function addCustomerResponseAction(ticketId: string, body: string) 
     if (isForbidden(e)) return { error: e.message };
     throw e;
   }
-  await db.ticketEvent.create({ data: { ticketId, type: "customer_response", actorId: admin.id, visibility: "customer", body: body.trim() } });
+
+  const ticket = await db.supportTicket.findUnique({ where: { id: ticketId }, include: { contact: true } });
+  let delivered = false;
+  let deliveryNote: string;
+  if (!ticket?.contactId || !ticket.contact) {
+    deliveryNote = "No linked customer contact — response recorded but nothing to deliver to.";
+  } else {
+    const orgNumber = await db.whatsAppNumber.findFirst({ where: { tenantId: ticket.tenantId, status: "active" } });
+    if (!orgNumber?.phoneNumberId) {
+      deliveryNote = "No active WhatsApp number for this tenant — response recorded but not delivered.";
+    } else {
+      let conversationId = ticket.conversationId;
+      if (!conversationId) {
+        const existingConv = await db.conversation.findFirst({ where: { contactId: ticket.contactId, numberId: orgNumber.id, status: { not: "closed" } } });
+        conversationId = existingConv?.id ?? (await db.conversation.create({ data: { tenantId: ticket.tenantId, contactId: ticket.contactId, numberId: orgNumber.id, status: "open" } })).id;
+      }
+      const result = await deliver({ tenantId: ticket.tenantId, conversationId, channelType: "whatsapp", to: ticket.contact.address, body: body.trim(), fromNumberId: orgNumber.phoneNumberId });
+      delivered = result.delivered;
+      deliveryNote = result.delivered ? `Delivered via WhatsApp (${result.transport}).` : `Delivery failed: ${result.error ?? "unknown error"}`;
+    }
+  }
+
+  await db.ticketEvent.create({ data: { ticketId, type: "customer_response", actorId: admin.id, visibility: "customer", body: body.trim(), detail: { delivered, deliveryNote } } });
   revalidateTicket(ticketId);
-  return { ok: true };
+  return { ok: true, delivered, deliveryNote };
 }
 
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;

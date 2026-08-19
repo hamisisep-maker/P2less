@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "./db";
 import { getSettingNumber } from "./platform-settings";
 import { openOrBumpIncident } from "./incident-detection";
+import { queueNotification } from "./notifications";
 
 const SLA_SETTING_KEY: Record<string, "sla_hours_urgent" | "sla_hours_high" | "sla_hours_normal" | "sla_hours_low"> = {
   urgent: "sla_hours_urgent", high: "sla_hours_high", normal: "sla_hours_normal", low: "sla_hours_low",
@@ -31,6 +32,10 @@ export async function runTicketSlaSweep(): Promise<{ breached: number; newlyBrea
   const toMark = overdue.filter((t) => !t.slaBreached);
   if (toMark.length > 0) {
     await db.supportTicket.updateMany({ where: { id: { in: toMark.map((t) => t.id) } }, data: { slaBreached: true } });
+    // Fires once for the newly-breached BATCH, not once per ticket, per sweep
+    // tick — a ticket that was already flagged last tick doesn't re-notify.
+    const list = toMark.slice(0, 20).map((t) => t.number ?? t.id).join(", ");
+    await queueNotification("ticket_sla_breached", `${toMark.length} ticket(s) just breached their SLA deadline: ${list}`).catch(() => {});
   }
 
   const threshold = await getSettingNumber("incident_ticket_sla_breach_threshold");

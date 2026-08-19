@@ -21,12 +21,19 @@ export default async function AdminAiPage() {
   const today = new Date().toISOString().slice(0, 10);
   const monthPrefix = today.slice(0, 7);
 
-  const [aiStatsToday, aiStatsMonth, aiCosts, dbPrimary] = await Promise.all([
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const [aiStatsToday, aiStatsMonth, aiCosts, dbPrimary, realCostByProvider] = await Promise.all([
     db.aiProviderStat.findMany({ where: { date: today } }),
     db.aiProviderStat.findMany({ where: { date: { startsWith: monthPrefix } } }),
     getAiProviderCosts(),
     getSetting("ai_primary_provider"),
+    // Prefer this over calls×cost-per-call whenever real token-cost data
+    // exists for a provider this month — was previously always the flat
+    // estimate here even when /admin/models had the real figure, so the two
+    // pages could show different numbers for the same provider.
+    db.aiRequestLog.groupBy({ by: ["provider"], where: { createdAt: { gte: monthStart } }, _sum: { costKes: true }, _count: { _all: true } }),
   ]);
+  const realCostMap = new Map(realCostByProvider.map((r) => [r.provider, { costKes: r._sum.costKes ?? 0, count: r._count._all }]));
 
   const configuredPrimary = (dbPrimary || process.env.AI_PROVIDER || "").toLowerCase();
   const primaryProvider = AI_PROVIDERS.find((p) => p.id === configuredPrimary && !!process.env[p.keyEnv])?.id
@@ -50,12 +57,15 @@ export default async function AdminAiPage() {
     }
     const costPerCallKes = aiCosts[p.id] ?? 0;
     const monthCalls = monthCallsByProvider.get(p.id) ?? 0;
+    const real = realCostMap.get(p.id);
+    const spendIsReal = !!real && real.count > 0;
+    const estimatedSpendMonthKes = spendIsReal ? Math.round(real!.costKes) : Math.round(monthCalls * costPerCallKes);
     return {
       id: p.id, label: p.label, configured, isPrimary: p.id === primaryProvider,
       tone, statusLabel,
       calls: stat?.calls ?? 0, successes: stat?.successes ?? 0, failures: stat?.failures ?? 0, lastError: stat?.lastError ?? null,
       quotaRemaining: stat?.rateLimitRemaining ?? null, quotaLimit: stat?.rateLimitLimit ?? null,
-      costPerCallKes, estimatedSpendMonthKes: Math.round(monthCalls * costPerCallKes),
+      costPerCallKes, estimatedSpendMonthKes, spendIsReal,
       topUpUrl: AI_PROVIDER_TOPUP_URL[p.id] ?? "#",
     };
   });
@@ -69,8 +79,8 @@ export default async function AdminAiPage() {
       <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 p-5">
         <div>
           <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-faint">
-            Estimated AI spend this month
-            <InfoTip text="Real successful call counts this month × the cost/call you set on each provider below." />
+            AI spend this month
+            <InfoTip text="Real per-token cost (see Models) where available this month; falls back to successful call counts × the cost/call you set below for any provider with no token data yet — each card says which it's showing." />
           </div>
           <div className="mt-1 font-display text-2xl font-bold">KES {totalMonthSpend.toLocaleString("en-US")}</div>
         </div>

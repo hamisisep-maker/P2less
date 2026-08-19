@@ -24,6 +24,11 @@ export type ProviderCardData = {
   calls: number; successes: number; failures: number; lastError: string | null;
   quotaRemaining: number | null; quotaLimit: number | null;
   costPerCallKes: number; estimatedSpendMonthKes: number;
+  // true once this provider has real per-token AiRequestLog cost data for the
+  // month (see /admin/models) — the figure shown is then the REAL cost, not
+  // the calls×cost-per-call estimate, closing the gap where this page and
+  // /admin/models could show two different numbers for the same provider.
+  spendIsReal: boolean;
   topUpUrl: string;
 };
 
@@ -76,7 +81,10 @@ export function ProviderCard({ data }: { data: ProviderCardData }) {
                 className="w-16 rounded-lg border border-line bg-surface px-2 py-1 text-xs outline-none focus:border-accent"
               />
             </label>
-            <div className="mt-1 text-[11px] text-faint">≈ KES {data.estimatedSpendMonthKes.toLocaleString("en-US")} spent this month ({data.successes > 0 || data.calls > 0 ? "real usage" : "no calls yet"} × cost above)</div>
+            <div className="mt-1 text-[11px] text-faint">
+              {data.spendIsReal ? "" : "≈ "}KES {data.estimatedSpendMonthKes.toLocaleString("en-US")} spent this month
+              {data.spendIsReal ? " (real per-token cost, see Models)" : ` (${data.successes > 0 || data.calls > 0 ? "real usage" : "no calls yet"} × cost above)`}
+            </div>
           </div>
 
           <div className="mt-3 flex items-center gap-2">

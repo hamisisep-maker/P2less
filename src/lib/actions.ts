@@ -16,10 +16,27 @@ import { normalizePhone } from "./conversation";
 import { handleSubscriptionPaymentConfirmed } from "./billing-lifecycle";
 import { assertChannelEnabled } from "./payment-channels";
 import type { ParamSpec } from "./connector-engine";
+import { getSettingNumber } from "./platform-settings";
 
+/** Real brute-force protection — LoginAttempt was already logged for every
+ *  try but never actually consulted before this; a fixed number of recent
+ *  failures for the SAME email (not IP — a shared/NAT'd IP shouldn't lock
+ *  out unrelated accounts) blocks further attempts for a rolling window,
+ *  regardless of whether the email even exists (never leaks that). */
 export async function loginAction(_prev: unknown, formData: FormData) {
   const email = String(formData.get("email") ?? "").toLowerCase().trim();
   const password = String(formData.get("password") ?? "");
+
+  const [maxAttempts, windowMinutes] = await Promise.all([
+    getSettingNumber("login_lockout_max_attempts"),
+    getSettingNumber("login_lockout_window_minutes"),
+  ]);
+  const since = new Date(Date.now() - windowMinutes * 60_000);
+  const recentFailures = await db.loginAttempt.count({ where: { email, success: false, createdAt: { gte: since } } });
+  if (recentFailures >= maxAttempts) {
+    return { error: `Too many failed attempts. Try again in a few minutes.` };
+  }
+
   const user = await db.user.findUnique({ where: { email } });
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
     await recordLoginAttempt(email, false);

@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "./db";
 import { sha256 } from "./crypto";
+import { rateLimit } from "./rate-limit";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Developer API authentication. Requests present a tenant API key as
@@ -34,7 +35,9 @@ export function apiUnauthorized(): Response {
   );
 }
 
-/** Wrap a handler with API-key auth + a scope check. */
+/** Wrap a handler with API-key auth + a scope check + a basic per-key rate
+ *  limit — closes a real gap the Priority 6 system audit found: this
+ *  surface previously checked auth+scope only, never request volume. */
 export async function withApiKey(
   req: Request,
   scope: string | null,
@@ -44,6 +47,13 @@ export async function withApiKey(
   if (!actor) return apiUnauthorized();
   if (scope && !actor.scopes.includes(scope) && !actor.scopes.includes("*")) {
     return Response.json({ error: "forbidden", message: `This key lacks the '${scope}' scope.` }, { status: 403 });
+  }
+  const limit = rateLimit(`apikey:${actor.apiKeyId}`, { max: 120, windowMs: 60_000 });
+  if (!limit.ok) {
+    return Response.json(
+      { error: "rate_limited", message: "Too many requests — slow down." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil((limit.retryAfterMs ?? 60_000) / 1000)) } },
+    );
   }
   return handler(actor);
 }

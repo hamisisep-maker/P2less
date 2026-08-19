@@ -87,12 +87,15 @@ model ModelPricing {
 }
 
 /// Admin-configurable rule for WHEN and via WHICH channel a billing event
-/// notifies a tenant — e.g. "renewal_reminder via whatsapp at 7 days before".
-/// The billing engine reads these instead of a hard-coded schedule.
+/// notifies someone — e.g. "renewal_reminder via whatsapp at 7 days before"
+/// or "incident_critical via email, immediately". Originally billing-only;
+/// Priority 6 generalized it to every event in the platform that needs to
+/// reach a human (see Notification below) — the engine reads these instead
+/// of a hard-coded schedule, same as it always did.
 model NotificationRule {
   id         String   @id @default(cuid())
-  event      String // renewal_reminder | payment_received | payment_failed | subscription_expired | account_suspended | account_reactivated
-  channel    String // whatsapp | email | sms — see BillingNotification for why dispatch may be a real no-op today
+  event      String // renewal_reminder | payment_received | payment_failed | subscription_expired | account_suspended | account_reactivated | payment_reconciliation_needed | incident_critical | incident_opened | ticket_created | ticket_assigned | ticket_sla_breached | whatsapp_connection_failed | ai_provider_degraded | usage_limit_exceeded
+  channel    String // email | whatsapp | sms — see Notification for which channels actually dispatch today
   timingDays Int      @default(0) // days BEFORE the triggering date (renewal reminders); 0 = fires immediately on the event. Non-nullable deliberately — Prisma's compound @@unique below doesn't handle a nullable member cleanly.
   enabled    Boolean  @default(true)
   template   String? // editable message text; {{tenant}}, {{plan}}, {{amount}}, {{date}} placeholders filled at send time
@@ -101,30 +104,43 @@ model NotificationRule {
   @@unique([event, channel, timingDays])
 }
 
-/// The real notification QUEUE/LOG the billing engine writes to — every
-/// notification a rule says should fire is recorded here with its actual
-/// delivery outcome. Honest about "no_provider_configured": P2Less has no
-/// email or SMS provider wired in yet (Advanta SMS is pending real API
-/// keys), so those channels are logged as queued/would-be-sent but not
-/// actually dispatched — never faked as "sent".
-model BillingNotification {
-  id           String    @id @default(cuid())
-  tenantId     String
-  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  event        String
-  channel      String
-  scheduledFor DateTime
-  status       String    @default("queued") // queued | sent | failed | no_provider_configured
-  content      String?
-  error        String?
-  sentAt       DateTime?
-  createdAt    DateTime  @default(now())
+/// The real notification QUEUE/LOG the engine writes to — every notification
+/// a rule says should fire is recorded here with its actual delivery
+/// outcome. Renamed from BillingNotification (Priority 6) when this stopped
+/// being billing-only — @@map keeps the underlying table/data untouched, a
+/// pure Prisma-Client-side rename, not a migration. tenantId is nullable
+/// because a platform-wide event (a critical incident) isn't owned by one
+/// tenant — see notifications.ts's two recipient-resolution paths.
+/// retryCount/nextAttemptAt back a real dispatch+backoff job
+/// (notification_dispatch_sweep) — previously every row was permanently
+/// stuck at "no_provider_configured" with nothing ever attempting delivery.
+model Notification {
+  id             String    @id @default(cuid())
+  tenantId       String?
+  tenant         Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event          String
+  channel        String
+  scheduledFor   DateTime
+  status         String    @default("queued") // queued | sent | failed | no_provider_configured
+  content        String?
+  // Resolved ONCE at queue time, not re-resolved on retry — a role/ownership
+  // change after queueing shouldn't silently redirect an already-queued
+  // notification to someone else.
+  recipientEmail String?
+  error          String?
+  retryCount     Int       @default(0)
+  nextAttemptAt  DateTime?
+  sentAt         DateTime?
+  createdAt      DateTime  @default(now())
   // Idempotency: the poller runs repeatedly and must never double-queue the
-  // same reminder — one row per tenant/event/channel/day, enforced here
-  // rather than by "check if it exists" application logic that could race.
-  dedupeKey    String    @unique
+  // same reminder — one row per (tenant-or-platform)/event/channel/day,
+  // enforced here rather than by "check if it exists" application logic
+  // that could race.
+  dedupeKey      String    @unique
 
   @@index([tenantId])
+  @@index([status])
+  @@map("BillingNotification")
 }
 
 /// Accountability trail for super-admin actions that aren't scoped to one
@@ -223,11 +239,14 @@ model Integration {
   @@index([category])
 }
 
-/// Secrets for an Integration, encrypted at rest via crypto.ts's
-/// encryptJSON/decryptJSON — the SAME AES-256-GCM scheme Connector.authConfigEnc
-/// already uses, not a new one. maskedPreview is precomputed once at write
-/// time and is the ONLY form ever sent to a client component; the real value
-/// never crosses the server/client boundary after creation.
+/// Designed for encrypted-at-rest Integration secrets (same AES-256-GCM
+/// scheme as Connector.authConfigEnc) with a real rotation chain via
+/// rotatedFromId — HONEST STATUS as of the Priority 6 system audit: this
+/// table is currently unwritten scaffolding. Every real provider credential
+/// in this codebase today (WhatsApp/M-Pesa/every AI provider/Resend) lives
+/// in env vars, matching that established convention — not this vault. Wire
+/// this up (or drop it) the day a real replace/rotate/test-connection admin
+/// UI is actually built against it, rather than leaving it half-true.
 model IntegrationCredential {
   id            String    @id @default(cuid())
   integrationId String
@@ -471,7 +490,7 @@ model Tenant {
   deliveryZones DeliveryZone[]
   drivers       Driver[]
   deliveryTrips DeliveryTrip[]
-  billingNotifications BillingNotification[]
+  notifications Notification[]
 }
 
 /// Configurable subscription plan. Not hard-coded — Super Admin edits these.
@@ -727,7 +746,6 @@ model User {
   tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name         String
   email        String
-  phone        String?
   passwordHash String
   // LEGACY bootstrap flag — kept in sync with adminRole.key == "super_admin"
   // so the very first seeded admin always works even before AdminRole rows
@@ -847,7 +865,6 @@ model Contact {
   address     String // phone number / chat id — unique per tenant+channel
   displayName String?
   phoneVerified Boolean @default(false)
-  pinHash     String? // optional user-set P2Less PIN
   // Super-app credit wallet: end users spend credits per tool use; topped up via
   // M-Pesa. New contacts get a few free credits so anyone can try it instantly.
   credits     Int      @default(30)

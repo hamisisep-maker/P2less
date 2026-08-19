@@ -48,6 +48,10 @@ export const SETTING_DEFAULTS = {
   sla_hours_low: 96,
   incident_ticket_sla_breach_threshold: 5, // this many tickets breaching SLA at once opens an incident — "why is nobody responding?"
 
+  // ── Priority 6: login lockout (src/lib/actions.ts::loginAction) ────────
+  login_lockout_max_attempts: 5, // this many recent failures for one email blocks further attempts
+  login_lockout_window_minutes: 15, // the rolling window the failure count is measured over
+
   // ── Priority 4: maintenance mode (src/lib/maintenance-actions.ts) ──────
   maintenance_enabled: 0, // 0/1 — whole-PLATFORM maintenance, distinct from a single Integration.enabled toggle
   maintenance_reason: "",

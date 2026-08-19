@@ -77,7 +77,7 @@ export default async function BillingAutomationPage() {
 
       <Card className="mt-4 p-5">
         <h2 className="mb-1 font-display font-semibold">Notification rules</h2>
-        <p className="mb-3 text-xs text-muted">Each rule fires independently — e.g. an email reminder at 7 days AND a WhatsApp reminder at 3 days for the same renewal. Channels without a connected provider (email, SMS) are logged honestly as queued rather than faked as sent — see the Integrations status once that's wired in.</p>
+        <p className="mb-3 text-xs text-muted">Not billing-only anymore — the same engine now routes critical incidents, new/breached-SLA tickets, and other platform events to whoever holds the matching admin permission, in addition to billing events reaching the tenant&apos;s own owner. Each rule fires independently — e.g. an email reminder at 7 days AND a WhatsApp reminder at 3 days for the same renewal. A background sweep (every 2 minutes) attempts real delivery with retry/backoff; channels without a connected provider are logged honestly as queued rather than faked as sent.</p>
         <RulesTable rules={ruleRows} />
         <div className="mt-4 border-t border-line-soft pt-4">
           <AddRuleForm />

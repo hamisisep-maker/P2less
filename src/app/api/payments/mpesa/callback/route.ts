@@ -6,7 +6,7 @@ import { sendWhatsAppText } from "@/lib/transport";
 import { tryAssignTrip } from "@/lib/dispatch";
 import { handleSubscriptionPaymentConfirmed, handleSubscriptionPaymentFailed } from "@/lib/billing-lifecycle";
 import { recordInboundEvent, finishInboundEvent } from "@/lib/inbound-events";
-import { recordChannelOutcome, recordChannelCallback } from "@/lib/payment-channels";
+import { recordChannelOutcome, recordChannelCallback, syncReconciliationFlag } from "@/lib/payment-channels";
 
 // Safaricom Daraja posts the final STK-push result here. We match it to the
 // pending Payment by CheckoutRequestID and mark it paid or failed. Every
@@ -36,10 +36,16 @@ export async function POST(req: Request) {
 
   if (parsed) {
     const payment = await db.payment.findFirst({ where: { providerRef: parsed.checkoutId } });
-    if (payment && payment.status === "pending") {
+    // Accept a genuinely late callback even after the reconciliation sweep
+    // already flipped this payment to "unknown" — previously only "pending"
+    // was accepted, so a real-but-late webhook arriving after that point was
+    // silently dropped and could ONLY ever be cleared by a human, even though
+    // Safaricom's own definitive answer had actually arrived.
+    if (payment && (payment.status === "pending" || payment.status === "unknown")) {
       matched = true;
       relatedPaymentId = payment.id;
       relatedTenantId = payment.tenantId;
+      const wasUnknown = payment.status === "unknown";
       await recordChannelOutcome("mpesa_stk", parsed.success);
       await db.payment.update({
         where: { id: payment.id },
@@ -51,6 +57,7 @@ export async function POST(req: Request) {
           failureReason: parsed.success ? null : (parsed.desc ?? "").slice(0, 300),
         },
       });
+      if (wasUnknown) await syncReconciliationFlag(payment.tenantId).catch(() => {});
       if (parsed.success) {
         void dispatchWebhook(payment.tenantId, "payment.paid", { reference: payment.reference, amount: payment.amount, currency: payment.currency, receipt: parsed.receipt }).catch(() => {});
         // Wallet top-up: credit the CONTACT's balance now that M-Pesa confirmed it.

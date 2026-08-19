@@ -258,7 +258,7 @@ const notificationRuleSchema = z.object({
 export async function upsertNotificationRuleAction(_prev: unknown, formData: FormData) {
   let admin;
   try {
-    admin = await assertAdminPermission("billing.manage_automation");
+    admin = await assertAdminPermission("notifications.manage");
   } catch (e) {
     if (isForbidden(e)) return { error: e.message };
     throw e;
@@ -277,7 +277,7 @@ export async function upsertNotificationRuleAction(_prev: unknown, formData: For
     create: { event: d.event, channel: d.channel, timingDays, template: d.template, enabled: true },
     update: { template: d.template },
   });
-  await logPrivilegedAction({ admin, permission: "billing.manage_automation", action: "admin.notification_rule_set", target: `${d.event}/${d.channel}`, detail: d });
+  await logPrivilegedAction({ admin, permission: "notifications.manage", action: "admin.notification_rule_set", target: `${d.event}/${d.channel}`, detail: d });
   revalidatePath("/admin/billing/automation");
   return { ok: true };
 }
@@ -285,13 +285,13 @@ export async function upsertNotificationRuleAction(_prev: unknown, formData: For
 export async function toggleNotificationRuleAction(ruleId: string, enabled: boolean) {
   let admin;
   try {
-    admin = await assertAdminPermission("billing.manage_automation");
+    admin = await assertAdminPermission("notifications.manage");
   } catch (e) {
     if (isForbidden(e)) return { error: e.message };
     throw e;
   }
   const rule = await db.notificationRule.update({ where: { id: ruleId }, data: { enabled } });
-  await logPrivilegedAction({ admin, permission: "billing.manage_automation", action: "admin.notification_rule_toggle", target: `${rule.event}/${rule.channel}`, detail: { enabled } });
+  await logPrivilegedAction({ admin, permission: "notifications.manage", action: "admin.notification_rule_toggle", target: `${rule.event}/${rule.channel}`, detail: { enabled } });
   revalidatePath("/admin/billing/automation");
   return { ok: true };
 }

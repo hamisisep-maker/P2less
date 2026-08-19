@@ -32,5 +32,9 @@ export async function register() {
     const { runTicketSlaSweep } = await import("./src/lib/ticket-sla");
     registerJob({ key: "ticket_sla_sweep", name: "Support ticket SLA sweep", category: "support", intervalMs: 5 * 60_000, run: runTicketSlaSweep });
     startJobPoller("ticket_sla_sweep");
+
+    const { runNotificationDispatchSweep } = await import("./src/lib/notifications");
+    registerJob({ key: "notification_dispatch_sweep", name: "Notification dispatch", category: "notifications", intervalMs: 2 * 60_000, run: runNotificationDispatchSweep });
+    startJobPoller("notification_dispatch_sweep");
   }
 }

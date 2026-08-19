@@ -19,6 +19,7 @@ import { startTopup, creditRateKes, creditsForAmount } from "./wallet";
 import { isConfigured as mpesaConfigured } from "./mpesa";
 import { setAiTenantContext } from "./ai-context";
 import { nextTicketNumber } from "./ticket-numbering";
+import { queueNotification } from "./notifications";
 import { computeSlaDeadline } from "./ticket-sla";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1133,6 +1134,9 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     });
     await db.ticketEvent.create({ data: { ticketId: ticket.id, type: "created", visibility: "internal", detail: { source: "conversation_escalation" } } });
     await audit({ tenantId: tenant.id, requestId: reqId, actorType: "contact", actorId: contact.id, action: "escalate", success: true, detail: { ticketNumber: ticket.number } });
+    // The reply below promises "notified the team" — this is what actually
+    // makes that true, instead of the promise being backed by nothing.
+    await queueNotification("ticket_created", `New WhatsApp escalation ${ticket.number ?? ticket.id} from ${tenant.name}: ${ticket.subject}`).catch(() => {});
     return emit([{ body: "I've created a support request and notified the team. Someone will get back to you shortly." }], "escalated", { lastResource: ctx.lastResource });
   }
 
@@ -1167,6 +1171,17 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   const actions = await loadActions(tenant.id);
   if (actions.length === 0) {
     return emit([{ body: "This organization hasn't connected any systems yet." }], "open", ctx);
+  }
+  // AI-request quota — only actually blocks anything when AI would be used at
+  // all (aiEnabled()); the deterministic fallback path records "api_call",
+  // never limited by this. Declared in Plan.limits and metered for a long
+  // time, but never enforced anywhere until this — a tenant could exceed it
+  // indefinitely with no block, matching the message_in pattern for real now.
+  if (aiEnabled()) {
+    const aiLimit = await checkLimit(tenant.id, "ai_request");
+    if (!aiLimit.ok) {
+      return emit([{ body: "This service has reached its monthly AI request limit. Please contact the organization." }], "open", ctx);
+    }
   }
   const match = await understand(text, actions, history);
   await meter(tenant.id, match.via === "ai" ? "ai_request" : "api_call", match.via === "ai" ? 1 : 0);
@@ -1648,8 +1663,15 @@ async function runAction(args: RunArgs): Promise<{ replies: Reply[]; status: str
   const body = aiEnabled() ? await humanizeReply(args.assistant, args.userText ?? "", factText, args.history ?? []) : factText;
   const replies: Reply[] = [{ body }];
 
-  // 7. Optional document generation + secure delivery (as a real PDF/file)
-  if (action.documentKind) {
+  // 7. Optional document generation + secure delivery (as a real PDF/file) —
+  // gated by the plan's documentsPerMonth limit (checkLimit already supports
+  // it; this was the one place it was declared but never actually enforced).
+  // The factual reply above still sends either way — only the extra
+  // generated file is held back once the limit is hit.
+  const documentLimit = action.documentKind ? await checkLimit(tenantId, "document") : { ok: true };
+  if (action.documentKind && !documentLimit.ok) {
+    replies.push({ body: "This service has reached its monthly document limit — the information above is current, but a downloadable file isn't available until next month. Please contact the organization." });
+  } else if (action.documentKind) {
     const tenant = await db.tenant.findUnique({ where: { id: tenantId } });
     const b = (tenant?.branding as Record<string, string> | null) ?? {};
     const d = result.data;

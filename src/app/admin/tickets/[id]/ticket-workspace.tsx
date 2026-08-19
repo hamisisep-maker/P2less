@@ -231,7 +231,19 @@ export function TicketWorkspace({ ticket, events, admins, relatedIncident, relat
             <div className="rounded-xl border border-green/30 bg-green-soft/20 px-3.5 py-3">
               <div className="mb-1.5 text-xs font-medium text-green">Customer-visible response</div>
               <textarea value={responseText} onChange={(e) => setResponseText(e.target.value)} rows={2} className="w-full rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs outline-none focus:border-accent" />
-              <button disabled={pending || !responseText.trim()} onClick={() => run(() => addCustomerResponseAction(ticket.id, responseText), "Response added", () => setResponseText(""))} className="mt-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium hover:bg-surface-2">Send response</button>
+              <button
+                disabled={pending || !responseText.trim()}
+                onClick={() => startTransition(async () => {
+                  const res: { error?: string; ok?: boolean; delivered?: boolean; deliveryNote?: string } = await addCustomerResponseAction(ticket.id, responseText);
+                  if (res.error) { toast.error(res.error); return; }
+                  if (res.delivered) toast.success("Delivered to the customer on WhatsApp");
+                  else toast.warning(res.deliveryNote ?? "Response saved, but not delivered");
+                  setResponseText("");
+                })}
+                className="mt-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium hover:bg-surface-2"
+              >
+                Send response
+              </button>
             </div>
           )}
         </div>

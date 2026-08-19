@@ -5,6 +5,7 @@ import { getSettingNumber } from "./platform-settings";
 import { isOverdue } from "./job-runner";
 import { mpesaFailureCategoryLabel } from "./mpesa";
 import { nextIncidentNumber } from "./ticket-numbering";
+import { queueNotification } from "./notifications";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Proactive detection — nothing here waits for an admin to notice a red
@@ -60,6 +61,9 @@ async function openOrBumpIncident(input: {
   await db.incidentEvent.create({
     data: { incidentId: incident.id, type: "detected", detail: (input.detail ?? undefined) as Prisma.InputJsonValue | undefined },
   });
+  // Only on a genuinely NEW incident, never on a re-bump — otherwise a
+  // sustained problem would re-notify every single sweep tick instead of once.
+  await queueNotification(input.severity === "critical" ? "incident_critical" : "incident_opened", `${incident.number ?? incident.id}: ${input.title}`).catch(() => {});
 }
 
 /** Called by job-runner.ts after every failed JobRun. Opens/bumps an

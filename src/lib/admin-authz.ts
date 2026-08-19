@@ -145,13 +145,17 @@ export async function logPrivilegedAction(input: LogPrivilegedActionInput): Prom
     ...(input.newState !== undefined ? { newState: input.newState } : {}),
   };
 
+  // Same redaction AuditLog always got — PlatformAuditLog received the exact
+  // same detail/previousState/newState payloads (including e.g. credential
+  // rotation actions) without ever sanitizing them until this fix.
+  const { sanitize } = await import("./audit");
   await db.platformAuditLog.create({
     data: {
       actorId: input.admin.id,
       actorEmail: input.admin.email,
       action: input.action,
       target: input.target ?? null,
-      detail: detail as Prisma.InputJsonValue,
+      detail: (sanitize(detail) ?? undefined) as Prisma.InputJsonValue | undefined,
       role,
       permission: input.permission,
       reason: input.reason ?? null,

@@ -22,7 +22,12 @@ export type AuditInput = {
 // Keys that must never land in the audit trail even if a caller passes them.
 const REDACT = /(password|secret|token|apikey|api_key|authorization|pin|otp|code)/i;
 
-function sanitize(detail?: Record<string, unknown>): Record<string, unknown> | undefined {
+// Exported so logPrivilegedAction (admin-authz.ts) can apply the SAME
+// redaction to PlatformAuditLog — it used to skip this, an inconsistency
+// found in the Priority 6 system audit (credential-rotation-style detail
+// payloads could land there unredacted even though the tenant-scoped
+// AuditLog copy of the same action was always sanitized).
+export function sanitize(detail?: Record<string, unknown>): Record<string, unknown> | undefined {
   if (!detail) return undefined;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(detail)) {

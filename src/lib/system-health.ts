@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "./db";
 import { isConfigured as mpesaConfigured } from "./mpesa";
+import { isEmailConfigured } from "./notification-channels";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Real health computation per integration — never "API key exists = healthy".
@@ -54,6 +55,16 @@ async function checkWhatsAppHealth(): Promise<HealthVerdict> {
   return { ok: true, detail: `Last message activity ${ageHours < 1 ? "under an hour" : Math.round(ageHours) + "h"} ago` };
 }
 
+async function checkEmailProviderHealth(): Promise<HealthVerdict> {
+  if (!isEmailConfigured()) return { ok: null, detail: "Not configured — RESEND_API_KEY not set" };
+  const recent = await db.notification.findMany({ where: { channel: "email" }, orderBy: { createdAt: "desc" }, take: 20 });
+  if (recent.length === 0) return { ok: null, detail: "Configured, no notifications sent yet" };
+  const sent = recent.filter((n) => n.status === "sent").length;
+  const failed = recent.filter((n) => n.status === "failed").length;
+  if (failed > 0 && sent === 0) return { ok: false, detail: `${failed}/${recent.length} recent notifications failed to send` };
+  return { ok: true, detail: `${sent}/${recent.length} of the last ${recent.length} notifications sent` };
+}
+
 async function checkMpesaStkHealth(): Promise<HealthVerdict> {
   if (!mpesaConfigured()) return { ok: null, detail: "Not configured — using mock mode" };
   const recent = await db.payment.findMany({ where: { method: "mpesa", provider: "daraja" }, orderBy: { createdAt: "desc" }, take: 20 });
@@ -72,7 +83,8 @@ export async function computeIntegrationHealth(key: string): Promise<HealthVerdi
   if (key === "mpesa_paybill" || key === "mpesa_till") return { ok: null, detail: "Not receiving live traffic yet (Daraja C2B URL not registered with Safaricom)" };
   if (key === "bank_transfer") return { ok: null, detail: "Manual statement reconciliation only — no live feed" };
   if (key === "card") return { ok: null, detail: "Not implemented" };
-  if (key === "email_provider" || key === "sms_provider") return { ok: null, detail: "Not configured" };
+  if (key === "email_provider") return checkEmailProviderHealth();
+  if (key === "sms_provider") return { ok: null, detail: "Not configured" };
   if (key === "storage") return { ok: null, detail: "Not actively checked" };
   return { ok: null, detail: "No health check implemented for this integration yet" };
 }

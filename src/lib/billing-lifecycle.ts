@@ -9,6 +9,7 @@ import { generateReceiptPdf } from "./documents";
 import { registerJob, startJobPoller } from "./job-runner";
 import { assertChannelEnabled, syncReconciliationFlag } from "./payment-channels";
 import { classifyOutcome } from "./classify-outcome";
+import { queueNotification } from "./notifications";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The subscription billing lifecycle — a real state machine, not scattered
@@ -54,40 +55,6 @@ async function billingAudit(tenantId: string, action: string, detail?: Record<st
   await audit({ tenantId, requestId: newRequestId(), actorType: "system", action: `billing.${action}`, success, detail }).catch(() => {});
 }
 
-function dedupeKey(tenantId: string, event: string, channel: string, when: Date): string {
-  return `${tenantId}:${event}:${channel}:${when.toISOString().slice(0, 10)}`;
-}
-
-/** Queues a notification per whatever NotificationRule(s) match this event —
- *  idempotent (dedupeKey), and honest about channels with no real provider
- *  wired in yet (marks them no_provider_configured rather than pretending to
- *  send). WhatsApp is the one channel that COULD be real, but P2Less has no
- *  outbound channel from itself to a tenant's own admin today (each tenant's
- *  WhatsApp number represents THEM to THEIR customers, not P2Less to them) —
- *  so for now every channel queues honestly rather than fakes delivery. */
-async function queueNotification(tenantId: string, event: string, content: string, opts: { timingDays?: number; when?: Date } = {}): Promise<number> {
-  const when = opts.when ?? new Date();
-  // Renewal reminders fire per-rule at THAT rule's own configured timing
-  // (e.g. email at 7 days, WhatsApp at 3 days — genuinely different
-  // schedules per channel, matching each rule's own timingDays); immediate
-  // events (payment received/failed, suspended, reactivated) fire every
-  // enabled rule for that event regardless of timingDays.
-  const rules = await db.notificationRule.findMany({
-    where: opts.timingDays != null ? { event, enabled: true, timingDays: opts.timingDays } : { event, enabled: true },
-  });
-  let queued = 0;
-  for (const rule of rules) {
-    const key = dedupeKey(tenantId, event, rule.channel, when);
-    const existing = await db.billingNotification.findUnique({ where: { dedupeKey: key } });
-    if (existing) continue; // already queued for today — never double-queue
-    await db.billingNotification.create({
-      data: { dedupeKey: key, tenantId, event, channel: rule.channel, scheduledFor: when, status: "no_provider_configured", content },
-    }).catch(() => {});
-    queued++;
-  }
-  return queued;
-}
-
 /** Real evidence a payment failed OR the grace deadline passed with none —
  *  never the mere passage of time alone. Moves toward suspension one step at
  *  a time (payment_pending → grace_period → suspended), each step logged. */
@@ -117,7 +84,7 @@ export async function recordFailedPayment(tenantId: string, reason: string) {
   });
   await billingAudit(tenantId, "grace_period_started", { attempts, reason, graceEndsAt: graceEndsAt.toISOString() }, false);
   const tenant = await db.tenant.findUnique({ where: { id: tenantId } });
-  await queueNotification(tenantId, "payment_failed", `${tenant?.name}: renewal payment failed after ${attempts} attempts (${reason}). Service continues for ${settings.graceDays} more day(s), then pauses automatically.`);
+  await queueNotification("payment_failed", `${tenant?.name}: renewal payment failed after ${attempts} attempts (${reason}). Service continues for ${settings.graceDays} more day(s), then pauses automatically.`, { tenantId });
 }
 
 /** The ONLY place Tenant.status flips to "suspended" for a billing reason —
@@ -130,7 +97,7 @@ export async function suspendForNonPayment(tenantId: string) {
   await db.tenant.update({ where: { id: tenantId }, data: { status: "suspended" } });
   await db.subscription.update({ where: { tenantId }, data: { status: "suspended" } }).catch(() => {});
   await billingAudit(tenantId, "auto_suspended", { reason: "grace period ended with no successful payment" });
-  await queueNotification(tenantId, "account_suspended", `${tenant.name}'s P2Less assistant has been paused — grace period ended with no payment received. Reactivates automatically the moment payment is confirmed.`);
+  await queueNotification("account_suspended", `${tenant.name}'s P2Less assistant has been paused — grace period ended with no payment received. Reactivates automatically the moment payment is confirmed.`, { tenantId });
 }
 
 /** The ONLY place a billing-suspended tenant comes back — real payment
@@ -148,7 +115,7 @@ export async function reactivateAfterPayment(tenantId: string, plan: { interval:
     },
   });
   await billingAudit(tenantId, wasSuspended ? "reactivated" : "renewed", { renewsAt: renewsAt.toISOString() });
-  if (wasSuspended) await queueNotification(tenantId, "account_reactivated", "Payment confirmed — your P2Less assistant is active again.");
+  if (wasSuspended) await queueNotification("account_reactivated", "Payment confirmed — your P2Less assistant is active again.", { tenantId });
 }
 
 function nextRenewalDate(from: Date, interval: string): Date {
@@ -174,7 +141,7 @@ export async function handleSubscriptionPaymentConfirmed(payment: { id: string; 
       paidAt: new Date(), periodLabel: payment.periodLabel ?? undefined, planName: sub.plan.name,
     }).catch(() => null);
     await billingAudit(payment.tenantId, "payment_confirmed", { reference: payment.reference, amount: payment.amount, receiptUrl: receipt?.url });
-    await queueNotification(payment.tenantId, "payment_received", `Payment of ${payment.currency} ${payment.amount.toLocaleString("en-US")} confirmed for ${tenant.name}. Receipt: ${receipt?.url ?? "(generation failed)"}`);
+    await queueNotification("payment_received", `Payment of ${payment.currency} ${payment.amount.toLocaleString("en-US")} confirmed for ${tenant.name}. Receipt: ${receipt?.url ?? "(generation failed)"}`, { tenantId: payment.tenantId });
   }
 }
 
@@ -263,7 +230,7 @@ export async function runBillingCycle(): Promise<{ reminders: number; renewalsAt
     if (["active", "renewal_due"].includes(sub.status)) {
       const daysToRenewal = Math.ceil((sub.renewsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
       if (daysToRenewal >= 0) {
-        reminders += await queueNotification(sub.tenantId, "renewal_reminder", `${sub.tenant.name}'s P2Less plan (${sub.plan.name}) renews in ${daysToRenewal} day(s).`, { timingDays: daysToRenewal });
+        reminders += await queueNotification("renewal_reminder", `${sub.tenant.name}'s P2Less plan (${sub.plan.name}) renews in ${daysToRenewal} day(s).`, { tenantId: sub.tenantId, timingDays: daysToRenewal });
       }
     }
 

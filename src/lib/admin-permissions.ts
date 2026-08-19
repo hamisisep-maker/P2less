@@ -52,6 +52,10 @@ export const ADMIN_PERMISSIONS = [
   "tickets.manage", // create/edit/assign/status-transition/link to payment or incident
   "tickets.internal_notes", // write internal-only TicketEvent rows — kept separate from tickets.manage so a future customer-facing role could respond to customers without seeing internal investigation notes
   "tickets.resolve", // close with a required resolution + resolutionReason — kept distinct from tickets.manage, same reasoning as incidents.manage's separate acknowledge/investigate/resolve gate
+
+  // ── Priority 6: Notification Engine ──────────────────────────────────────
+  "notifications.view",
+  "notifications.manage", // create/edit/enable/disable NotificationRule rows — was billing.manage_automation-only before this generalized beyond billing events
 ] as const;
 
 export type AdminPermission = typeof ADMIN_PERMISSIONS[number];
@@ -92,6 +96,9 @@ export const PERMISSION_LABELS: Record<AdminPermission, string> = {
   "tickets.manage": "Create, assign, and update support tickets",
   "tickets.internal_notes": "Write internal (non-customer-visible) ticket notes",
   "tickets.resolve": "Resolve support tickets with a recorded reason",
+
+  "notifications.view": "View notification rules and delivery status",
+  "notifications.manage": "Create, edit, and enable/disable notification rules",
 };
 
 export type BuiltInRoleKey = "super_admin" | "finance_admin" | "operations_admin" | "support_admin" | "security_admin" | "read_only_admin";
@@ -106,7 +113,7 @@ export const BUILT_IN_ROLES: Record<BuiltInRoleKey, { name: string; permissions:
     permissions: [
       "billing.view", "billing.confirm_payment", "billing.refund", "billing.manage_pricing", "billing.manage_automation",
       "plans.view", "plans.edit", "audit.view",
-      "integrations.view", "reconciliation.view", "reconciliation.match", "tickets.view",
+      "integrations.view", "reconciliation.view", "reconciliation.match", "tickets.view", "notifications.view", "notifications.manage",
     ],
   },
   operations_admin: {
@@ -116,7 +123,7 @@ export const BUILT_IN_ROLES: Record<BuiltInRoleKey, { name: string; permissions:
       "models.view", "models.change_primary", "models.edit_pricing",
       "providers.view", "providers.manage", "audit.view",
       "integrations.view", "integrations.manage", "system_health.view", "incidents.view", "incidents.manage", "webhooks.view",
-      "tickets.view", "tickets.manage",
+      "tickets.view", "tickets.manage", "notifications.view", "notifications.manage",
     ],
   },
   support_admin: {
@@ -124,18 +131,18 @@ export const BUILT_IN_ROLES: Record<BuiltInRoleKey, { name: string; permissions:
     permissions: [
       "tenants.view", "tenants.suspend", "tenants.reactivate", "billing.view", "audit.view",
       "system_health.view", "incidents.view", "webhooks.view",
-      "tickets.view", "tickets.manage", "tickets.internal_notes", "tickets.resolve",
+      "tickets.view", "tickets.manage", "tickets.internal_notes", "tickets.resolve", "notifications.view",
     ],
   },
   security_admin: {
     name: "Security Admin",
-    permissions: ["audit.view", "security.manage", "integrations.manage_credentials", "maintenance.manage", "tickets.view"],
+    permissions: ["audit.view", "security.manage", "integrations.manage_credentials", "maintenance.manage", "tickets.view", "notifications.view"],
   },
   read_only_admin: {
     name: "Read Only / Auditor",
     permissions: [
       "tenants.view", "billing.view", "plans.view", "models.view", "providers.view", "audit.view",
-      "integrations.view", "system_health.view", "incidents.view", "reconciliation.view", "webhooks.view", "tickets.view",
+      "integrations.view", "system_health.view", "incidents.view", "reconciliation.view", "webhooks.view", "tickets.view", "notifications.view",
     ],
   },
 };
