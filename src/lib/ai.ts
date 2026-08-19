@@ -41,12 +41,23 @@ function hasKey(p: Provider): boolean {
  *  balance), the reply still goes out via a backup key instead of falling to a
  *  canned template. Groq/Cerebras listed early — genuinely free tiers with much
  *  higher rate limits than Gemini's free tier, so they're worth trying before
- *  burning retries on a provider more likely to already be exhausted. */
-function providerChain(): Provider[] {
+ *  burning retries on a provider more likely to already be exhausted.
+ *
+ *  Primary is resolved in this order: a runtime override the super admin set
+ *  at /admin/ai (PlatformSetting "ai_primary_provider", no redeploy needed) →
+ *  the AI_PROVIDER env var → auto-detect from whichever key is configured. */
+async function providerChain(): Promise<Provider[]> {
   const all: Provider[] = ["google", "groq", "cerebras", "openrouter", "anthropic", "openai", "xai"];
-  const configured = (process.env.AI_PROVIDER || "").toLowerCase();
+  let dbOverride = "";
+  try {
+    const row = await db.platformSetting.findUnique({ where: { key: "ai_primary_provider" } });
+    dbOverride = row?.value ?? "";
+  } catch {
+    // Table not migrated yet / DB hiccup — fall through to env, never block a reply on this.
+  }
+  const configured = (dbOverride || process.env.AI_PROVIDER || "").toLowerCase();
   const primary = all.find((p) => p === configured && hasKey(p))
-    ?? all.find(hasKey); // auto-detect if AI_PROVIDER unset/keyless
+    ?? all.find(hasKey); // auto-detect if unset/keyless
   const chain: Provider[] = [];
   if (primary) chain.push(primary);
   for (const p of all) if (hasKey(p) && !chain.includes(p)) chain.push(p);
@@ -157,7 +168,7 @@ async function fetchT(url: string, init: RequestInit, timeoutMs = LLM_TIMEOUT_MS
  *  we fall over to the next configured provider before giving up to the
  *  deterministic template. A single throttled key no longer silences the reply. */
 async function callLLM(system: string, user: string, opts: LLMOpts = {}): Promise<string | null> {
-  const chain = providerChain();
+  const chain = await providerChain();
   const perProvider = Number(process.env.AI_ATTEMPTS || 2);
   for (const p of chain) {
     for (let i = 0; i < perProvider; i++) {

@@ -3,14 +3,33 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { clsx } from "clsx";
-import { NAV } from "@/lib/nav";
+import {
+  LayoutDashboard, Smartphone, Plug, MessagesSquare, ScrollText, Users,
+  HelpCircle, Package, LineChart, MapPinned, Truck, Code2, CreditCard,
+  Building2, Wallet, BrainCircuit, Settings, type LucideIcon,
+} from "lucide-react";
+import { NAV, type NavIconName } from "@/lib/nav";
 
-export function SidebarNav() {
+// Icon lookup lives here (client-only) — see nav.ts for why nav data carries
+// a string name instead of a component reference.
+const ICONS: Record<NavIconName, LucideIcon> = {
+  LayoutDashboard, Smartphone, Plug, MessagesSquare, ScrollText, Users,
+  HelpCircle, Package, LineChart, MapPinned, Truck, Code2, CreditCard,
+  Building2, Wallet, BrainCircuit, Settings,
+};
+
+type NavItem = { href: string; label: string; icon: NavIconName };
+
+/** Shared sidebar nav — used by both the tenant dashboard and the super-admin
+ *  area. `exactRoot` marks the one item (e.g. "/dashboard" or "/admin") that
+ *  should only be "active" on an exact match, not for every sub-route. */
+export function SidebarNav({ items = NAV, exactRoot }: { items?: readonly NavItem[]; exactRoot?: string }) {
   const pathname = usePathname();
   return (
     <nav className="flex flex-row gap-1 overflow-x-auto px-3 pb-3 lg:flex-col lg:overflow-visible">
-      {NAV.map(({ href, label, icon: Icon }) => {
-        const active = href === "/dashboard" ? pathname === href : pathname?.startsWith(href);
+      {items.map(({ href, label, icon }) => {
+        const Icon = ICONS[icon];
+        const active = href === (exactRoot ?? items[0]?.href) ? pathname === href : pathname?.startsWith(href);
         return (
           <Link
             key={href}

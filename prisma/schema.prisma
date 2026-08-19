@@ -18,6 +18,46 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// Platform-wide key-value config the super admin can change at runtime
+/// without a redeploy — which AI provider is primary, and the per-unit
+/// price/cost assumptions used for the plan-margin calculator. Falls back to
+/// the code-level defaults (env var / hardcoded constants) when a key is
+/// unset, so the platform works correctly before an admin ever touches this.
+model PlatformSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+/// Super-admin-entered cost assumption per AI provider — what P2Less actually
+/// pays per successful call, in KES. Providers don't expose a simple public
+/// "current spend" API for the free/cheap tiers in use here, so this is a
+/// deliberate estimate the admin keeps current, not a live billing feed —
+/// multiplied against REAL call counts from AiProviderStat to estimate spend.
+model AiProviderConfig {
+  provider      String   @id
+  costPerCallKes Float   @default(0)
+  updatedAt     DateTime @updatedAt
+}
+
+/// Accountability trail for super-admin actions that aren't scoped to one
+/// tenant (pricing changes, plan edits, AI provider switches) — AuditLog
+/// requires a real tenantId (FK), so platform-level actions need their own
+/// table rather than a fake/placeholder tenant id. Tenant-specific admin
+/// actions (suspend/activate) still use the real AuditLog against that
+/// tenant, since that's exactly what a tenant dispute would need to see.
+model PlatformAuditLog {
+  id        String   @id @default(cuid())
+  actorId   String
+  actorEmail String
+  action    String // e.g. admin.plan_update | admin.pricing_update | admin.ai_primary_provider_change
+  target    String?
+  detail    Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 /// Platform-wide (NOT tenant-scoped) daily counter per AI provider — lets the
 /// super admin see which providers are actually being used, how often they're
 /// failing, and (when the provider's API returns rate-limit headers) roughly
@@ -93,7 +133,7 @@ model Plan {
   id           String  @id @default(cuid())
   key          String  @unique // free | professional | business | enterprise
   name         String
-  priceMonthly Int     @default(0) // minor units of tenant currency
+  priceMonthly Int     @default(0) // WHOLE units of tenant currency (KES) — NOT cents; e.g. 4900 = KES 4,900/mo. Matches Payment.amount's convention.
   interval     String  @default("monthly") // monthly | half_yearly | yearly (base cadence)
   whiteLabel   Boolean @default(false)
   // Usage limits enforced by the metering layer.
@@ -134,7 +174,7 @@ model Payment {
   orderId     String?  @unique
   order       Order?   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   reference   String   @unique
-  amount      Int // minor units of `currency`
+  amount      Int // WHOLE units of `currency` (KES) — NOT cents; M-Pesa/Daraja amounts are whole-shilling, so this matches real STK push amounts directly.
   currency    String   @default("KES")
   purpose     String   @default("subscription") // subscription | usage | topup | order
   method      String   @default("mpesa") // mpesa | card | bank

@@ -1,0 +1,76 @@
+import "server-only";
+import { db } from "./db";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Platform-wide settings the super admin can change at runtime (stored in
+// PlatformSetting) — never a hard requirement, every reader has a sane
+// built-in default so the platform works correctly before an admin ever
+// touches this. Kept intentionally simple (string key/value) rather than a
+// large config object, so adding one more setting later never needs a schema
+// migration.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Defaults mirror the original hardcoded constants in billing.ts — nothing
+// changes for an existing deployment until an admin actually edits a value.
+export const SETTING_DEFAULTS = {
+  price_conversation_kes: 2, // what P2Less charges the ORG per WhatsApp conversation
+  price_ai_kes: 1, // what P2Less charges the ORG per AI understanding request
+  price_document_kes: 5, // what P2Less charges the ORG per generated document
+  cost_conversation_kes: 1, // Meta's estimated WhatsApp conversation fee (admin-set, no public real-time API)
+  cost_document_kes: 0.2, // estimated PDF generation cost (compute)
+  ai_primary_provider: "", // "" = use AI_PROVIDER env var / auto-detect
+} as const;
+
+export type SettingKey = keyof typeof SETTING_DEFAULTS;
+
+export async function getSetting(key: SettingKey): Promise<string> {
+  const row = await db.platformSetting.findUnique({ where: { key } });
+  return row?.value ?? String(SETTING_DEFAULTS[key]);
+}
+
+export async function getSettingNumber(key: SettingKey): Promise<number> {
+  const v = await getSetting(key);
+  const n = Number(v);
+  return Number.isFinite(n) ? n : (SETTING_DEFAULTS[key] as number);
+}
+
+export async function getAllSettings(): Promise<Record<SettingKey, string>> {
+  const rows = await db.platformSetting.findMany();
+  const map = new Map(rows.map((r) => [r.key, r.value]));
+  const out = {} as Record<SettingKey, string>;
+  for (const key of Object.keys(SETTING_DEFAULTS) as SettingKey[]) {
+    out[key] = map.get(key) ?? String(SETTING_DEFAULTS[key]);
+  }
+  return out;
+}
+
+export async function setSetting(key: SettingKey, value: string): Promise<void> {
+  await db.platformSetting.upsert({ where: { key }, create: { key, value }, update: { value } });
+}
+
+// ── AI provider cost assumptions (separate model — one row per provider) ────
+export async function getAiProviderCosts(): Promise<Record<string, number>> {
+  const rows = await db.aiProviderConfig.findMany();
+  return Object.fromEntries(rows.map((r) => [r.provider, r.costPerCallKes]));
+}
+
+export async function setAiProviderCost(provider: string, costPerCallKes: number): Promise<void> {
+  await db.aiProviderConfig.upsert({
+    where: { provider },
+    create: { provider, costPerCallKes },
+    update: { costPerCallKes },
+  });
+}
+
+// Real, stable console/billing URLs — where the admin actually goes to add
+// credit for each provider. Not fabricated; these are each provider's real
+// account billing page as of the provider list wired into ai.ts.
+export const AI_PROVIDER_TOPUP_URL: Record<string, string> = {
+  google: "https://aistudio.google.com/app/billing",
+  groq: "https://console.groq.com/settings/billing",
+  cerebras: "https://cloud.cerebras.ai/platform/billing",
+  openrouter: "https://openrouter.ai/settings/credits",
+  anthropic: "https://console.anthropic.com/settings/billing",
+  openai: "https://platform.openai.com/settings/organization/billing/overview",
+  xai: "https://console.x.ai/team/default/billing",
+};
