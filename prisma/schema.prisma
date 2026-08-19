@@ -491,6 +491,7 @@ model Tenant {
   drivers       Driver[]
   deliveryTrips DeliveryTrip[]
   notifications Notification[]
+  branches      Branch[]
 }
 
 /// Configurable subscription plan. Not hard-coded — Super Admin edits these.
@@ -1018,8 +1019,62 @@ model ConnectorAction {
   documentKind      String? // e.g. "report_card" | null
   enabled           Boolean @default(true)
 
+  // ── Universal Platform roadmap (Phase 1, 2026-08-19) — this model already IS
+  // the "Capability" the vision doc describes (connector + method/path=action,
+  // paramSchema=input, responseMapping=output, requiredPermission/resourceGrantKey
+  // =authorization, requiresStepUp/requiresConfirm=confirmation), so these fields
+  // EXTEND it in place rather than duplicating it into a parallel table. Additive,
+  // defaulted, NOT YET read by any runtime code — Phase 3 wires an explicit
+  // evaluateCapabilityGate() that consults riskLevel/approvalRequired; today's
+  // dispatchAction still only looks at requiresStepUp/requiresConfirm.
+  riskLevel         String  @default("low") // low | medium | high — informs future confirmation/approval defaults, not yet enforced
+  // Distinct from requiresConfirm (the ACTOR confirms their own action):
+  // approvalRequired means a DIFFERENT human must approve before execution,
+  // routed through the Notification Engine once Phase 3 wires this up.
+  approvalRequired  Boolean @default(false)
+  // Free-form note on what should happen if this action fails mid-execution
+  // (e.g. "rollback stock hold", "notify ops") — documentation today, not yet
+  // consulted by any error-handling code.
+  failureBehavior   String?
+
   @@unique([connectorId, key])
   @@index([connectorId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UNIVERSAL PLATFORM ROADMAP (Phase 1, 2026-08-19) — see
+// docs/ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md. Schema-only, additive, not yet
+// referenced by User/Contact/WhatsAppNumber or any runtime code — Phase 2 wires
+// branch-scoped permissions/routing/config on top of this.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A node in an organization's internal hierarchy. Deliberately ONE
+/// self-referential model rather than separate Branch/Region tables — the
+/// vision doc's own examples show hierarchies of varying depth (Organization →
+/// Branch, or Organization → Country → Region → Branch), and a "region" is
+/// structurally just a Branch that has children rather than its own concept.
+/// `kind` is descriptive labeling only; nothing currently branches behavior on it.
+model Branch {
+  id             String   @id @default(cuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parentBranchId String?
+  parent         Branch?  @relation("BranchHierarchy", fields: [parentBranchId], references: [id], onDelete: SetNull)
+  children       Branch[] @relation("BranchHierarchy")
+  name           String
+  kind           String   @default("branch") // branch | region | hq — labeling only
+  code           String? // short internal code, e.g. "NBO" — optional, not unique (two orgs could both use "NBO")
+  // The branch every pre-existing tenant was auto-migrated onto — see
+  // scripts/backfill-default-branches.ts. Exactly one per tenant; never delete
+  // a tenant's only isDefault branch (it has nowhere to fall back to yet, since
+  // nothing writes branchId onto Users/Contacts/WhatsAppNumbers until Phase 2).
+  isDefault      Boolean  @default(false)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([parentBranchId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
