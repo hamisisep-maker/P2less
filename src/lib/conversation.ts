@@ -22,6 +22,7 @@ import { nextTicketNumber } from "./ticket-numbering";
 import { queueNotification } from "./notifications";
 import { resolveNumberBranch } from "./branches";
 import { evaluateCapabilityGate } from "./capability-gate";
+import type { FactSource } from "./provenance";
 import { computeSlaDeadline } from "./ticket-sla";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1373,24 +1374,37 @@ function localCommerceIntent(lower: string, text: string, products: Parameters<t
   return { kind: "none" };
 }
 
-function buildKnownFacts(displayName: string | null | undefined, grants: Record<string, ResourceGrant[]>, lastOrder?: ConvContext["lastOrder"], lastAction?: ConvContext["lastAction"]): string {
-  const lines: string[] = [];
-  if (displayName) lines.push(`- The CONTACT you're chatting with (their own name) is ${displayName}.`);
-  else lines.push(`- We do not have the CONTACT's own name on file — do not guess or assign them one.`);
+/** Universal Platform roadmap Phase 4 (2026-08-19) — the structured, provenance-
+ *  tagged form of buildKnownFacts(). Each entry carries a real FactSource
+ *  (see provenance.ts) so a future consumer (an admin "why did the bot say
+ *  this" view, an audit log) can distinguish what's genuinely retrieved vs.
+ *  computed vs. org-configured. buildKnownFacts() below wraps this and joins
+ *  ONLY the `text` fields — guaranteed byte-identical to the prompt text this
+ *  function produced before Phase 4, so the AI's actual behavior (proven
+ *  correct across many prior fixes this project) is completely unchanged;
+ *  Phase 4 makes the provenance real without touching the tuned prompt. */
+function buildKnownFactEntries(displayName: string | null | undefined, grants: Record<string, ResourceGrant[]>, lastOrder?: ConvContext["lastOrder"], lastAction?: ConvContext["lastAction"]): { text: string; source: FactSource }[] {
+  const entries: { text: string; source: FactSource }[] = [];
+  if (displayName) entries.push({ text: `- The CONTACT you're chatting with (their own name) is ${displayName}.`, source: { kind: "known", system: "contact_record" } });
+  else entries.push({ text: `- We do not have the CONTACT's own name on file — do not guess or assign them one.`, source: { kind: "unknown" } });
   for (const [key, items] of Object.entries(grants)) {
     const names = (items ?? []).map((g) => resourceLabel(g)).filter(Boolean);
     // Explicit so the model never conflates the contact with their dependent —
     // a parent is NOT their child, an HR contact is NOT the employee, etc.
-    if (names.length) lines.push(`- Linked ${key} (these are records the CONTACT looks after / is associated with — NOT the contact's own identity): ${names.join(", ")}.`);
+    if (names.length) entries.push({ text: `- Linked ${key} (these are records the CONTACT looks after / is associated with — NOT the contact's own identity): ${names.join(", ")}.`, source: { kind: "known", system: "contact_record" } });
   }
   if (lastOrder) {
     const statusText = lastOrder.status === "paid" ? "paid" : "an M-Pesa payment prompt was sent to this number and we're waiting for them to enter their PIN";
-    lines.push(`- Their most recent order (this really happened, it is NOT a test or a mistake — state it as fact if asked): ${lastOrder.quantity} × ${lastOrder.productName} = ${lastOrder.currency} ${lastOrder.total.toLocaleString("en-US")}, reference ${lastOrder.reference}, STK push sent to ${lastOrder.phone}, status: ${statusText}.`);
+    entries.push({ text: `- Their most recent order (this really happened, it is NOT a test or a mistake — state it as fact if asked): ${lastOrder.quantity} × ${lastOrder.productName} = ${lastOrder.currency} ${lastOrder.total.toLocaleString("en-US")}, reference ${lastOrder.reference}, STK push sent to ${lastOrder.phone}, status: ${statusText}.`, source: { kind: "known", system: "platform_order" } });
   }
   if (lastAction) {
-    lines.push(`- The most recent thing you actually did for them (this really happened — state it as fact, e.g. if asked "did you book it?"): ${lastAction.description}`);
+    entries.push({ text: `- The most recent thing you actually did for them (this really happened — state it as fact, e.g. if asked "did you book it?"): ${lastAction.description}`, source: { kind: "known", system: "platform_action" } });
   }
-  return lines.join("\n");
+  return entries;
+}
+
+function buildKnownFacts(displayName: string | null | undefined, grants: Record<string, ResourceGrant[]>, lastOrder?: ConvContext["lastOrder"], lastAction?: ConvContext["lastAction"]): string {
+  return buildKnownFactEntries(displayName, grants, lastOrder, lastAction).map((e) => e.text).join("\n");
 }
 
 /** Does this message look like friendly social chit-chat / acknowledgement (as
