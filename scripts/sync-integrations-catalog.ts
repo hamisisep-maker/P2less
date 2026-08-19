@@ -26,7 +26,7 @@ const CATALOG = [
   { key: "ai_anthropic", category: "ai", name: "Claude", provider: "Anthropic", docsUrl: "https://docs.anthropic.com", providerDashboardUrl: "https://console.anthropic.com", billingUrl: "https://console.anthropic.com/settings/billing" },
   { key: "ai_openai", category: "ai", name: "OpenAI", provider: "OpenAI", docsUrl: "https://platform.openai.com/docs", providerDashboardUrl: "https://platform.openai.com", billingUrl: "https://platform.openai.com/settings/organization/billing/overview" },
   { key: "ai_xai", category: "ai", name: "Grok", provider: "xAI", docsUrl: "https://docs.x.ai", providerDashboardUrl: "https://console.x.ai", billingUrl: "https://console.x.ai/team/default/billing" },
-  { key: "email_provider", category: "notification", name: "Email", provider: "Not configured" },
+  { key: "email_provider", category: "notification", name: "Email", provider: "Resend", docsUrl: "https://resend.com/docs", providerDashboardUrl: "https://resend.com/emails", billingUrl: "https://resend.com/settings/billing" },
   { key: "sms_provider", category: "notification", name: "SMS", provider: "Advanta SMS (pending)" },
   { key: "database", category: "infrastructure", name: "Database", provider: "SQLite (Railway volume)" },
   { key: "storage", category: "infrastructure", name: "Storage", provider: "Railway volume" },
