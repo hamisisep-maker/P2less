@@ -122,6 +122,28 @@ export async function resetPricingDefaultsAction() {
   return { ok: true };
 }
 
+const modelPricingSchema = z.object({
+  provider: z.string().min(1),
+  model: z.string().min(1),
+  inputPerMillionUsd: z.coerce.number().min(0),
+  outputPerMillionUsd: z.coerce.number().min(0),
+});
+
+/** Pricing is VERSIONED — this always INSERTS a new row (effectiveFrom = now),
+ *  never updates one in place, so historical cost calculations keep using
+ *  whatever price was actually in effect at the time even after this changes. */
+export async function addModelPricingAction(_prev: unknown, formData: FormData) {
+  const admin = await requireSuperAdmin();
+  const parsed = modelPricingSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: "Enter a valid provider, model name, and prices (0 or more)." };
+  const d = parsed.data;
+  await db.modelPricing.create({ data: { ...d, setById: admin.id } });
+  await auditPlatform(admin, "admin.model_pricing_set", `${d.provider}/${d.model}`, { inputPerMillionUsd: d.inputPerMillionUsd, outputPerMillionUsd: d.outputPerMillionUsd });
+  revalidatePath("/admin/models");
+  revalidatePath("/admin/billing");
+  return { ok: true };
+}
+
 const passwordSchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: z.string().min(8, "New password must be at least 8 characters."),

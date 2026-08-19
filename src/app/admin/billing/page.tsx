@@ -35,7 +35,7 @@ export default async function AdminBillingPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <IconStat icon={<Wallet size={17} />} label="Revenue this month" value={pnl.revenueThisMonth} tip="Sum of paid Payment records this calendar month (KES)." tone="accent" />
         <IconStat icon={<TrendingDown size={17} />} label="Estimated cost" value={pnl.estimatedCostThisMonth} tip="Meta + AI + document costs this month, from real usage × your cost assumptions below (KES)." tone="amber" />
-        <IconStat icon={<PiggyBank size={17} />} label="Estimated AI spend" value={pnl.estimatedAiSpendThisMonth} tip="Real AI provider call volume × the per-call cost you set on the AI Providers page (KES)." tone="indigo" />
+        <IconStat icon={<PiggyBank size={17} />} label={pnl.aiSpendIsReal ? "AI spend" : "Estimated AI spend"} value={pnl.estimatedAiSpendThisMonth} tip={pnl.aiSpendIsReal ? "Real token usage this month × the per-model pricing set on the Models page (KES) — actual, not estimated." : "No token-level data logged yet this month, so this uses call volume × the flat cost/call from the AI Providers page. Switches to real per-token cost automatically once requests are logged."} tone="indigo" />
         <IconStat
           icon={pnl.estimatedProfitThisMonth >= 0 ? <TrendingUp size={17} /> : <TrendingDown size={17} />}
           label="Estimated profit" value={pnl.estimatedProfitThisMonth}

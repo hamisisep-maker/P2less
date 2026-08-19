@@ -136,31 +136,43 @@ export function computePlanMargin(planFee: number, limits: PlanLimits, pricing: 
 export type PlatformPnL = {
   revenueThisMonth: number; // real Payment rows, status=paid
   revenueAllTime: number;
-  estimatedCostThisMonth: number; // Meta + document compute, derived from real platform-wide usage
-  estimatedAiSpendThisMonth: number; // sum(real AiProviderStat calls this month × admin-set cost/call)
+  estimatedCostThisMonth: number; // Meta + document compute + AI, derived from real platform-wide usage
+  estimatedAiSpendThisMonth: number; // real, from AiRequestLog token costs once any exist this month; falls back to calls × admin cost/call before that
+  aiSpendIsReal: boolean; // true once AiRequestLog has real token-cost data for this month, false while still using the calls-based estimate
   estimatedProfitThisMonth: number;
 };
 
 /** Platform-wide (every tenant) revenue vs estimated cost for the current
  *  calendar month — the actual "are we making money" number, built from real
- *  Payment records (revenue) and real UsageEvent/AiProviderStat volumes
- *  (cost), not a guess. */
+ *  Payment records (revenue) and real usage volumes (cost), not a guess.
+ *  AI cost prefers the REAL per-request token ledger (AiRequestLog, see
+ *  ai.ts) over the older calls × flat-cost-per-call estimate — the estimate
+ *  is only a bridge for months before any real token data exists. */
 export async function computePlatformPnL(): Promise<PlatformPnL> {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const monthPrefix = now.toISOString().slice(0, 7); // "2026-08"
 
-  const [revenueMonthAgg, revenueAllAgg, convos, docs, pricing, aiStatsThisMonth] = await Promise.all([
+  const [revenueMonthAgg, revenueAllAgg, convos, docs, pricing, aiStatsThisMonth, aiRequestLogAgg] = await Promise.all([
     db.payment.aggregate({ where: { status: "paid", paidAt: { gte: startOfMonth } }, _sum: { amount: true } }),
     db.payment.aggregate({ where: { status: "paid" }, _sum: { amount: true } }),
     db.usageEvent.aggregate({ where: { type: "message_in", createdAt: { gte: startOfMonth } }, _sum: { quantity: true } }),
     db.usageEvent.aggregate({ where: { type: "document", createdAt: { gte: startOfMonth } }, _sum: { quantity: true } }),
     loadPricing(),
     db.aiProviderStat.findMany({ where: { date: { startsWith: monthPrefix } } }),
+    db.aiRequestLog.aggregate({ where: { createdAt: { gte: startOfMonth } }, _sum: { costKes: true }, _count: { _all: true } }),
   ]);
 
-  const aiCosts = await getAiProviderCosts();
-  const estimatedAiSpendThisMonth = aiStatsThisMonth.reduce((sum, s) => sum + s.successes * (aiCosts[s.provider] ?? 0), 0);
+  const realAiCostThisMonth = aiRequestLogAgg._sum.costKes ?? 0;
+  const aiSpendIsReal = aiRequestLogAgg._count._all > 0;
+  let estimatedAiSpendThisMonth = realAiCostThisMonth;
+  if (!aiSpendIsReal) {
+    // No real token-cost data logged yet this month (e.g. right after this
+    // feature shipped) — fall back to the coarser calls × cost/call estimate
+    // rather than showing 0.
+    const aiCosts = await getAiProviderCosts();
+    estimatedAiSpendThisMonth = aiStatsThisMonth.reduce((sum, s) => sum + s.successes * (aiCosts[s.provider] ?? 0), 0);
+  }
 
   const convosCost = (convos._sum.quantity ?? 0) * pricing.COST.conversation;
   const docsCost = (docs._sum.quantity ?? 0) * pricing.COST.document;
@@ -172,6 +184,7 @@ export async function computePlatformPnL(): Promise<PlatformPnL> {
     revenueAllTime: revenueAllAgg._sum.amount ?? 0,
     estimatedCostThisMonth,
     estimatedAiSpendThisMonth: Math.round(estimatedAiSpendThisMonth),
+    aiSpendIsReal,
     estimatedProfitThisMonth: revenueThisMonth - estimatedCostThisMonth,
   };
 }

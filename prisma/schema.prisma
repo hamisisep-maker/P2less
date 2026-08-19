@@ -40,6 +40,52 @@ model AiProviderConfig {
   updatedAt     DateTime @updatedAt
 }
 
+/// Real, per-request AI cost ledger — captures actual token usage (where the
+/// provider's response includes it) instead of an estimated cost-per-call,
+/// so the platform P&L reflects what was ACTUALLY spent, not a guess. Written
+/// fire-and-forget from callOnce() in ai.ts on every successful call; never
+/// blocks or fails a real reply if the write itself fails.
+model AiRequestLog {
+  id           String   @id @default(cuid())
+  tenantId     String? // null when the tenant isn't known yet at call time (e.g. voice-note transcription before routing) — real, not omitted-to-hide
+  provider     String
+  model        String
+  feature      String // "understand" | "small_talk" | "humanize_reply" | "order_step" | "commerce_classify" | "cv_tool" | "transcribe_audio" | ...
+  requestId    String?
+  inputTokens  Int?
+  outputTokens Int?
+  totalTokens  Int?
+  costUsd      Float    @default(0) // computed from ModelPricing in effect at createdAt — 0 if no pricing configured yet (honest, not guessed)
+  costKes      Float    @default(0)
+  revenueKes   Float    @default(0) // the tenant's current price_ai_kes at call time — what this request is worth in billing terms
+  success      Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([provider, model])
+  @@index([createdAt])
+}
+
+/// Per-token provider pricing, VERSIONED — a new row is inserted (never
+/// edited in place) whenever a price changes, with `effectiveFrom` marking
+/// when it took effect. Historical cost calculations always use whichever
+/// row was in effect at the time, so they don't silently change if the
+/// provider raises or lowers prices later. Prices are USD per 1M tokens
+/// (the unit every provider's own pricing page uses), converted to KES via
+/// the "usd_to_kes_rate" PlatformSetting at calculation time.
+model ModelPricing {
+  id                  String   @id @default(cuid())
+  provider             String
+  model                String
+  inputPerMillionUsd   Float    @default(0)
+  outputPerMillionUsd  Float    @default(0)
+  effectiveFrom        DateTime @default(now())
+  setById              String? // super admin user id who set this price
+  createdAt            DateTime @default(now())
+
+  @@index([provider, model, effectiveFrom])
+}
+
 /// Accountability trail for super-admin actions that aren't scoped to one
 /// tenant (pricing changes, plan edits, AI provider switches) — AuditLog
 /// requires a real tenantId (FK), so platform-level actions need their own

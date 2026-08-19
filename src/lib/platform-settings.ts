@@ -19,6 +19,7 @@ export const SETTING_DEFAULTS = {
   cost_conversation_kes: 1, // Meta's estimated WhatsApp conversation fee (admin-set, no public real-time API)
   cost_document_kes: 0.2, // estimated PDF generation cost (compute)
   ai_primary_provider: "", // "" = use AI_PROVIDER env var / auto-detect
+  usd_to_kes_rate: 129, // for converting provider token pricing (always USD) to KES billing — keep current from an actual FX rate
 } as const;
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;

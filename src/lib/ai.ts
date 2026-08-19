@@ -1,6 +1,8 @@
 import "server-only";
 import { db } from "./db";
 import { matchIntent, type IntentAction, type IntentMatch } from "./intent-engine";
+import { getAiTenantId } from "./ai-context";
+import { getSettingNumber } from "./platform-settings";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AI layer — provider-agnostic (Claude / OpenAI / Gemini). It does three jobs:
@@ -73,7 +75,7 @@ export function aiEnabled(): boolean {
  *  the same reliability as the chat layer. Returns text or null. */
 export async function complete(system: string, user: string, maxTokens = 900, temperature = 0.3): Promise<string | null> {
   if (!aiEnabled()) return null;
-  return callLLM(system, user, { maxTokens, temperature });
+  return callLLM(system, user, { maxTokens, temperature, feature: "tool_complete" });
 }
 
 /** Transcribe a WhatsApp voice note to text (Gemini is multimodal). Returns the
@@ -100,7 +102,8 @@ export async function transcribeAudio(base64: string, mimeType: string): Promise
       20_000, // audio can take longer than a text turn
     );
     if (!res || !res.ok) return null;
-    const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+    const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[]; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
+    recordAiCost("google", model, "transcribe_audio", j.usageMetadata ? { input: j.usageMetadata.promptTokenCount, output: j.usageMetadata.candidatesTokenCount } : null);
     const text = j.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     return text && text.length > 0 ? text : null;
   } catch {
@@ -108,7 +111,45 @@ export async function transcribeAudio(base64: string, mimeType: string): Promise
   }
 }
 
-type LLMOpts = { maxTokens?: number; temperature?: number; history?: ChatTurn[] };
+type LLMOpts = { maxTokens?: number; temperature?: number; history?: ChatTurn[]; feature?: string };
+
+/** Real per-request AI cost ledger (AiRequestLog) — looks up whichever
+ *  ModelPricing row was actually in effect for this provider/model at call
+ *  time (so a later price change never rewrites history), converts to KES,
+ *  and records what this request is worth in billing terms (price_ai_kes)
+ *  alongside it. Fire-and-forget: never awaited by the caller, never allowed
+ *  to fail or slow down a real reply. Cost is 0 (not guessed) when nobody
+ *  has configured pricing for this model yet — same "honest zero" convention
+ *  as AiProviderConfig.costPerCallKes. */
+function recordAiCost(provider: Provider, model: string, feature: string, usage: { input?: number; output?: number } | null, requestId?: string) {
+  (async () => {
+    const tenantId = getAiTenantId() ?? null;
+    const inputTokens = usage?.input ?? null;
+    const outputTokens = usage?.output ?? null;
+    const totalTokens = inputTokens != null && outputTokens != null ? inputTokens + outputTokens : null;
+
+    const [pricing, fxRate, revenueKesPerRequest] = await Promise.all([
+      db.modelPricing.findFirst({ where: { provider, model, effectiveFrom: { lte: new Date() } }, orderBy: { effectiveFrom: "desc" } }),
+      getSettingNumber("usd_to_kes_rate"),
+      getSettingNumber("price_ai_kes"),
+    ]);
+
+    let costUsd = 0;
+    if (pricing && inputTokens != null && outputTokens != null) {
+      costUsd = (inputTokens / 1_000_000) * pricing.inputPerMillionUsd + (outputTokens / 1_000_000) * pricing.outputPerMillionUsd;
+    }
+    const costKes = costUsd * fxRate;
+
+    await db.aiRequestLog.create({
+      data: {
+        tenantId, provider, model, feature, requestId,
+        inputTokens, outputTokens, totalTokens,
+        costUsd, costKes, revenueKes: revenueKesPerRequest,
+        success: true,
+      },
+    });
+  })().catch(() => {});
+}
 
 /** Pulls remaining/limit rate-limit numbers from whichever header shape this
  *  provider happens to use (OpenAI-compatible providers and Anthropic both
@@ -236,7 +277,8 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
         return null;
       }
       recordAiStat(p, true, res.status, undefined, extractRateLimit(res));
-      const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+      const j = (await res.json()) as { id?: string; choices?: { message?: { content?: string } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number } };
+      recordAiCost(p, compat.model, opts.feature ?? "unknown", j.usage ? { input: j.usage.prompt_tokens, output: j.usage.completion_tokens } : null, j.id);
       return j.choices?.[0]?.message?.content?.trim() ?? null;
     }
     if (p === "google" && process.env.GEMINI_API_KEY) {
@@ -264,7 +306,8 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
         return null;
       }
       recordAiStat(p, true, res.status);
-      const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+      const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[]; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
+      recordAiCost(p, model, opts.feature ?? "unknown", j.usageMetadata ? { input: j.usageMetadata.promptTokenCount, output: j.usageMetadata.candidatesTokenCount } : null);
       return j.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
     }
     if (p === "anthropic" && process.env.ANTHROPIC_API_KEY) {
@@ -287,7 +330,8 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
         return null;
       }
       recordAiStat(p, true, res.status, undefined, extractRateLimit(res));
-      const j = (await res.json()) as { content?: { text?: string }[] };
+      const j = (await res.json()) as { id?: string; content?: { text?: string }[]; usage?: { input_tokens?: number; output_tokens?: number } };
+      recordAiCost(p, process.env.ANTHROPIC_MODEL || "claude-sonnet-5", opts.feature ?? "unknown", j.usage ? { input: j.usage.input_tokens, output: j.usage.output_tokens } : null, j.id);
       return j.content?.[0]?.text?.trim() ?? null;
     }
   } catch (e) {
@@ -407,7 +451,7 @@ export async function understand(text: string, actions: IntentAction[], history:
 - BROAD / VAGUE requests: if the message is a broad, open-ended, or summary-style request that does NOT clearly point to ONE specific action — e.g. "tell me about Zawadi", "give me an overview of everything about my child", "how is she doing", "everything about X", "general info" — return "NONE". Do NOT force it into a single action like fees or results. (The assistant will then offer the specific things it can show.) Only pick a specific action when the user clearly wants that ONE thing.
 - Extract entities (a person's name — resolve pronouns from context; dates; times). Right now it is ${nowStr()} — resolve relative dates/times like "today", "tomorrow", "next Friday", "this evening" against it. Never invent an action not in the list.`;
   const user = `${convo}ALLOWED ACTIONS:\n${catalog}\n\nCurrent user message: ${JSON.stringify(text)}\n\nRespond with ONLY compact JSON: {"action":"<KEY or NONE>","confidence":0..1,"entities":{"name":"...","date":"...","time":"..."}}`;
-  const raw = await callLLM(system, user, { maxTokens: 250, temperature: 0 });
+  const raw = await callLLM(system, user, { maxTokens: 250, temperature: 0, feature: "understand" });
   if (raw) {
     try {
       const parsed = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)) as { action: string; confidence?: number; entities?: Record<string, string> };
@@ -465,7 +509,7 @@ Classify the user's CURRENT message. Understand ANY language (English, Swahili, 
 - "none": anything else — a different question, small talk, unrelated topic. If genuinely unsure which of the above it is, choose "none" rather than guessing.
 
 Respond with ONLY compact JSON: {"kind":"browse"|"order"|"price_question"|"image_question"|"none","productId":"<exact id from the list, or omit>","quantity":<number, or omit>,"optionAnswer":"<text, or omit>"}`;
-  const raw = await callLLM(system, `${convo}Current message: ${JSON.stringify(text)}`, { maxTokens: 150, temperature: 0 });
+  const raw = await callLLM(system, `${convo}Current message: ${JSON.stringify(text)}`, { maxTokens: 150, temperature: 0, feature: "commerce_classify" });
   if (!raw) return { kind: "none" };
   try {
     const parsed = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)) as { kind?: string; productId?: string; quantity?: number; optionAnswer?: string };
@@ -512,7 +556,7 @@ Never just repeat a canned line — sound like a real person, vary your wording,
 Respond with ONLY compact JSON:
 {"answered": true, "value": "<the extracted answer, exactly as they'd want it recorded>"} — if case 1
 {"answered": false, "reply": "<your natural reply text>"} — if case 2`;
-  const raw = await callLLM(system, `Customer said: ${JSON.stringify(opts.userText)}`, { maxTokens: 200, temperature: 0.6, history: opts.history });
+  const raw = await callLLM(system, `Customer said: ${JSON.stringify(opts.userText)}`, { maxTokens: 200, temperature: 0.6, history: opts.history, feature: "order_step" });
   if (!raw) return { answered: false, reply: "" };
   try {
     const parsed = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)) as { answered?: boolean; value?: string; reply?: string };
@@ -537,7 +581,7 @@ STRICT RULES:
 - Keep it concise and WhatsApp-appropriate (usually 1–3 short sentences). A tasteful emoji is fine.
 Reply with ONLY the message text — no preamble.`;
   const user = `The user just asked (reply in THIS message's language): ${JSON.stringify(userText)}\n\nANSWER to convey (keep all facts — numbers, dates, names — exactly): ${JSON.stringify(factText)}${dateHints(factText)}`;
-  const out = await callLLM(system, user, { maxTokens: 220, temperature: 0.5, history });
+  const out = await callLLM(system, user, { maxTokens: 220, temperature: 0.5, history, feature: "humanize_reply" });
   return out && out.length > 1 ? out : factText;
 }
 
@@ -574,5 +618,5 @@ WHAT YOU MUST NOT DO — THIS IS THE MOST IMPORTANT RULE, NEVER BREAK IT:
 - Never invent whether something DID or DIDN'T happen (an order, a payment, a message you supposedly sent). If "WHAT YOU ALREADY KNOW" below states something real happened, treat it as fact and never contradict it, deny it, or call it a "test"/"mistake" — that is real user-facing history, not a hypothetical. If nothing there covers what's being asked, say you don't have that on record rather than guessing either way.${known}${faqBlock}
 
 Keep it to 1–3 short, natural sentences. Reply with ONLY the message text.`;
-  return callLLM(system, userText, { maxTokens: 200, temperature: 0.6, history });
+  return callLLM(system, userText, { maxTokens: 200, temperature: 0.6, history, feature: "small_talk" });
 }

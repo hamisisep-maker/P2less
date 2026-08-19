@@ -17,6 +17,7 @@ import { extractDate, extractTime, isGreeting, type IntentAction } from "./inten
 import { pickTool, allTools } from "./tools";
 import { startTopup, creditRateKes, creditsForAmount } from "./wallet";
 import { isConfigured as mpesaConfigured } from "./mpesa";
+import { setAiTenantContext } from "./ai-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Conversation orchestrator — the channel-agnostic core pipeline:
@@ -163,6 +164,11 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     return { ok: false, replies: [{ body: "This number is not in service." }] };
   }
   const tenant = number.tenant;
+  // Every AI call from here on (understand/smallTalk/humanizeReply/etc., deep
+  // inside this function) attributes its real token cost to this tenant —
+  // see ai-context.ts for why this is enterWith() rather than a param threaded
+  // through ~20 call sites.
+  setAiTenantContext(tenant.id);
 
   // The identity the user sees is the ORGANIZATION (per-number branding wins).
   const numBranding = (number.branding as { assistantName?: string; welcome?: string } | null) ?? {};
