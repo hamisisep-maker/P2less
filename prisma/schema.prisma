@@ -341,6 +341,7 @@ model AiCallEvent {
 /// lastDetectedAt on the same row instead (see incident-detection.ts).
 model Incident {
   id                    String    @id @default(cuid())
+  number                String?   @unique // "INC-104" — nullable so existing rows don't need a backfill; see ticket-numbering.ts
   severity              String    // critical | warning | info
   source                String    // mpesa_paybill | ai_google | background_job:billing_poller | database | whatsapp
   title                 String
@@ -748,6 +749,7 @@ model User {
 
   userRoles UserRole[]
   sessions  UserSession[]
+  assignedTickets SupportTicket[]
 
   @@unique([email])
   @@index([tenantId])
@@ -862,6 +864,7 @@ model Contact {
   documents     Document[]
   payments      Payment[]
   orders        Order[]
+  tickets       SupportTicket[]
 
   @@unique([tenantId, channelType, address])
   @@index([tenantId])
@@ -1131,27 +1134,95 @@ model Document {
   tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   contactId  String?
   contact    Contact? @relation(fields: [contactId], references: [id])
-  kind       String // report_card | receipt | statement | ...
+  // Set for kind="ticket_attachment" — reuses this model rather than a new
+  // file-storage table, since Document already has everything a ticket
+  // attachment needs (token-addressed secure access, filename, content).
+  ticketId   String?
+  ticket     SupportTicket? @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  kind       String // report_card | receipt | statement | ticket_attachment | ...
   filename   String
   content    String // MVP: inline HTML/text; production: object-storage key
   token      String   @unique // for temporary secure access URLs
+  // Every other Document write site sets a real TTL for a temporary secure
+  // link; a ticket attachment shouldn't expire while the ticket is open, so
+  // it gets a far-future sentinel instead — keeps this column non-nullable
+  // for every other kind that genuinely depends on it expiring.
   expiresAt  DateTime
   createdAt  DateTime @default(now())
 
   @@index([tenantId])
+  @@index([ticketId])
 }
 
+// A CUSTOMER's problem report — distinct from an Incident (something wrong
+// with the PLATFORM). One Incident can generate many SupportTickets; see
+// relatedIncidentId below and suggestRelatedTickets() in incident-detection.ts.
+// Number/status/priority/category are real workflow state; internal notes and
+// customer-visible responses live in the child TicketEvent model (mirrors
+// IncidentEvent) rather than inline fields, so they interleave chronologically
+// instead of living in two disconnected arrays.
 model SupportTicket {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
+  number         String?   @unique // "TCK-42" — nullable so it's backfill-free; see ticket-numbering.ts
   tenantId       String
-  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // The END USER who reported it (a Contact, not a staff User) — nullable
+  // because not every escalation path resolves a contact at creation time.
+  contactId      String?
+  contact        Contact?  @relation(fields: [contactId], references: [id])
   conversationId String?
   conversation   Conversation? @relation(fields: [conversationId], references: [id])
   subject        String
-  status         String   @default("open") // open | assigned | resolved
-  createdAt      DateTime @default(now())
+  description    String?
+  category       String    @default("general") // billing | technical | account | whatsapp | ai | other | general
+  priority       String    @default("normal")  // low | normal | high | urgent
+  status         String    @default("open")    // open | assigned | in_progress | waiting_on_customer | resolved | closed | reopened
+  assignedAdminId String?
+  assignedAdmin  User?     @relation(fields: [assignedAdminId], references: [id])
+  slaDeadlineAt  DateTime?
+  slaBreached    Boolean   @default(false) // written by runTicketSlaSweep(), not computed ad hoc at every read
+  resolution       String?
+  resolutionReason String?
+  resolvedAt        DateTime?
+  resolvedById      String?
+  // Soft references — plain indexed String, no hard @relation. Mirrors the
+  // existing convention (Incident.relatedJobKey, InboundEvent.relatedPaymentId):
+  // Incident isn't tenant-scoped, so a hard relation here would be the wrong
+  // shape; Payment doesn't need one either since this is a lookup pointer,
+  // not an ownership relation.
+  relatedPaymentId  String?
+  relatedIncidentId String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  events      TicketEvent[]
+  attachments Document[]
 
   @@index([tenantId])
+  @@index([status])
+  @@index([assignedAdminId])
+  @@index([relatedIncidentId])
+  @@index([relatedPaymentId])
+}
+
+/// Timeline entry for a SupportTicket — internal notes AND customer-visible
+/// responses live here as one typed stream (distinguished by `visibility`),
+/// not two parallel arrays, because a real support case interleaves them
+/// chronologically (an internal note at 10:15, a customer reply at 10:20,
+/// another internal note at 10:22) and splitting them would lose that order.
+/// Mirrors IncidentEvent exactly — same proven shape for the same problem.
+model TicketEvent {
+  id         String   @id @default(cuid())
+  ticketId   String
+  ticket     SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  type       String   // created | assigned | status_changed | internal_note | customer_response | attachment_added | linked_incident | linked_payment | resolved | reopened
+  actorId    String?  // null = system/automated (e.g. auto-created from an escalation)
+  visibility String   @default("internal") // internal | customer
+  body       String?
+  detail     Json?    // structured payload for non-text events — render via the shared EvidencePanel
+  createdAt  DateTime @default(now())
+
+  @@index([ticketId, createdAt])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

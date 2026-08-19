@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { ShieldOff, ShieldCheck, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import {
   useReactTable, getCoreRowModel, getSortedRowModel, getPaginationRowModel,
@@ -41,10 +42,10 @@ const columns: ColumnDef<AdminTenantRow, unknown>[] = [
     accessorKey: "name",
     header: "Organization",
     cell: ({ row }) => (
-      <span className="flex items-center gap-2.5 font-medium">
+      <Link href={`/admin/tenants/${row.original.id}`} className="flex items-center gap-2.5 font-medium hover:underline">
         <Avatar name={row.original.name} size={28} />
         {row.original.name}
-      </span>
+      </Link>
     ),
   },
   { accessorKey: "industry", header: "Industry", cell: ({ getValue }) => <span className="capitalize text-muted">{getValue() as string}</span> },

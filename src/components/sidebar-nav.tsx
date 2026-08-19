@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Smartphone, Plug, MessagesSquare, ScrollText, Users,
   HelpCircle, Package, LineChart, MapPinned, Truck, Code2, CreditCard,
   Building2, Wallet, BrainCircuit, Settings, Boxes, ShieldCheck, Lock,
-  GitMerge, HeartPulse, AlertTriangle, type LucideIcon,
+  GitMerge, HeartPulse, AlertTriangle, LifeBuoy, type LucideIcon,
 } from "lucide-react";
 import { NAV, type NavIconName } from "@/lib/nav";
 
@@ -17,7 +17,7 @@ const ICONS: Record<NavIconName, LucideIcon> = {
   LayoutDashboard, Smartphone, Plug, MessagesSquare, ScrollText, Users,
   HelpCircle, Package, LineChart, MapPinned, Truck, Code2, CreditCard,
   Building2, Wallet, BrainCircuit, Settings, Boxes, ShieldCheck, Lock,
-  GitMerge, HeartPulse, AlertTriangle,
+  GitMerge, HeartPulse, AlertTriangle, LifeBuoy,
 };
 
 type NavItem = { href: string; label: string; icon: NavIconName };

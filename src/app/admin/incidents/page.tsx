@@ -28,7 +28,7 @@ export default async function AdminIncidentsPage() {
             <IncidentRow
               key={i.id}
               data={{
-                id: i.id, severity: i.severity, source: i.source, title: i.title, status: i.status,
+                id: i.id, number: i.number, severity: i.severity, source: i.source, title: i.title, status: i.status,
                 firstDetectedAt: i.firstDetectedAt, lastDetectedAt: i.lastDetectedAt, occurrenceCount: i.occurrenceCount,
                 acknowledgedAt: i.acknowledgedAt, resolvedAt: i.resolvedAt, cause: i.cause, resolutionNote: i.resolutionNote,
                 detail: i.detail,
@@ -46,7 +46,7 @@ export default async function AdminIncidentsPage() {
             <IncidentRow
               key={i.id}
               data={{
-                id: i.id, severity: i.severity, source: i.source, title: i.title, status: i.status,
+                id: i.id, number: i.number, severity: i.severity, source: i.source, title: i.title, status: i.status,
                 firstDetectedAt: i.firstDetectedAt, lastDetectedAt: i.lastDetectedAt, occurrenceCount: i.occurrenceCount,
                 acknowledgedAt: i.acknowledgedAt, resolvedAt: i.resolvedAt, cause: i.cause, resolutionNote: i.resolutionNote,
                 detail: i.detail,

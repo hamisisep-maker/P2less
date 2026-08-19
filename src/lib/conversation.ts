@@ -18,6 +18,8 @@ import { pickTool, allTools } from "./tools";
 import { startTopup, creditRateKes, creditsForAmount } from "./wallet";
 import { isConfigured as mpesaConfigured } from "./mpesa";
 import { setAiTenantContext } from "./ai-context";
+import { nextTicketNumber } from "./ticket-numbering";
+import { computeSlaDeadline } from "./ticket-sla";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Conversation orchestrator — the channel-agnostic core pipeline:
@@ -1121,8 +1123,16 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     return emit([{ body: `${hi}\n\nReply with a number, or just tell me what you need:\n${menu.text}` }], "open", { lastResource: ctx.lastResource, menu: menu.ids });
   }
   if (/(speak|talk).*(human|someone|agent|person)|human agent|customer care/.test(lower)) {
-    await db.supportTicket.create({ data: { tenantId: tenant.id, conversationId: conversation.id, subject: `Escalation from ${contact.displayName ?? input.fromNumber}` } });
-    await audit({ tenantId: tenant.id, requestId: reqId, actorType: "contact", actorId: contact.id, action: "escalate", success: true });
+    const ticket = await db.supportTicket.create({
+      data: {
+        number: await nextTicketNumber(),
+        tenantId: tenant.id, conversationId: conversation.id, contactId: contact.id,
+        subject: `Escalation from ${contact.displayName ?? input.fromNumber}`,
+        slaDeadlineAt: await computeSlaDeadline("normal"),
+      },
+    });
+    await db.ticketEvent.create({ data: { ticketId: ticket.id, type: "created", visibility: "internal", detail: { source: "conversation_escalation" } } });
+    await audit({ tenantId: tenant.id, requestId: reqId, actorType: "contact", actorId: contact.id, action: "escalate", success: true, detail: { ticketNumber: ticket.number } });
     return emit([{ body: "I've created a support request and notified the team. Someone will get back to you shortly." }], "escalated", { lastResource: ctx.lastResource });
   }
 

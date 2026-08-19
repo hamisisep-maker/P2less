@@ -72,6 +72,24 @@ export async function storeProductImage(opts: { tenantId: string; filename: stri
   return storeLongLived({ ...opts, kind: "product_image" });
 }
 
+/** A support-ticket attachment (screenshot, receipt photo, ...) — reuses the
+ *  Document model exactly like storeProductImage, not a new file-storage
+ *  system, plus a ticketId pointer so it shows up on the ticket it belongs
+ *  to. Permanent for as long as the ticket exists (long-TTL, not the default
+ *  30-minute generated-document window). */
+export async function storeTicketAttachment(opts: { tenantId: string; ticketId: string; filename: string; base64: string }): Promise<GeneratedDoc> {
+  const token = randomToken();
+  await db.document.create({
+    data: {
+      tenantId: opts.tenantId, ticketId: opts.ticketId, kind: "ticket_attachment",
+      filename: opts.filename, content: opts.base64, token,
+      expiresAt: new Date(Date.now() + LONG_TTL_MS),
+    },
+  });
+  const base = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+  return { url: `${base}/d/${token}`, filename: opts.filename, token };
+}
+
 /** A payment receipt — a permanent financial record, not a 30-minute
  *  generated-and-forgotten document, so it reuses the long-TTL storage
  *  pattern from storeProductImage() rather than the default DOC_TTL_MS.

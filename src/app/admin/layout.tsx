@@ -19,6 +19,7 @@ const NAV_PERMISSION: Partial<Record<string, AdminPermission>> = {
   "/admin/integrations": "integrations.view",
   "/admin/reconciliation": "reconciliation.view",
   "/admin/incidents": "incidents.view",
+  "/admin/tickets": "tickets.view",
   "/admin/roles": "roles.manage",
   "/admin/security": "security.manage",
 };

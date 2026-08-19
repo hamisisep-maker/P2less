@@ -4,6 +4,7 @@ import { db } from "./db";
 import { getSettingNumber } from "./platform-settings";
 import { isOverdue } from "./job-runner";
 import { mpesaFailureCategoryLabel } from "./mpesa";
+import { nextIncidentNumber } from "./ticket-numbering";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Proactive detection — nothing here waits for an admin to notice a red
@@ -47,6 +48,7 @@ async function openOrBumpIncident(input: {
 
   const incident = await db.incident.create({
     data: {
+      number: await nextIncidentNumber(),
       severity: input.severity,
       source: input.source,
       title: input.title,
@@ -257,6 +259,32 @@ async function checkStkFailureRateAnomaly(): Promise<void> {
 export async function runIncidentSweep(): Promise<{ checksRun: number }> {
   await Promise.all([checkOverdueJobs(), checkAiErrorRates(), checkMpesaCallbackSilence(), checkReconciliationBacklog(), checkStkFailureRateAnomaly()]);
   return { checksRun: 5 };
+}
+
+// A rough, explainable heuristic (not ML) mapping an incident's integration
+// key to the ticket category it would plausibly generate — "23 customer
+// tickets potentially related to Incident #INC-104." NEVER auto-links; this
+// only powers a SUGGESTION the admin must confirm on the incident detail
+// page (see linkIncidentAction in ticket-actions.ts) — a tenant's unrelated
+// billing question during an outage window isn't necessarily caused by it.
+const CATEGORY_FOR_INTEGRATION_KEY: Record<string, string> = {
+  whatsapp_cloud_api: "whatsapp",
+  mpesa_stk: "billing", mpesa_paybill: "billing", mpesa_till: "billing", bank_transfer: "billing",
+  ai_google: "ai", ai_groq: "ai", ai_cerebras: "ai", ai_openrouter: "ai", ai_anthropic: "ai", ai_openai: "ai", ai_xai: "ai",
+  database: "technical",
+};
+
+export async function suggestRelatedTickets(incident: { id: string; firstDetectedAt: Date; resolvedAt: Date | null; relatedIntegrationKey: string | null; source: string }) {
+  const category = CATEGORY_FOR_INTEGRATION_KEY[incident.relatedIntegrationKey ?? incident.source];
+  return db.supportTicket.findMany({
+    where: {
+      createdAt: { gte: incident.firstDetectedAt, lte: incident.resolvedAt ?? new Date() },
+      relatedIncidentId: null, // not already confirmed — those show separately as "confirmed related"
+      ...(category ? { category } : {}),
+    },
+    include: { tenant: { select: { name: true } } },
+    orderBy: { createdAt: "desc" },
+  });
 }
 
 export { openOrBumpIncident };

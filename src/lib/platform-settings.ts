@@ -41,6 +41,13 @@ export const SETTING_DEFAULTS = {
   incident_stk_failure_critical_pct: 50, // failure rate at/above this opens/escalates to a "critical" incident
   incident_stk_failure_window_minutes: 15, // rolling window for the STK failure-rate calculation
 
+  // ── Priority 5: support ticket SLA (src/lib/ticket-sla.ts) ──────────────
+  sla_hours_urgent: 4, // hours from creation until an urgent-priority ticket is due
+  sla_hours_high: 24,
+  sla_hours_normal: 48,
+  sla_hours_low: 96,
+  incident_ticket_sla_breach_threshold: 5, // this many tickets breaching SLA at once opens an incident — "why is nobody responding?"
+
   // ── Priority 4: maintenance mode (src/lib/maintenance-actions.ts) ──────
   maintenance_enabled: 0, // 0/1 — whole-PLATFORM maintenance, distinct from a single Integration.enabled toggle
   maintenance_reason: "",
