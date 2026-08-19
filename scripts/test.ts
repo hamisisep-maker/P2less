@@ -7,10 +7,18 @@
  *   npm run dev   # terminal 1
  *   npm test      # terminal 2
  */
+import "dotenv/config";
 import crypto from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { matchIntent, isGreeting } from "../src/lib/intent-engine";
 
+// .env's P2LESS_BASE_URL must match whatever port the dev server actually
+// runs on — see the comment on that var in .env for why this bit 24 tests
+// on 2026-08-19 (this project's dev server runs on 3001 in the Claude Code
+// preview harness per .claude/launch.json, distinct from the sibling
+// p2less-app project's 3000; a bare `npm run dev` outside that harness
+// defaults to Next's own 3000 instead, so this fallback stays 3000 as the
+// generic default — .env is what should carry the harness-specific value).
 const BASE = process.env.P2LESS_BASE_URL || "http://localhost:3000";
 const db = new PrismaClient();
 
