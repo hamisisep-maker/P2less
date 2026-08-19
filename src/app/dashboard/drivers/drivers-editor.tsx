@@ -47,7 +47,7 @@ export function DriversEditor({ initial, canManage }: { initial: Driver[]; canMa
     <div>
       {canManage && (
         <Card className="mb-5 p-5">
-          <h2 className="mb-3 font-semibold">{editing ? `Edit "${editing.name}"` : "Add a driver"}</h2>
+          <h2 className="mb-3 font-display font-semibold">{editing ? `Edit "${editing.name}"` : "Add a driver"}</h2>
           <form key={formKey} action={action} className="space-y-3">
             <input type="hidden" name="id" value={editing?.id ?? ""} />
             <div className="grid gap-3 sm:grid-cols-2">
@@ -62,7 +62,7 @@ export function DriversEditor({ initial, canManage }: { initial: Driver[]; canMa
             </div>
             {state?.error && <p className="text-sm text-rose">{state.error}</p>}
             <div className="flex items-center gap-2">
-              <button type="submit" disabled={pending} className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-ink disabled:opacity-60">
+              <button type="submit" disabled={pending} className="rounded-xl bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-4 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-accent-glow)] transition-transform hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0">
                 {pending ? "Saving…" : editing ? "Save changes" : "Add driver"}
               </button>
               {editing && (

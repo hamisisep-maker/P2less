@@ -14,7 +14,7 @@ export function ConnectorForm() {
   return (
     <form action={action} className="space-y-4">
       <Card className="space-y-4 p-5">
-        <h2 className="font-semibold">System</h2>
+        <h2 className="font-display font-semibold">System</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div><label className={label}>Name</label><input name="name" required placeholder="Riverside School System" className={field} /></div>
           <div><label className={label}>Base URL</label><input name="baseUrl" required placeholder="http://localhost:3000/api/demo-school" className={field} /></div>
@@ -23,7 +23,7 @@ export function ConnectorForm() {
       </Card>
 
       <Card className="space-y-4 p-5">
-        <h2 className="font-semibold">Authentication</h2>
+        <h2 className="font-display font-semibold">Authentication</h2>
         <div>
           <label className={label}>Method</label>
           <select name="authType" value={authType} onChange={(e) => setAuthType(e.target.value)} className={field}>
@@ -50,7 +50,7 @@ export function ConnectorForm() {
       </Card>
 
       <Card className="space-y-4 p-5">
-        <h2 className="font-semibold">Conversational capability</h2>
+        <h2 className="font-display font-semibold">Conversational capability</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div><label className={label}>Action key</label><input name="actionKey" required placeholder="GET_STUDENT_RESULTS" className={field} /></div>
           <div><label className={label}>Display name</label><input name="actionName" required placeholder="Get student results" className={field} /></div>
@@ -72,7 +72,7 @@ export function ConnectorForm() {
       </Card>
 
       {state?.error && <div className="rounded-lg bg-rose-soft px-3 py-2 text-sm text-rose">{state.error}</div>}
-      <button type="submit" disabled={pending} className="rounded-xl bg-accent px-5 py-2.5 font-medium text-white hover:bg-accent-ink disabled:opacity-60">
+      <button type="submit" disabled={pending} className="rounded-xl bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-5 py-2.5 font-semibold text-white shadow-[var(--shadow-accent-glow)] transition-transform hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0">
         {pending ? "Creating…" : "Create connector"}
       </button>
     </form>

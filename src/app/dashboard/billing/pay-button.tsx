@@ -45,7 +45,7 @@ export function PayButton({ amount }: { amount: number }) {
         <button
           type="submit"
           disabled={pending || amount <= 0 || poll === "waiting"}
-          className="rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-white hover:bg-accent-ink disabled:opacity-60"
+          className="rounded-xl bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-5 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-accent-glow)] transition-transform hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0"
         >
           {pending ? "Sending…" : poll === "waiting" ? "Waiting for PIN…" : `Pay ${kes(amount)} via M-Pesa`}
         </button>

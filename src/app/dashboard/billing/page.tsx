@@ -24,7 +24,7 @@ export default async function BillingPage() {
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <Card className="p-5">
-          <h2 className="mb-3 font-semibold">Current invoice</h2>
+          <h2 className="mb-3 font-display font-semibold">Current invoice</h2>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-faint">
@@ -56,7 +56,7 @@ export default async function BillingPage() {
         </Card>
 
         <Card className="p-5">
-          <h2 className="mb-2 font-semibold">How the money flows</h2>
+          <h2 className="mb-2 font-display font-semibold">How the money flows</h2>
           <ol className="space-y-2 text-sm text-muted">
             <li><b className="text-ink">1.</b> Your organization pays <b>P2Less</b> one bill: plan + usage ({kes(bill.total)}).</li>
             <li><b className="text-ink">2.</b> P2Less pays <b>Meta</b> the WhatsApp conversation fees and covers AI/compute on your behalf ({kes(bill.passthrough)}).</li>
@@ -69,7 +69,7 @@ export default async function BillingPage() {
       </div>
 
       <Card className="mt-4 p-5">
-        <h2 className="mb-3 font-semibold">Payment history</h2>
+        <h2 className="mb-3 font-display font-semibold">Payment history</h2>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[520px] text-sm">
             <thead><tr className="text-left text-xs text-faint">

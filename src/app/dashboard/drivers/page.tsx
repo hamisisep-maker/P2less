@@ -29,7 +29,7 @@ export default async function DriversPage() {
 
       {activeTrips.length > 0 && (
         <Card className="mb-4 p-4">
-          <h2 className="mb-2 text-sm font-semibold">Deliveries in progress</h2>
+          <h2 className="mb-2 font-display text-sm font-semibold">Deliveries in progress</h2>
           <div className="space-y-2 text-sm">
             {activeTrips.map((t) => (
               <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-line-soft pb-2 last:border-0 last:pb-0">

@@ -76,7 +76,7 @@ export default async function DevelopersPage() {
 
       {/* Docs */}
       <Card className="p-5">
-        <h2 className="mb-3 font-semibold">Quick start</h2>
+        <h2 className="mb-3 font-display font-semibold">Quick start</h2>
         <div className="overflow-x-auto rounded-xl bg-ink p-4">
           <pre className="text-xs leading-relaxed text-white/90"><code>{`# List conversations
 curl ${base}/api/v1/conversations \\

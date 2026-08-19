@@ -17,7 +17,7 @@ export function ApiKeyForm() {
       )}
       <form action={action} className="flex flex-wrap items-center gap-2">
         <input name="name" placeholder="Key name (e.g. Production)" className="min-w-[180px] flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent" />
-        <button type="submit" disabled={pending} className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-ink disabled:opacity-60">
+        <button type="submit" disabled={pending} className="rounded-xl bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-4 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-accent-glow)] transition-transform hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0">
           {pending ? "Creating…" : "Create API key"}
         </button>
       </form>

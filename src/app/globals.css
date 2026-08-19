@@ -1,18 +1,28 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #f6f7f9;
+  /* Neutrals — a warm, very slightly cool-tinted scale (not flat grey) so
+     surfaces feel considered rather than default. */
+  --color-bg: #f5f5fa;
   --color-surface: #ffffff;
-  --color-surface-2: #f1f3f6;
-  --color-ink: #101317;
-  --color-muted: #5b6270;
-  --color-faint: #8a91a0;
-  --color-line: #e4e7ee;
-  --color-line-soft: #eef0f4;
-  --color-accent: #0f766e;
-  --color-accent-ink: #0b5c55;
-  --color-accent-soft: #e6f4f2;
+  --color-surface-2: #f0f0f7;
+  --color-ink: #12131f;
+  --color-muted: #5c5e73;
+  --color-faint: #9395a8;
+  --color-line: #e6e6f0;
+  --color-line-soft: #eeeef6;
+
+  /* Brand — deep teal-emerald (ties back to the WhatsApp-adjacent green
+     already used for --color-wa) instead of a flat single teal, paired with
+     a warm amber as the secondary "energy" accent for contrast/highlights. */
+  --color-accent: #0d9488;
+  --color-accent-ink: #065f46;
+  --color-accent-soft: #e1f4f1;
+  --color-accent-2: #f59e0b;
+  --color-accent-2-soft: #fef3e0;
+
   --color-indigo: #4f46e5;
+  --color-indigo-soft: #eeecfd;
   --color-amber: #b45309;
   --color-amber-soft: #fef3e2;
   --color-rose: #be123c;
@@ -22,7 +32,21 @@
   --color-wa: #075e54;
   --color-wa-bg: #e5ddd5;
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Dark sidebar palette — deliberately its own small system, not a filtered
+     version of the light tokens, so it reads as a real premium dark panel
+     rather than "the light theme with less contrast". */
+  --color-side-bg: #0c0f17;
+  --color-side-bg-2: #12151f;
+  --color-side-line: #212433;
+  --color-side-text: #9a9db3;
+  --color-side-text-active: #ffffff;
+
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: var(--font-display), var(--font-sans);
+
+  --shadow-card: 0 1px 2px rgba(18,19,31,.04), 0 8px 24px -12px rgba(18,19,31,.10);
+  --shadow-card-hover: 0 4px 10px rgba(18,19,31,.06), 0 16px 36px -14px rgba(18,19,31,.16);
+  --shadow-accent-glow: 0 8px 24px -8px color-mix(in srgb, var(--color-accent) 45%, transparent);
 }
 
 :root { color-scheme: light; }
@@ -38,11 +62,23 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
+h1, h2, h3, .font-display { font-family: var(--font-display); letter-spacing: -0.01em; }
 a { color: inherit; text-decoration: none; }
 ::selection { background: var(--color-accent-soft); }
 * { scrollbar-width: thin; scrollbar-color: var(--color-line) transparent; }
 *::-webkit-scrollbar { width: 9px; height: 9px; }
 *::-webkit-scrollbar-thumb { background: var(--color-line); border-radius: 9px; }
 
-@keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-.animate-in { animation: fade-up 0.3s ease both; }
+@keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.animate-in { animation: fade-up 0.35s cubic-bezier(.16,1,.3,1) both; }
+
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+.animate-shimmer { background-size: 200% 100%; animation: shimmer 2.2s linear infinite; }
+
+@keyframes pulse-dot { 0%, 100% { box-shadow: 0 0 0 0 currentColor22; } 50% { box-shadow: 0 0 0 4px transparent; } }
+.pulse-dot::before { content: ""; position: absolute; inset: 0; border-radius: 9999px; background: currentColor; animation: ping 1.8s cubic-bezier(0,0,.2,1) infinite; opacity: .5; }
+@keyframes ping { 75%, 100% { transform: scale(2.2); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in, .animate-shimmer, .pulse-dot::before { animation: none !important; }
+}

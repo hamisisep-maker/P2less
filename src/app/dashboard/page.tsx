@@ -4,7 +4,7 @@ import { requireTenantUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { monthlyUsage } from "@/lib/usage";
 import { Card, Stat, PageHeader, Badge, timeAgo } from "@/components/ui";
-import { Trend, Modal, InfoTip, TrendAreaChart, StatusPieChart, ConversationsTable, type ConvoRow } from "@/components/dashboard-ui";
+import { Trend, Modal, InfoTip, TrendAreaChart, StatusPieChart, ConversationsTable, IconStat, type ConvoRow } from "@/components/dashboard-ui";
 
 const TZ = process.env.APP_TIMEZONE || "Africa/Nairobi";
 
@@ -89,27 +89,27 @@ export default async function Overview() {
       <PageHeader
         title={`Welcome, ${user.name.split(" ")[0]}`}
         subtitle={`${user.tenant?.name} · ${sub?.plan.name ?? "No plan"} plan`}
-        action={<Link href="/dashboard/connectors/new" className="flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-ink"><Plus size={15} /> Add integration</Link>}
+        action={<Link href="/dashboard/connectors/new" className="flex items-center gap-1.5 rounded-xl bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-4 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-accent-glow)] transition-transform hover:-translate-y-0.5"><Plus size={15} /> Add integration</Link>}
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <IconStat icon={<MessageSquareText size={17} />} label="Messages in" value={msgIn} tip="Inbound messages this calendar month." trend={<Trend current={msgIn} previous={msgInPrev._sum.quantity ?? 0} />} />
-        <IconStat icon={<Send size={17} />} label="Messages out" value={msgOut} tip="Replies sent out this calendar month." trend={<Trend current={msgOut} previous={msgOutPrev._sum.quantity ?? 0} />} />
-        <IconStat icon={<Plug size={17} />} label="API calls" value={apiCalls} tip="Calls made to your connected systems this month." />
-        <IconStat icon={<FileText size={17} />} label="Documents" value={docs} tip="PDFs/statements generated this month." />
+        <IconStat icon={<MessageSquareText size={17} />} label="Messages in" value={msgIn} tip="Inbound messages this calendar month." trend={<Trend current={msgIn} previous={msgInPrev._sum.quantity ?? 0} />} tone="accent" />
+        <IconStat icon={<Send size={17} />} label="Messages out" value={msgOut} tip="Replies sent out this calendar month." trend={<Trend current={msgOut} previous={msgOutPrev._sum.quantity ?? 0} />} tone="indigo" />
+        <IconStat icon={<Plug size={17} />} label="API calls" value={apiCalls} tip="Calls made to your connected systems this month." tone="amber" />
+        <IconStat icon={<FileText size={17} />} label="Documents" value={docs} tip="PDFs/statements generated this month." tone="rose" />
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <Card className="p-5 lg:col-span-2">
           <div className="mb-1 flex items-center gap-1.5">
-            <h2 className="font-semibold">Message volume</h2>
+            <h2 className="font-display font-semibold">Message volume</h2>
             <InfoTip text="Inbound vs outbound messages over the last 14 days." />
           </div>
           <TrendAreaChart data={chartData} />
         </Card>
         <Card className="p-5">
           <div className="mb-1 flex items-center gap-1.5">
-            <h2 className="font-semibold">Conversation status</h2>
+            <h2 className="font-display font-semibold">Conversation status</h2>
             <InfoTip text="All-time breakdown of every conversation on this number." />
           </div>
           <StatusPieChart data={pieData} />
@@ -119,7 +119,7 @@ export default async function Overview() {
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Card className="p-5">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold">Connected systems</h2>
+            <h2 className="font-display font-semibold">Connected systems</h2>
             <Link href="/dashboard/connectors" className="text-xs text-accent hover:underline">Manage →</Link>
           </div>
           <div className="space-y-2">
@@ -167,7 +167,7 @@ export default async function Overview() {
 
         <Card className="p-5">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold">Snapshot</h2>
+            <h2 className="font-display font-semibold">Snapshot</h2>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <Stat label="Contacts" value={contacts} sub="end users" />
@@ -179,27 +179,11 @@ export default async function Overview() {
 
       <Card className="mt-4 p-5">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-semibold">Recent conversations</h2>
+          <h2 className="font-display font-semibold">Recent conversations</h2>
           <Link href="/dashboard/conversations" className="text-xs text-accent hover:underline">All →</Link>
         </div>
         <ConversationsTable data={tableData} pageSize={8} />
       </Card>
     </div>
-  );
-}
-
-function IconStat({ icon, label, value, tip, trend }: { icon: React.ReactNode; label: string; value: string | number; tip: string; trend?: React.ReactNode }) {
-  return (
-    <Card className="p-5">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-faint">
-          {label}
-          <InfoTip text={tip} />
-        </div>
-        <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent-soft text-accent-ink">{icon}</span>
-      </div>
-      <div className="mt-1.5 text-2xl font-semibold">{value}</div>
-      {trend && <div className="mt-0.5">{trend}</div>}
-    </Card>
   );
 }

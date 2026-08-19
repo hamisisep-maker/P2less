@@ -16,7 +16,7 @@ export default async function ConnectorsPage() {
       <PageHeader
         title="Integrations"
         subtitle="Connect external systems and expose them as conversational capabilities."
-        action={<Link href="/dashboard/connectors/new" className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-ink">New connector</Link>}
+        action={<Link href="/dashboard/connectors/new" className="rounded-xl bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-4 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-accent-glow)] transition-transform hover:-translate-y-0.5">New connector</Link>}
       />
       <div className="space-y-4">
         {connectors.length === 0 && <Card className="p-6 text-sm text-muted">No connectors yet.</Card>}
@@ -25,7 +25,7 @@ export default async function ConnectorsPage() {
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="font-semibold">{c.name}</h2>
+                  <h2 className="font-display font-semibold">{c.name}</h2>
                   <Badge tone={c.status === "active" ? "green" : "neutral"}>{c.status}</Badge>
                   <Badge tone="accent">{c.authType}</Badge>
                 </div>

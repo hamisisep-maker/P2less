@@ -64,7 +64,7 @@ export function FaqsEditor({ initial, canManage }: { initial: Faq[]; canManage: 
           <button type="button" onClick={add} className="rounded-xl border border-line px-4 py-2 text-sm font-medium hover:bg-surface-2">
             + Add FAQ
           </button>
-          <button type="submit" disabled={pending} className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-ink disabled:opacity-60">
+          <button type="submit" disabled={pending} className="rounded-xl bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-4 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-accent-glow)] transition-transform hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0">
             {pending ? "Saving…" : "Save FAQs"}
           </button>
         </div>

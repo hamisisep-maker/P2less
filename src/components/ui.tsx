@@ -1,25 +1,44 @@
 import { clsx } from "clsx";
 
-export function Card({ className, children }: { className?: string; children: React.ReactNode }) {
-  return <div className={clsx("rounded-2xl border border-line bg-surface", className)}>{children}</div>;
+export function Card({ className, hover = false, children }: { className?: string; hover?: boolean; children: React.ReactNode }) {
+  return (
+    <div
+      className={clsx(
+        "rounded-2xl border border-line bg-surface shadow-[var(--shadow-card)] transition-all duration-300",
+        hover && "hover:-translate-y-0.5 hover:shadow-[var(--shadow-card-hover)]",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
 }
 
-export function Badge({ tone = "neutral", children }: { tone?: "green" | "amber" | "rose" | "neutral" | "accent"; children: React.ReactNode }) {
+export function Badge({ tone = "neutral", dot = false, children }: { tone?: "green" | "amber" | "rose" | "neutral" | "accent" | "indigo"; dot?: boolean; children: React.ReactNode }) {
   const tones: Record<string, string> = {
     green: "bg-green-soft text-green",
     amber: "bg-amber-soft text-amber",
     rose: "bg-rose-soft text-rose",
     accent: "bg-accent-soft text-accent-ink",
+    indigo: "bg-indigo-soft text-indigo",
     neutral: "bg-surface-2 text-muted",
   };
-  return <span className={clsx("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium", tones[tone])}>{children}</span>;
+  const dotTones: Record<string, string> = {
+    green: "bg-green", amber: "bg-amber", rose: "bg-rose", accent: "bg-accent-ink", indigo: "bg-indigo", neutral: "bg-faint",
+  };
+  return (
+    <span className={clsx("inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium", tones[tone])}>
+      {dot && <span className={clsx("relative h-1.5 w-1.5 rounded-full", dotTones[tone])}>{(tone === "green" || tone === "accent") && <span className="pulse-dot absolute inset-0" />}</span>}
+      {children}
+    </span>
+  );
 }
 
 export function Stat({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
     <Card className="p-5">
       <div className="text-xs font-medium uppercase tracking-wide text-faint">{label}</div>
-      <div className="mt-1 text-2xl font-semibold">{value}</div>
+      <div className="mt-1 font-display text-2xl font-bold">{value}</div>
       {sub && <div className="mt-0.5 text-xs text-muted">{sub}</div>}
     </Card>
   );
@@ -27,10 +46,10 @@ export function Stat({ label, value, sub }: { label: string; value: string | num
 
 export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: React.ReactNode }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+    <div className="mb-7 flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 className="text-xl font-semibold">{title}</h1>
-        {subtitle && <p className="mt-0.5 text-sm text-muted">{subtitle}</p>}
+        <h1 className="font-display text-2xl font-bold tracking-tight">{title}</h1>
+        {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
       </div>
       {action}
     </div>
@@ -51,12 +70,17 @@ export function timeAgo(date: Date): string {
 export function Logo({ dark = false }: { dark?: boolean }) {
   return (
     <div className="flex items-center gap-2.5">
-      <span className={clsx("grid h-9 w-9 place-items-center rounded-xl font-mono text-sm font-bold", dark ? "bg-white/10 text-white ring-1 ring-white/15" : "bg-accent text-white")}>
+      <span
+        className={clsx(
+          "grid h-9 w-9 place-items-center rounded-xl font-display text-sm font-bold text-white shadow-[var(--shadow-accent-glow)]",
+          "bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))]",
+        )}
+      >
         P2
       </span>
       <div className="leading-tight">
-        <div className={clsx("font-semibold", dark && "text-white")}>P2Less</div>
-        <div className={clsx("text-[11px]", dark ? "text-white/60" : "text-faint")}>Conversational Access</div>
+        <div className={clsx("font-display font-bold", dark && "text-white")}>P2Less</div>
+        <div className={clsx("text-[11px]", dark ? "text-side-text" : "text-faint")}>Conversational Access</div>
       </div>
     </div>
   );
