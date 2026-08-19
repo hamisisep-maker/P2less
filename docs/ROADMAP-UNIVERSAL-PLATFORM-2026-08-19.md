@@ -19,16 +19,16 @@ Sequencing for `docs/VISION-UNIVERSAL-ACCESS-PLATFORM-2026-08-19.md` against wha
 
 **Decision point before Phase 2**: does every existing tenant get exactly one auto-created "Main" branch (simplest, recommended), or does branch-assignment need a manual admin step at rollout?
 
-## Phase 2 — Wire branch-scoping into what already exists
+## Phase 2 — Wire branch-scoping into what already exists — ✅ SHIPPED 2026-08-19
 
 **Goal**: branch becomes a real dimension of permissions, routing, and config — still invisible to any tenant with only one branch (backward-compatible by construction).
 
-- `AdminPermission`/tenant-staff `Role` gain a branch/region scope dimension (extends the existing RBAC pattern, doesn't replace it — same shape as today's `adminScope`).
-- `WhatsAppNumber → tenant` routing extends to `WhatsAppNumber → tenant + branch` (a number can map straight to a branch, or a central number triggers a "which branch?" clarifying turn — reuses the existing `awaiting_param`-style slot-fill pattern).
-- Config cascade (`platform default → org → region → branch → user`) implemented as a lookup helper layered on the existing `PlatformSetting`/tenant-settings pattern — most-specific-wins, same resolution order the vision doc specifies.
-- Branch-attributable `Incident`/`Notification`/billing rows (add `branchId?` alongside existing `tenantId` — additive, nullable, zero risk to existing rows) — this is a small, direct extension of the Priority 4/6 operational model, not a new one.
+- `WhatsAppNumber.branchId` (nullable, `SetNull` on branch delete) — a number can now be the front door for a specific branch. `resolveNumberBranch()` (`src/lib/branches.ts`) falls back to the tenant's `isDefault` branch when unset (every number today), so routing behavior is unchanged for every existing tenant. Wired into `conversation.ts::handleInbound()` — resolved once per conversation and cached on `ConvContext.branchId` (persisted via the existing `emit()` → `conversation.context` write path), not re-queried every message. **Deliberately did NOT build the "which branch?" clarifying-turn flow yet** — with no real multi-branch tenant to design/test it against, a speculative conversational disambiguation flow risks becoming exactly the kind of untested abstraction the original decision point below warns about. Revisit once a central-number-multi-branch tenant actually exists.
+- `UserRole.branchScope` (nullable JSON array of Branch ids, mirrors `User.adminScope`'s exact null-means-unrestricted convention) — lives on the role ASSIGNMENT not the Role definition, since the same Role can be assigned to different users at different branches. `hasBranchAccess()` helper (`src/lib/branches.ts`) exists and is ready to call, but **is NOT yet wired into any dashboard authorization check** — same reasoning as above, deferred pending a real pilot tenant rather than guessed at.
+- **Corrected after reading the actual schema** (same discipline as Phase 1's `Capability`-vs-`ConnectorAction` correction): did NOT add `branchId` to `Incident` or `Notification`. `Incident` is fully platform-scoped (P2Less's own operational health — AI provider failures, job failures — never had a `tenantId` at all, so branch attribution doesn't fit the model). `Notification` has no branch-aware event producer yet — adding an always-null column now would be exactly the kind of dead/unwritten field this project's own audit flagged and removed (`Contact.pinHash`, `User.phone`) in Priority 6. Revisit both once a real branch-scoped event exists to attribute.
+- **Deferred**: the generic `platform → org → region → branch → user` config cascade. No concrete per-branch setting exists yet to cascade over (the vision doc's own example, branch-specific business hours, isn't built) — building a generic cascade helper with nothing real to resolve would be speculative. Build this when the first real per-branch setting is needed.
 
-**Decision point before Phase 3**: which pilot tenant (if any) actually needs multiple branches first? Building this generically is fine, but proving it against one real multi-branch org before rolling further avoids over-engineering an untested abstraction.
+**Decision point before Phase 3 (unchanged, still open)**: which pilot tenant (if any) actually needs multiple branches first? Both deferred items above (branch-disambiguation conversation flow, dashboard-level `hasBranchAccess()` enforcement) are blocked on this, not on any remaining technical work.
 
 ## Phase 3 — Capability-ize existing connector actions
 

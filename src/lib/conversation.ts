@@ -20,6 +20,7 @@ import { isConfigured as mpesaConfigured } from "./mpesa";
 import { setAiTenantContext } from "./ai-context";
 import { nextTicketNumber } from "./ticket-numbering";
 import { queueNotification } from "./notifications";
+import { resolveNumberBranch } from "./branches";
 import { computeSlaDeadline } from "./ticket-sla";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -218,8 +219,13 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     orderBy: { updatedAt: "desc" },
   });
   if (!conversation) {
+    // Resolved ONCE at creation, same as tenantId/numberId — routing metadata,
+    // not conversational state, so it belongs on the row itself rather than
+    // in `context` (which many call sites below replace wholesale per emit()
+    // rather than merge, so anything stashed there isn't durable).
+    const branch = await resolveNumberBranch(number);
     conversation = await db.conversation.create({
-      data: { tenantId: tenant.id, contactId: contact.id, numberId: number.id, status: "open", context: {} },
+      data: { tenantId: tenant.id, contactId: contact.id, numberId: number.id, branchId: branch?.id, status: "open", context: {} },
     });
   }
 

@@ -851,6 +851,18 @@ model UserRole {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   roleId String
   role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  // Universal Platform roadmap Phase 2 (2026-08-19): mirrors User.adminScope's
+  // exact shape/meaning for the tenant-staff RBAC system — null = unrestricted
+  // (every branch), a JSON array of Branch ids = this role assignment is
+  // scoped to only those branches (e.g. "Branch Manager" at Nairobi only,
+  // vs. "Regional Manager" scoped to [Nairobi, Mombasa]). Lives on the
+  // ASSIGNMENT (UserRole), not the Role definition, since the same Role
+  // (e.g. "branch_manager") can be assigned to different users at different
+  // branches. NOT YET enforced at any call site — see hasBranchAccess() in
+  // src/lib/branches.ts, which exists but isn't called from dashboard
+  // authorization yet, pending a real multi-branch tenant to validate
+  // against (see docs/ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md Phase 2).
+  branchScope Json?
 
   @@unique([userId, roleId])
 }
@@ -911,6 +923,12 @@ model WhatsAppNumber {
   id                 String   @id @default(cuid())
   tenantId           String
   tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Universal Platform roadmap Phase 2 (2026-08-19): which Branch this number
+  // is the front door for. Null = tenant has no real multi-branch setup yet,
+  // resolveNumberBranch() (branches.ts) falls back to the tenant's isDefault
+  // branch — so this is invisible for every single-branch tenant today.
+  branchId           String?
+  branch             Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
   // The public E.164 number users message (e.g. +254711562526). Globally unique
   // across the platform — this is what routes an inbound message to a tenant.
   phoneNumber        String   @unique
@@ -1066,12 +1084,15 @@ model Branch {
   code           String? // short internal code, e.g. "NBO" — optional, not unique (two orgs could both use "NBO")
   // The branch every pre-existing tenant was auto-migrated onto — see
   // scripts/backfill-default-branches.ts. Exactly one per tenant; never delete
-  // a tenant's only isDefault branch (it has nowhere to fall back to yet, since
-  // nothing writes branchId onto Users/Contacts/WhatsAppNumbers until Phase 2).
+  // a tenant's only isDefault branch — resolveNumberBranch() (branches.ts)
+  // falls back to it whenever a WhatsAppNumber has no explicit branchId set.
   isDefault      Boolean  @default(false)
   active         Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  numbers       WhatsAppNumber[]
+  conversations Conversation[]
 
   @@index([tenantId])
   @@index([parentBranchId])
@@ -1090,6 +1111,14 @@ model Conversation {
   // The organization number this conversation is happening on (the front door).
   numberId  String?
   number    WhatsAppNumber? @relation(fields: [numberId], references: [id])
+  // Universal Platform roadmap Phase 2 (2026-08-19) — resolved ONCE via
+  // resolveNumberBranch() at creation, same as tenantId/numberId (routing
+  // metadata, not conversational state — deliberately NOT stored in the
+  // `context` JSON blob, since most emit() call sites replace that wholesale
+  // rather than merge it, so anything stashed there silently vanishes).
+  // Null for conversations created before this field existed.
+  branchId  String?
+  branch    Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
   contactId String
   contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
   status    String   @default("open") // open | awaiting_otp | awaiting_param | awaiting_confirm | escalated | closed
