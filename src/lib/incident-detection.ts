@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { db } from "./db";
 import { getSettingNumber } from "./platform-settings";
 import { isOverdue } from "./job-runner";
+import { mpesaFailureCategoryLabel } from "./mpesa";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Proactive detection — nothing here waits for an admin to notice a red
@@ -73,6 +74,22 @@ export async function maybeOpenJobFailureIncident(jobKey: string, consecutiveFai
     relatedJobKey: jobKey,
     detail: { consecutiveFailures, lastError: error },
   });
+}
+
+/** The ONE deliberate exception to "resolution is always a human action" —
+ *  used only by checkStkFailureRateAnomaly, where the rate returning to
+ *  baseline IS itself the evidence of recovery, per the user's explicit spec
+ *  that this specific check must self-clear rather than sit open waiting for
+ *  a click. resolvedById/actorId stay null so the UI/audit trail can tell an
+ *  automatic resolution apart from a human one if it ever needs to. */
+async function autoResolveIfRecovered(source: string, note: string): Promise<void> {
+  const existing = await db.incident.findFirst({ where: { source, status: { not: "resolved" } } });
+  if (!existing) return;
+  await db.incident.update({
+    where: { id: existing.id },
+    data: { status: "resolved", resolvedAt: new Date(), cause: "Failure rate returned to normal automatically.", resolutionNote: note },
+  });
+  await db.incidentEvent.create({ data: { incidentId: existing.id, type: "resolved", note, detail: { autoResolved: true } } });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -165,9 +182,81 @@ async function checkReconciliationBacklog(): Promise<void> {
   });
 }
 
+const STK_FAILURE_SOURCE = "mpesa_stk_failure_rate";
+
+/** 5th check — a failure-RATE spike, distinct from checkMpesaCallbackSilence
+ *  (total silence) above. 6/9 STK pushes failing while callbacks are still
+ *  arriving fine for the successful ones would never trip the silence check,
+ *  but is operationally significant on its own. Configurable via
+ *  platform-settings, never hard-coded: minimum sample size guards against
+ *  over-sensitivity (2 attempts, both failing, isn't evidence of anything),
+ *  warning/critical are two real severities, and the window is rolling. */
+async function checkStkFailureRateAnomaly(): Promise<void> {
+  const [minSample, warningPct, criticalPct, windowMinutes] = await Promise.all([
+    getSettingNumber("incident_stk_failure_min_sample_size"),
+    getSettingNumber("incident_stk_failure_warning_pct"),
+    getSettingNumber("incident_stk_failure_critical_pct"),
+    getSettingNumber("incident_stk_failure_window_minutes"),
+  ]);
+  const windowStart = new Date(Date.now() - windowMinutes * 60_000);
+
+  const windowPayments = await db.payment.findMany({
+    where: { channelKey: "mpesa_stk", createdAt: { gte: windowStart } },
+    select: { reference: true, status: true, failureCategory: true },
+  });
+  const attempts = windowPayments.length;
+  if (attempts < minSample) return; // not enough samples to mean anything — never open OR resolve on thin data
+
+  const failedPayments = windowPayments.filter((p) => p.status === "failed");
+  const failed = failedPayments.length;
+  const failureRatePct = Math.round((failed / attempts) * 1000) / 10;
+
+  const categoryCounts: Record<string, number> = {};
+  for (const p of failedPayments) {
+    const cat = p.failureCategory ?? "unknown";
+    categoryCounts[cat] = (categoryCounts[cat] ?? 0) + 1;
+  }
+
+  // Baseline = the failure rate over the preceding 24h, EXCLUDING this window
+  // — context for a human ("is this normal for us?"), never used to gate
+  // whether the incident fires; insufficient prior data reads as "no baseline
+  // yet" rather than a fabricated 0%.
+  const baselineStart = new Date(windowStart.getTime() - 24 * 60 * 60_000);
+  const [baselineAttempts, baselineFailed] = await Promise.all([
+    db.payment.count({ where: { channelKey: "mpesa_stk", createdAt: { gte: baselineStart, lt: windowStart } } }),
+    db.payment.count({ where: { channelKey: "mpesa_stk", status: "failed", createdAt: { gte: baselineStart, lt: windowStart } } }),
+  ]);
+  const baselinePct = baselineAttempts >= minSample ? Math.round((baselineFailed / baselineAttempts) * 1000) / 10 : null;
+
+  if (failureRatePct < warningPct) {
+    await autoResolveIfRecovered(
+      STK_FAILURE_SOURCE,
+      `Failure rate returned to ${failureRatePct}% (${failed}/${attempts}), below the ${warningPct}% warning threshold — based on ${attempts} attempt(s) in the last ${windowMinutes} minutes.`,
+    );
+    return;
+  }
+
+  const severity = failureRatePct >= criticalPct ? "critical" : "warning";
+  const dominant = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0];
+  const dominantNote = dominant ? ` — mostly ${mpesaFailureCategoryLabel(dominant[0])} (${dominant[1]})` : "";
+
+  await openOrBumpIncident({
+    severity,
+    source: STK_FAILURE_SOURCE,
+    title: `M-Pesa STK Push failure-rate spike — ${failureRatePct}% (${failed}/${attempts}) in the last ${windowMinutes}m${dominantNote}`,
+    relatedIntegrationKey: "mpesa_stk",
+    detail: {
+      windowMinutes, attempts, failed, failureRatePct, baselinePct,
+      minSampleSize: minSample, warningPct, criticalPct,
+      categoryCounts,
+      affectedReferences: failedPayments.slice(0, 30).map((p) => p.reference),
+    },
+  });
+}
+
 export async function runIncidentSweep(): Promise<{ checksRun: number }> {
-  await Promise.all([checkOverdueJobs(), checkAiErrorRates(), checkMpesaCallbackSilence(), checkReconciliationBacklog()]);
-  return { checksRun: 4 };
+  await Promise.all([checkOverdueJobs(), checkAiErrorRates(), checkMpesaCallbackSilence(), checkReconciliationBacklog(), checkStkFailureRateAnomaly()]);
+  return { checksRun: 5 };
 }
 
 export { openOrBumpIncident };

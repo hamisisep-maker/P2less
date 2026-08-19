@@ -142,7 +142,7 @@ export async function resolvePaymentUnknownAction(paymentId: string, resolution:
       }).catch((e) => console.error("[reconciliation] handleSubscriptionPaymentConfirmed failed:", e));
     }
   } else {
-    await db.payment.update({ where: { id: payment.id }, data: { status: "failed" } });
+    await db.payment.update({ where: { id: payment.id }, data: { status: "failed", failureCategory: "manual_resolution", failureReason: reason.slice(0, 300) } });
     if (payment.purpose === "subscription") {
       await recordFailedPayment(payment.tenantId, `Manually resolved as failed by ${admin.email}: ${reason}`);
     }

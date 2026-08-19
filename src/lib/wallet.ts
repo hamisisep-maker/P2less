@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "./db";
-import { stkPush, isConfigured } from "./mpesa";
+import { stkPush, isConfigured, classifyMpesaFailure } from "./mpesa";
 import { randomToken } from "./crypto";
 import { assertChannelEnabled } from "./payment-channels";
 
@@ -46,7 +46,7 @@ export async function startTopup(opts: { tenantId: string; contactId: string; ph
   });
   const res = await stkPush({ phone: opts.phone, amount: opts.amountKes, accountRef: reference, description: "P2Less credits" });
   if (!res.ok) {
-    await db.payment.updateMany({ where: { reference }, data: { status: "failed" } });
+    await db.payment.updateMany({ where: { reference }, data: { status: "failed", failureCategory: classifyMpesaFailure(res.error), failureReason: res.error.slice(0, 300) } });
     return { ok: false, error: res.error };
   }
   await db.payment.updateMany({ where: { reference }, data: { providerRef: res.checkoutId } });

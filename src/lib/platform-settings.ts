@@ -36,6 +36,10 @@ export const SETTING_DEFAULTS = {
   incident_ai_window_minutes: 15, // rolling window for the AI error-rate calculation
   incident_mpesa_callback_silence_minutes: 15, // no M-Pesa callback at all in this window = incident
   incident_reconciliation_unresolved_threshold: 10, // unresolved reconciliation items before an incident opens
+  incident_stk_failure_min_sample_size: 5, // fewer STK attempts than this in the window = not enough signal to mean anything (2 attempts, both failed, shouldn't page anyone)
+  incident_stk_failure_warning_pct: 20, // failure rate at/above this opens a "warning" incident (and below it auto-resolves one that's open)
+  incident_stk_failure_critical_pct: 50, // failure rate at/above this opens/escalates to a "critical" incident
+  incident_stk_failure_window_minutes: 15, // rolling window for the STK failure-rate calculation
 
   // ── Priority 4: maintenance mode (src/lib/maintenance-actions.ts) ──────
   maintenance_enabled: 0, // 0/1 — whole-PLATFORM maintenance, distinct from a single Integration.enabled toggle

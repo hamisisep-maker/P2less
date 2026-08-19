@@ -117,6 +117,45 @@ export function parseCallback(body: unknown): { checkoutId: string; success: boo
   }
 }
 
+export type MpesaFailureCategory =
+  | "provider_error" | "timeout" | "invalid_request" | "insufficient_funds"
+  | "user_cancellation" | "wrong_pin" | "network_error" | "unknown" | "manual_resolution";
+
+const CATEGORY_LABELS: Record<MpesaFailureCategory, string> = {
+  provider_error: "provider/API failure",
+  timeout: "timeout",
+  invalid_request: "invalid request",
+  insufficient_funds: "insufficient funds",
+  user_cancellation: "user cancellation",
+  wrong_pin: "wrong PIN",
+  network_error: "network error",
+  unknown: "unknown failure",
+  manual_resolution: "manually resolved",
+};
+
+export function mpesaFailureCategoryLabel(category: string): string {
+  return CATEGORY_LABELS[category as MpesaFailureCategory] ?? category;
+}
+
+/** Best-effort classification of an STK failure from Safaricom's own free-text
+ *  ResultDesc/errorMessage. Deliberately text-based rather than a numeric
+ *  ResultCode lookup table — Daraja's codes are inconsistently documented and
+ *  vary between sandbox and production, but the description Safaricom itself
+ *  sends back is stable and directly readable. Distinguishing categories
+ *  matters operationally: "50% wrong PIN" is normal customer behavior, "50%
+ *  provider_error" can mean the payment infrastructure itself is broken. */
+export function classifyMpesaFailure(message: string | undefined | null): MpesaFailureCategory {
+  const m = (message || "").toLowerCase();
+  if (!m) return "unknown";
+  if (m.includes("insufficient")) return "insufficient_funds";
+  if (m.includes("cancel")) return "user_cancellation";
+  if (m.includes("wrong pin") || m.includes("invalid pin") || m.includes("incorrect pin")) return "wrong_pin";
+  if (m.includes("timeout") || m.includes("timed out") || m.includes("cannot be reached")) return "timeout";
+  if (m.includes("could not reach") || m.includes("network") || m.includes("econn") || m.includes("fetch failed")) return "network_error";
+  if (m.includes("invalid") || m.includes("bad request") || m.includes("malformed")) return "invalid_request";
+  return "provider_error"; // a real message we couldn't classify more specifically — still genuine provider evidence, not a guess
+}
+
 export type C2BConfirmation = {
   transId: string; amount: number; billRefNumber: string;
   msisdn: string; firstName?: string; lastName?: string; transTime?: string; businessShortCode?: string;

@@ -10,7 +10,7 @@ import { encryptJSON, randomToken, sha256 } from "./crypto";
 import { WEBHOOK_EVENTS } from "./webhooks";
 import { PERMISSIONS, DEFAULT_USER_ROLES, DEFAULT_CONTACT_ROLES } from "./permissions";
 import { computeBill } from "./billing";
-import { stkPush, isConfigured } from "./mpesa";
+import { stkPush, isConfigured, classifyMpesaFailure } from "./mpesa";
 import { storeProductImage } from "./documents";
 import { normalizePhone } from "./conversation";
 import { handleSubscriptionPaymentConfirmed } from "./billing-lifecycle";
@@ -84,7 +84,7 @@ export async function startPaymentAction(_prev: unknown, formData: FormData) {
   await db.payment.create({ data: { tenantId: user.tenantId!, reference, amount, currency: "KES", purpose: "subscription", method: "mpesa", channelKey: "mpesa_stk", status: "pending", provider: "daraja", periodLabel: period } });
   const res = await stkPush({ phone, amount, accountRef: reference, description: "P2Less bill" });
   if (!res.ok) {
-    await db.payment.updateMany({ where: { reference }, data: { status: "failed" } });
+    await db.payment.updateMany({ where: { reference }, data: { status: "failed", failureCategory: classifyMpesaFailure(res.error), failureReason: res.error.slice(0, 300) } });
     return { error: res.error, ref: reference };
   }
   await db.payment.updateMany({ where: { reference }, data: { providerRef: res.checkoutId } });

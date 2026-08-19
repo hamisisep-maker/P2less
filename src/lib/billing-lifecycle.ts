@@ -4,7 +4,7 @@ import { audit } from "./audit";
 import { requestId as newRequestId, randomToken } from "./crypto";
 import { computeBill } from "./billing";
 import { getSettingNumber } from "./platform-settings";
-import { stkPush, isConfigured as mpesaConfigured } from "./mpesa";
+import { stkPush, isConfigured as mpesaConfigured, classifyMpesaFailure } from "./mpesa";
 import { generateReceiptPdf } from "./documents";
 import { registerJob, startJobPoller } from "./job-runner";
 import { assertChannelEnabled, syncReconciliationFlag } from "./payment-channels";
@@ -210,7 +210,7 @@ async function attemptAutomatedCharge(sub: { tenantId: string; billingPhone: str
   await db.payment.create({ data: { tenantId: sub.tenantId, reference, amount, currency: "KES", purpose: "subscription", method: "mpesa", channelKey: "mpesa_stk", status: "pending", provider: "daraja", periodLabel } });
   const res = await stkPush({ phone: sub.billingPhone, amount, accountRef: reference, description: "P2Less renewal" });
   if (!res.ok) {
-    await db.payment.updateMany({ where: { reference }, data: { status: "failed" } });
+    await db.payment.updateMany({ where: { reference }, data: { status: "failed", failureCategory: classifyMpesaFailure(res.error), failureReason: res.error.slice(0, 300) } });
     return { ok: false, skipped: res.error };
   }
   await db.payment.updateMany({ where: { reference }, data: { providerRef: res.checkoutId } });

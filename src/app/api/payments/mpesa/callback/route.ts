@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { parseCallback } from "@/lib/mpesa";
+import { parseCallback, classifyMpesaFailure } from "@/lib/mpesa";
 import { dispatchWebhook } from "@/lib/webhooks";
 import { creditsForAmount } from "@/lib/wallet";
 import { sendWhatsAppText } from "@/lib/transport";
@@ -47,6 +47,8 @@ export async function POST(req: Request) {
           status: parsed.success ? "paid" : "failed",
           paidAt: parsed.success ? new Date() : null,
           providerRef: parsed.receipt ?? parsed.checkoutId,
+          failureCategory: parsed.success ? null : classifyMpesaFailure(parsed.desc),
+          failureReason: parsed.success ? null : (parsed.desc ?? "").slice(0, 300),
         },
       });
       if (parsed.success) {

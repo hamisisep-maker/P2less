@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "./db";
-import { stkPush, isConfigured } from "./mpesa";
+import { stkPush, isConfigured, classifyMpesaFailure } from "./mpesa";
 import { assertChannelEnabled } from "./payment-channels";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -223,7 +223,7 @@ export async function startOrderPayment(opts: { tenantId: string; orderId: strin
   await db.payment.create({ data: { tenantId: opts.tenantId, orderId: opts.orderId, reference: opts.reference, amount: opts.amountKes, currency: "KES", purpose: "order", method: "mpesa", channelKey: "mpesa_stk", provider: "daraja", status: "pending" } });
   const res = await stkPush({ phone: opts.phone, amount: opts.amountKes, accountRef: opts.reference, description: "Order payment" });
   if (!res.ok) {
-    await db.payment.updateMany({ where: { reference: opts.reference }, data: { status: "failed" } });
+    await db.payment.updateMany({ where: { reference: opts.reference }, data: { status: "failed", failureCategory: classifyMpesaFailure(res.error), failureReason: res.error.slice(0, 300) } });
     return { ok: false, error: res.error };
   }
   await db.payment.updateMany({ where: { reference: opts.reference }, data: { providerRef: res.checkoutId } });

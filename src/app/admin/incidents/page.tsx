@@ -31,6 +31,7 @@ export default async function AdminIncidentsPage() {
                 id: i.id, severity: i.severity, source: i.source, title: i.title, status: i.status,
                 firstDetectedAt: i.firstDetectedAt, lastDetectedAt: i.lastDetectedAt, occurrenceCount: i.occurrenceCount,
                 acknowledgedAt: i.acknowledgedAt, resolvedAt: i.resolvedAt, cause: i.cause, resolutionNote: i.resolutionNote,
+                detail: i.detail,
               }}
             />
           ))}
@@ -48,6 +49,7 @@ export default async function AdminIncidentsPage() {
                 id: i.id, severity: i.severity, source: i.source, title: i.title, status: i.status,
                 firstDetectedAt: i.firstDetectedAt, lastDetectedAt: i.lastDetectedAt, occurrenceCount: i.occurrenceCount,
                 acknowledgedAt: i.acknowledgedAt, resolvedAt: i.resolvedAt, cause: i.cause, resolutionNote: i.resolutionNote,
+                detail: i.detail,
               }}
             />
           ))}

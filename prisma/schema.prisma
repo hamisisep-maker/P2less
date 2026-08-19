@@ -564,6 +564,15 @@ model Payment {
   // Nullable so pre-Priority-4 rows and any call site not yet updated still
   // read/write fine; see src/lib/payment-channels.ts's assertChannelEnabled().
   channelKey  String?
+  // Set only when status="failed" — WHY it failed, classified from Safaricom's
+  // own ResultDesc/errorMessage text (see classifyMpesaFailure in mpesa.ts):
+  // provider_error | timeout | invalid_request | insufficient_funds |
+  // user_cancellation | wrong_pin | network_error | unknown | manual_resolution.
+  // Feeds the STK failure-rate incident's category breakdown — "50% wrong PIN"
+  // (normal customer behavior) reads very differently from "50% provider_error"
+  // (the payment infrastructure itself may be broken).
+  failureCategory String?
+  failureReason   String? // raw provider message, truncated — kept for a human to read verbatim
   periodLabel String? // e.g. "2026-08"
   createdAt   DateTime @default(now())
   paidAt      DateTime?
