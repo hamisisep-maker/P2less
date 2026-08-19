@@ -1059,6 +1059,35 @@ model ConnectorAction {
   @@index([connectorId])
 }
 
+/// Universal Platform roadmap Phase 7 (2026-08-20) — a platform-curated
+/// connector marketplace. Deliberately NOT tenant-scoped (no tenantId) —
+/// this is a reusable STARTER, not a live connection; installing one goes
+/// through the exact same reviewed-draft-then-create flow Phase 6 built for
+/// OpenAPI import (src/lib/actions.ts::createConnectorFromDraftAction),
+/// just seeded from `actions` here instead of a freshly-parsed spec.
+/// Publishing is platform-curated only for now (confirmed with the user
+/// 2026-08-20) — no submission/review/ownership workflow exists because
+/// there's no other publisher yet; the vision doc's open-developer-
+/// publishing idea stays explicitly deferred, not half-built.
+model ConnectorTemplate {
+  id          String   @id @default(cuid())
+  key         String   @unique // "school_system" | "payroll_hr" | ...
+  name        String
+  description String?
+  category    String // school | payroll | hospital | retail | custom — loosely matches Tenant.industry
+  // Example/placeholder only — always editable at install time. A template
+  // installed by a DIFFERENT tenant almost certainly needs a different real
+  // base URL; this just shows what a working example looks like.
+  baseUrlHint String
+  authType    String  @default("api_key")
+  // DraftAction[]-shaped (src/lib/openapi-import.ts) — same fields the
+  // review-then-create flow already knows how to render and submit.
+  actions     Json
+  active      Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // UNIVERSAL PLATFORM ROADMAP (Phase 1, 2026-08-19) — see
 // docs/ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md. Schema-only, additive, not yet

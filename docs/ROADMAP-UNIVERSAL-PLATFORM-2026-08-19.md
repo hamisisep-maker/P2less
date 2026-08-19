@@ -65,7 +65,18 @@ Sequencing for `docs/VISION-UNIVERSAL-ACCESS-PLATFORM-2026-08-19.md` against wha
 
 ## Phase 7 (Future-strategic, deliberately unscoped) — new verticals
 
-Connector marketplace, social-media connectors + content pipeline, document/OCR ingestion beyond today's PDF-generation-only `Document` model, research/plagiarism tooling. Explicitly sequenced last: each is a large, mostly-independent product surface that consumes the Phase 1-3 foundation rather than requiring changes to it. Don't scope these in detail until the foundation phases are live and proven.
+Social-media connectors + content pipeline, document/OCR ingestion beyond today's PDF-generation-only `Document` model, research/plagiarism tooling — still deliberately unscoped. Each is a large, mostly-independent product surface. Don't scope these in detail until a real need exists.
+
+### Connector marketplace — ✅ SHIPPED 2026-08-20 (platform-curated only)
+
+Confirmed scope with the user first: the vision doc's open-developer-publishing marketplace assumes an ecosystem of OTHER developers, which doesn't exist yet (P2Less has one operator today) — building a submission/review/trust workflow for zero real publishers would be pure speculative machinery. Went with the recommended narrower scope instead: a **platform-curated catalog**, reusing Phase 6's review-then-create flow end-to-end rather than inventing a parallel install path.
+
+- `ConnectorTemplate` (new model, platform-wide, no `tenantId`) — `key`/`name`/`description`/`category`/`baseUrlHint`/`authType`/`actions` (the same `DraftAction[]` shape Phase 6's OpenAPI parser already produces, so the exact same review UI renders either source unchanged).
+- `scripts/sync-connector-templates.ts` (new, idempotent) — populates the catalog by reading each source connector's REAL, currently-live `ConnectorAction` rows straight from the database and copying them in, rather than hand-transcribing (which risks silent drift from what the connector actually does). Seeded 4 templates from the platform's own real connectors: School Management System (9 capabilities), Payroll & HR System (7), Hospital Patient Management (1 — honestly reflects that only one action exists for that connector today, not padded out), Retail Order Tracking (1). `IDENTIFY` excluded from every template — an internal onboarding capability, not a marketplace-relevant one.
+- **Refactored Phase 6's review-table UI into a shared `ConnectorDraftReviewForm` component** (`src/app/dashboard/connectors/connector-draft-review-form.tsx`) before adding the marketplace, rather than copy-pasting ~150 lines — both `/dashboard/connectors/import` (parse a pasted spec) and the new `/dashboard/connectors/marketplace/[key]` (load a stored template) now feed the identical review-then-create step, submitting through the same `createConnectorFromDraftAction` from Phase 6 unchanged.
+- `/dashboard/connectors/marketplace` (new) — browse all active templates with real capability counts and names. `/dashboard/connectors/marketplace/[key]` (new) — install: template's `baseUrlHint` and actions pre-fill the SAME editable review form Phase 6 uses (an install is structurally identical to an OpenAPI import, just pre-seeded from a template instead of a freshly-parsed spec), admin fills in their OWN real base URL/credentials, reviews/edits every capability, submits.
+- **Live-verified end-to-end**: real tenant login, installed "Hospital Patient Management" onto Riverside Academy (a SCHOOL tenant installing a HOSPITAL template — deliberately cross-category to prove the flow doesn't assume anything about the installing tenant's own type), confirmed correct pre-fill, submitted, confirmed a real `Connector` + the real `GET_NEXT_APPOINTMENT` capability were created and correctly listed, cleaned up.
+- Full regression suite run clean at 73/73 on a freshly reseeded database.
 
 ---
 

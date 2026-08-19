@@ -18,6 +18,7 @@ export default async function ConnectorsPage() {
         subtitle="Connect external systems and expose them as conversational capabilities."
         action={
           <div className="flex items-center gap-2">
+            <Link href="/dashboard/connectors/marketplace" className="rounded-xl border border-line px-4 py-2.5 text-sm font-medium text-muted hover:bg-surface-2">Marketplace</Link>
             <Link href="/dashboard/connectors/import" className="rounded-xl border border-line px-4 py-2.5 text-sm font-medium text-muted hover:bg-surface-2">Import from OpenAPI</Link>
             <Link href="/dashboard/connectors/new" className="rounded-xl bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-4 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-accent-glow)] transition-transform hover:-translate-y-0.5">New connector</Link>
           </div>
