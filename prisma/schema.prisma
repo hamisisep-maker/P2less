@@ -18,6 +18,30 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// Platform-wide (NOT tenant-scoped) daily counter per AI provider — lets the
+/// super admin see which providers are actually being used, how often they're
+/// failing, and (when the provider's API returns rate-limit headers) roughly
+/// how much of today's quota is left, instead of that only being visible by
+/// reading server logs after something's already gone quiet.
+model AiProviderStat {
+  id                 String    @id @default(cuid())
+  provider           String // "google" | "groq" | "cerebras" | "openrouter" | "anthropic" | "openai" | "xai"
+  date               String // "2026-08-19" (UTC day bucket) — one row per provider per day
+  calls              Int       @default(0)
+  successes          Int       @default(0)
+  failures           Int       @default(0)
+  lastStatus         Int?
+  lastError          String?
+  // Only populated when the provider's response actually included rate-limit
+  // headers (Groq/OpenAI-compatible and Anthropic do; Gemini doesn't) — never
+  // guessed or estimated.
+  rateLimitRemaining Int?
+  rateLimitLimit     Int?
+  lastUsedAt         DateTime  @default(now()) @updatedAt
+
+  @@unique([provider, date])
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PLATFORM: Tenancy, billing, branding
 // ─────────────────────────────────────────────────────────────────────────────

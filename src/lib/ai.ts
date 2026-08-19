@@ -1,4 +1,5 @@
 import "server-only";
+import { db } from "./db";
 import { matchIntent, type IntentAction, type IntentMatch } from "./intent-engine";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -98,6 +99,41 @@ export async function transcribeAudio(base64: string, mimeType: string): Promise
 
 type LLMOpts = { maxTokens?: number; temperature?: number; history?: ChatTurn[] };
 
+/** Pulls remaining/limit rate-limit numbers from whichever header shape this
+ *  provider happens to use (OpenAI-compatible providers and Anthropic both
+ *  return these; Gemini doesn't, so google calls just track call counts). */
+function extractRateLimit(res: Response): { remaining?: number; limit?: number } {
+  const remaining = res.headers.get("x-ratelimit-remaining-requests") ?? res.headers.get("anthropic-ratelimit-requests-remaining");
+  const limit = res.headers.get("x-ratelimit-limit-requests") ?? res.headers.get("anthropic-ratelimit-requests-limit");
+  const out: { remaining?: number; limit?: number } = {};
+  if (remaining != null && !Number.isNaN(Number(remaining))) out.remaining = Number(remaining);
+  if (limit != null && !Number.isNaN(Number(limit))) out.limit = Number(limit);
+  return out;
+}
+
+/** Fire-and-forget daily counter per provider — so the super admin can see
+ *  which providers are actually being used/failing without reading server
+ *  logs. Never awaited by the caller and never allowed to fail a real reply. */
+function recordAiStat(provider: Provider, ok: boolean, status?: number, errorSnippet?: string, rateLimit?: { remaining?: number; limit?: number }) {
+  const date = new Date().toISOString().slice(0, 10);
+  db.aiProviderStat
+    .upsert({
+      where: { provider_date: { provider, date } },
+      create: {
+        provider, date, calls: 1, successes: ok ? 1 : 0, failures: ok ? 0 : 1,
+        lastStatus: status, lastError: ok ? null : (errorSnippet ?? "unknown error"),
+        rateLimitRemaining: rateLimit?.remaining, rateLimitLimit: rateLimit?.limit,
+      },
+      update: {
+        calls: { increment: 1 }, successes: { increment: ok ? 1 : 0 }, failures: { increment: ok ? 0 : 1 },
+        lastStatus: status, lastError: ok ? null : (errorSnippet ?? "unknown error"),
+        ...(rateLimit?.remaining != null ? { rateLimitRemaining: rateLimit.remaining } : {}),
+        ...(rateLimit?.limit != null ? { rateLimitLimit: rateLimit.limit } : {}),
+      },
+    })
+    .catch(() => {});
+}
+
 // A hung or slow model must NEVER hold up the user's reply — on a real channel
 // that means no WhatsApp message arrives at all. Any call that exceeds this
 // budget is aborted and the caller falls back to the deterministic template.
@@ -182,7 +218,13 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
           ],
         }),
       });
-      if (!res || !res.ok) { console.error(`[ai:${p}] status=${res?.status} body=${res ? (await res.text()).slice(0,300) : "no response"}`); return null; }
+      if (!res || !res.ok) {
+        const body = res ? (await res.text()).slice(0, 300) : "no response";
+        console.error(`[ai:${p}] status=${res?.status} body=${body}`);
+        recordAiStat(p, false, res?.status, body);
+        return null;
+      }
+      recordAiStat(p, true, res.status, undefined, extractRateLimit(res));
       const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
       return j.choices?.[0]?.message?.content?.trim() ?? null;
     }
@@ -206,7 +248,11 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
           generationConfig: genCfg,
         }),
       });
-      if (!res || !res.ok) return null;
+      if (!res || !res.ok) {
+        recordAiStat(p, false, res?.status);
+        return null;
+      }
+      recordAiStat(p, true, res.status);
       const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
       return j.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
     }
@@ -225,11 +271,16 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
           ],
         }),
       });
-      if (!res || !res.ok) return null;
+      if (!res || !res.ok) {
+        recordAiStat(p, false, res?.status);
+        return null;
+      }
+      recordAiStat(p, true, res.status, undefined, extractRateLimit(res));
       const j = (await res.json()) as { content?: { text?: string }[] };
       return j.content?.[0]?.text?.trim() ?? null;
     }
-  } catch {
+  } catch (e) {
+    recordAiStat(p, false, undefined, e instanceof Error ? e.message.slice(0, 200) : "unknown exception");
     return null;
   }
   return null;
