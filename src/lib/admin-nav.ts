@@ -7,5 +7,7 @@ export const ADMIN_NAV: { href: string; label: string; icon: NavIconName }[] = [
   { href: "/admin/billing", label: "Billing & Revenue", icon: "Wallet" },
   { href: "/admin/ai", label: "AI Providers", icon: "BrainCircuit" },
   { href: "/admin/models", label: "Models", icon: "Boxes" },
+  { href: "/admin/roles", label: "Roles & Access", icon: "ShieldCheck" },
+  { href: "/admin/security", label: "Security", icon: "Lock" },
   { href: "/admin/settings", label: "Settings", icon: "Settings" },
 ];

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui";
 import { updateAiProviderCostAction, setPrimaryProviderAction } from "@/lib/admin-actions";
+import { ReasonAction } from "@/components/admin/reason-action";
 
 // Icon lookup lives here (client-only) — passing a Lucide component
 // reference itself as a prop from the server page into this client
@@ -30,7 +31,6 @@ export function ProviderCard({ data }: { data: ProviderCardData }) {
   const Icon = PROVIDER_ICONS[data.id] ?? CircleDot;
   const [cost, setCost] = useState(String(data.costPerCallKes));
   const [pending, startTransition] = useTransition();
-  const [primaryPending, startPrimaryTransition] = useTransition();
 
   const quotaPct = data.quotaRemaining != null && data.quotaLimit ? Math.max(0, Math.min(100, (data.quotaRemaining / data.quotaLimit) * 100)) : null;
 
@@ -81,13 +81,12 @@ export function ProviderCard({ data }: { data: ProviderCardData }) {
 
           <div className="mt-3 flex items-center gap-2">
             {!data.isPrimary && (
-              <button
-                disabled={primaryPending}
-                onClick={() => startPrimaryTransition(async () => { await setPrimaryProviderAction(data.id); toast.success(`${data.label} is now primary`, { description: "Takes effect on the next AI call — no redeploy needed." }); })}
-                className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-muted hover:bg-surface-2 disabled:opacity-50"
-              >
-                <Star size={12} /> {primaryPending ? "…" : "Set primary"}
-              </button>
+              <ReasonAction
+                label={<span className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-muted hover:bg-surface-2"><Star size={12} /> Set primary</span>}
+                confirmLabel="Set primary"
+                onConfirm={(reason) => setPrimaryProviderAction(data.id, reason)}
+                successMessage={`${data.label} is now primary`}
+              />
             )}
             <a href={data.topUpUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-accent-ink hover:bg-accent-soft">
               <ExternalLink size={12} /> Top up credits

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { Card, PageHeader, Badge } from "@/components/ui";
 import { IconStat, InfoTip } from "@/components/dashboard-ui";
 import { getAllSettings } from "@/lib/platform-settings";
+import { requireAdminPermission } from "@/lib/admin-authz";
 import { AutomationForm } from "./automation-form";
 import { RulesTable, type RuleRow } from "./rules-table";
 import { AddRuleForm } from "./add-rule-form";
@@ -11,6 +12,7 @@ import { RunNowButton } from "./run-now-button";
 import { ReconciliationRow } from "./reconciliation-card";
 
 export default async function BillingAutomationPage() {
+  await requireAdminPermission("billing.view");
   const now = new Date();
   const settings = await getAllSettings();
   const graceDays = Number(settings.billing_grace_period_days);

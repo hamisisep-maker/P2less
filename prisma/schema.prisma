@@ -133,14 +133,23 @@ model BillingNotification {
 /// table rather than a fake/placeholder tenant id. Tenant-specific admin
 /// actions (suspend/activate) still use the real AuditLog against that
 /// tenant, since that's exactly what a tenant dispute would need to see.
+/// RBAC-aware accountability trail. role/permission/reason/ip are optional
+/// (existing call sites keep working unchanged) but populated by every
+/// privileged action routed through requireAdminPermission +
+/// logPrivilegedAction (admin-authz.ts) — this is what lets an incident
+/// review answer "who, with what role, using what permission, and why".
 model PlatformAuditLog {
-  id        String   @id @default(cuid())
-  actorId   String
+  id         String   @id @default(cuid())
+  actorId    String
   actorEmail String
-  action    String // e.g. admin.plan_update | admin.pricing_update | admin.ai_primary_provider_change
-  target    String?
-  detail    Json?
-  createdAt DateTime @default(now())
+  action     String // e.g. admin.plan_update | admin.pricing_update | admin.ai_primary_provider_change
+  target     String?
+  detail     Json?
+  role       String? // the admin's role KEY at the moment of the action
+  permission String? // the specific permission that authorized it
+  reason     String? // required for elevated/dangerous actions (refunds, suspensions, role changes...)
+  ip         String?
+  createdAt  DateTime @default(now())
 
   @@index([createdAt])
 }
@@ -443,13 +452,82 @@ model User {
   email        String
   phone        String?
   passwordHash String
-  isSuperAdmin Boolean  @default(false)
-  createdAt    DateTime @default(now())
+  // LEGACY bootstrap flag — kept in sync with adminRole.key == "super_admin"
+  // so the very first seeded admin always works even before AdminRole rows
+  // exist. New authorization checks (requireAdminPermission in
+  // admin-authz.ts) go through adminRole.permissions, never this flag alone.
+  isSuperAdmin Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  passwordChangedAt DateTime?
+
+  // ── Platform admin RBAC (src/lib/admin-authz.ts) — entirely separate from
+  // the tenant-staff Role/UserRole below, which governs what a SCHOOL/
+  // BUSINESS's own staff can do within their own tenant, not platform ops. ──
+  adminRoleId String?
+  adminRole   AdminRole? @relation(fields: [adminRoleId], references: [id])
+  // null = unrestricted (every tenant); a JSON array of tenant ids = this
+  // admin may only act on/view those specific tenants ("scope" in Users →
+  // Roles → Permissions → Resources → Actions → Scope → Audit).
+  adminScope  Json?
 
   userRoles UserRole[]
+  sessions  UserSession[]
 
   @@unique([email])
   @@index([tenantId])
+  @@index([adminRoleId])
+}
+
+/// A platform-admin role (Super Admin, Finance Admin, Operations Admin,
+/// Support Admin, Security Admin, Read Only, or a custom role a Super Admin
+/// creates) — completely separate from the tenant-staff Role below. Holding
+/// "roles.manage" is itself gated to protect against privilege escalation:
+/// see requireAdminPermission's extra super_admin-only check on that one
+/// specific permission in admin-authz.ts.
+model AdminRole {
+  id          String   @id @default(cuid())
+  key         String   @unique // super_admin | finance_admin | operations_admin | support_admin | security_admin | read_only_admin | custom-<slug>
+  name        String
+  permissions Json // string[] of AdminPermission keys — see admin-permissions.ts
+  isBuiltIn   Boolean  @default(false) // built-ins can't be deleted, only their permission list can be inspected
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users User[]
+}
+
+/// A real, DB-backed, revocable session — the JWT cookie alone (see auth.ts)
+/// is stateless and can't actually be revoked; this row is what makes
+/// "revoke this admin's session" a genuine action rather than decorative.
+/// Applies to every User login (tenant staff AND platform admins), since
+/// auth.ts is shared, but only surfaced for platform admins on
+/// /admin/security today.
+model UserSession {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ip           String?
+  userAgent    String?
+  createdAt    DateTime  @default(now())
+  lastActiveAt DateTime  @default(now())
+  expiresAt    DateTime
+  revokedAt    DateTime?
+
+  @@index([userId])
+}
+
+/// Every login attempt, success or failure — the real evidence behind
+/// "failed login attempts" on the admin security centre, not a guess.
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  success   Boolean
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([createdAt])
 }
 
 /// A role within a tenant, carrying a set of permission strings.
@@ -746,6 +824,12 @@ model AuditLog {
   success     Boolean
   // Sanitized detail. Secrets and full PII are minimized here by design.
   detail      Json?
+  // RBAC context, populated when a platform admin (not tenant staff/contact)
+  // performed this — see PlatformAuditLog for the "why" behind these fields.
+  role        String?
+  permission  String?
+  reason      String?
+  ip          String?
   createdAt   DateTime @default(now())
 
   @@index([tenantId])

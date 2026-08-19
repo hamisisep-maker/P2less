@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { db } from "./db";
-import { verifyPassword, hashPassword, createSession, destroySession, requireTenantUser, userPermissions } from "./auth";
+import { verifyPassword, hashPassword, createSession, destroySession, requireTenantUser, userPermissions, recordLoginAttempt } from "./auth";
 import { encryptJSON, randomToken, sha256 } from "./crypto";
 import { WEBHOOK_EVENTS } from "./webhooks";
 import { PERMISSIONS, DEFAULT_USER_ROLES, DEFAULT_CONTACT_ROLES } from "./permissions";
@@ -21,10 +21,12 @@ export async function loginAction(_prev: unknown, formData: FormData) {
   const password = String(formData.get("password") ?? "");
   const user = await db.user.findUnique({ where: { email } });
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
+    await recordLoginAttempt(email, false);
     return { error: "Invalid email or password." };
   }
+  await recordLoginAttempt(email, true);
   await createSession(user.id, user.tenantId, user.isSuperAdmin);
-  redirect(user.isSuperAdmin ? "/admin" : "/dashboard");
+  redirect(user.isSuperAdmin || user.adminRoleId ? "/admin" : "/dashboard");
 }
 
 export async function logoutAction() {

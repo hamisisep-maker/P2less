@@ -1,8 +1,10 @@
 import { db } from "@/lib/db";
 import { Card, PageHeader } from "@/components/ui";
+import { requireAdminPermission } from "@/lib/admin-authz";
 import { TenantsAdminTable, type AdminTenantRow } from "./tenants-table";
 
 export default async function AdminTenantsPage() {
+  await requireAdminPermission("tenants.view");
   const tenants = await db.tenant.findMany({
     include: {
       subscription: { include: { plan: true } },

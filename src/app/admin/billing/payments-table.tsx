@@ -7,6 +7,8 @@ import {
 } from "@tanstack/react-table";
 import { ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge, timeAgo } from "@/components/ui";
+import { ReasonAction } from "@/components/admin/reason-action";
+import { refundPaymentAction } from "@/lib/admin-actions";
 
 export type PaymentRow = {
   id: string; reference: string; tenantName: string; amount: number; currency: string;
@@ -23,6 +25,20 @@ const columns: ColumnDef<PaymentRow, unknown>[] = [
   { accessorKey: "method", header: "Method", cell: ({ getValue }) => <span className="uppercase text-muted">{getValue() as string}</span> },
   { accessorKey: "status", header: "Status", cell: ({ getValue }) => { const s = getValue() as string; return <Badge tone={statusTone[s] ?? "neutral"} dot>{s}</Badge>; } },
   { accessorKey: "createdAt", header: "Date", cell: ({ getValue }) => <span className="text-muted">{timeAgo(getValue() as Date)}</span> },
+  {
+    id: "refund",
+    header: "",
+    cell: ({ row }) =>
+      row.original.status === "paid" ? (
+        <ReasonAction
+          label={<span className="rounded-lg border border-rose/30 px-2 py-1 text-[11px] font-medium text-rose hover:bg-rose-soft">Refund</span>}
+          confirmLabel="Refund"
+          placeholder="Reason (required)…"
+          onConfirm={(reason) => refundPaymentAction(row.original.id, reason)}
+          successMessage="Marked as refunded"
+        />
+      ) : null,
+  },
 ];
 
 export function PaymentsTable({ data }: { data: PaymentRow[] }) {

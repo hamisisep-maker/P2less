@@ -55,6 +55,10 @@ function EditForm({ plan, onDone }: { plan: PlanForCalc; onDone: () => void }) {
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="active" defaultChecked={plan.active} className="rounded" /> Active (visible for new signups)
       </label>
+      <label className="block">
+        <span className="text-xs font-medium text-muted">Reason for this change (required, audit trail)</span>
+        <input name="reason" required placeholder="e.g. Q3 pricing adjustment" className="mt-1 w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent" />
+      </label>
       {!plan.margin.unlimited && plan.margin.marginPct < 0 && (
         <p className="rounded-xl bg-rose-soft p-2.5 text-xs text-rose">
           At current pricing, a tenant maxing out this plan's limits would cost you more than they pay. Suggested minimum price: <b>KES {plan.margin.suggestedMinPrice.toLocaleString("en-US")}/mo</b>.

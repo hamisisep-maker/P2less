@@ -12,6 +12,7 @@ export function RunNowButton() {
       disabled={pending}
       onClick={() => startTransition(async () => {
         const r = await runBillingCycleNowAction();
+        if ("error" in r) { toast.error(r.error); return; }
         toast.success("Billing cycle ran", { description: `${r.reminders} reminder(s) queued · ${r.renewalsAttempted} charge attempt(s) · ${r.suspended} suspension(s)` });
       })}
       className="flex items-center gap-1.5 rounded-xl border border-line px-4 py-2.5 text-sm font-medium text-muted hover:bg-surface-2 disabled:opacity-50"

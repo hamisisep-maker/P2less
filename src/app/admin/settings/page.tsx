@@ -28,7 +28,7 @@ export default async function AdminSettingsPage() {
             <div className="font-medium">{admin.name}</div>
             <div className="text-sm text-muted">{admin.email}</div>
           </div>
-          <Badge tone="accent">Super Admin</Badge>
+          <Badge tone="accent">{admin.adminRole?.name ?? (admin.isSuperAdmin ? "Super Admin" : "Admin")}</Badge>
         </div>
       </Card>
 

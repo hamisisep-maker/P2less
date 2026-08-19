@@ -37,6 +37,10 @@ export function AddPricingForm() {
         <span className="text-xs font-medium text-muted">Output $/1M tokens</span>
         <input name="outputPerMillionUsd" type="number" step="0.01" min="0" required className="mt-1 w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent" />
       </label>
+      <label className="block sm:col-span-5">
+        <span className="text-xs font-medium text-muted">Reason for this change (required, audit trail)</span>
+        <input name="reason" required placeholder="e.g. Provider raised published rates" className="mt-1 w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent" />
+      </label>
       <div className="flex items-end">
         <button type="submit" disabled={pending} className="w-full rounded-xl bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-4 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-accent-glow)] disabled:opacity-60">
           {pending ? "Saving…" : "Set price"}

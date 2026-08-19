@@ -1,9 +1,11 @@
 import { db } from "@/lib/db";
 import { Card, PageHeader, Badge } from "@/components/ui";
 import { InfoTip } from "@/components/dashboard-ui";
+import { requireAdminPermission } from "@/lib/admin-authz";
 import { AddPricingForm } from "./pricing-form";
 
 export default async function AdminModelsPage() {
+  await requireAdminPermission("models.view");
   const [byModel, byFeature, allPricing] = await Promise.all([
     db.aiRequestLog.groupBy({ by: ["provider", "model"], _count: { _all: true }, _sum: { inputTokens: true, outputTokens: true, costKes: true, revenueKes: true } }),
     db.aiRequestLog.groupBy({ by: ["feature"], _count: { _all: true }, _sum: { costKes: true, revenueKes: true } }),

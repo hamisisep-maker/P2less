@@ -6,11 +6,13 @@ import { Card, PageHeader } from "@/components/ui";
 import { IconStat, InfoTip } from "@/components/dashboard-ui";
 import { computePlatformPnL, computePlanMargin, loadPricing } from "@/lib/billing";
 import { getAllSettings } from "@/lib/platform-settings";
+import { requireAdminPermission } from "@/lib/admin-authz";
 import { PricingForm } from "./pricing-form";
 import { PlanCard, type PlanForCalc } from "./plan-editor";
 import { PaymentsTable, type PaymentRow } from "./payments-table";
 
 export default async function AdminBillingPage() {
+  await requireAdminPermission("billing.view");
   const [pnl, settings, plans, payments, pricing] = await Promise.all([
     computePlatformPnL(),
     getAllSettings(),
@@ -75,7 +77,9 @@ export default async function AdminBillingPage() {
           <h2 className="font-display font-semibold">All payments</h2>
           <InfoTip text="Every payment across every tenant — the record to check if a customer disputes a charge or claims they paid but weren't activated." />
         </div>
-        <div className="mb-4" />
+        <p className="mb-4 text-xs text-muted">
+          <b>Refund</b> marks a paid payment as refunded for accounting/dispute records. It does <b>not</b> automatically move real money back to the customer — M-Pesa reversals go through Safaricom&apos;s separate B2C API, which isn&apos;t wired in here. Actually returning funds is still a manual step outside P2Less until that&apos;s built.
+        </p>
         <PaymentsTable data={paymentRows} />
       </Card>
     </div>

@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { Card, PageHeader } from "@/components/ui";
 import { InfoTip } from "@/components/dashboard-ui";
 import { getAiProviderCosts, AI_PROVIDER_TOPUP_URL, getSetting } from "@/lib/platform-settings";
+import { requireAdminPermission } from "@/lib/admin-authz";
 import { ProviderCard, type ProviderCardData } from "./provider-card";
 import { ResetPrimaryButton } from "./reset-primary-button";
 
@@ -16,6 +17,7 @@ const AI_PROVIDERS: { id: string; label: string; keyEnv: string }[] = [
 ];
 
 export default async function AdminAiPage() {
+  await requireAdminPermission("providers.view");
   const today = new Date().toISOString().slice(0, 10);
   const monthPrefix = today.slice(0, 7);
 

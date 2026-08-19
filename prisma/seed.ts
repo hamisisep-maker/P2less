@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
+import { BUILT_IN_ROLES, type BuiltInRoleKey } from "../src/lib/admin-permissions";
 
 // Inline copies of the two crypto helpers the seed needs (the app's crypto.ts is
 // "server-only" and can't be imported from a plain tsx script).
@@ -44,7 +45,8 @@ async function main() {
     db.connectorAction.deleteMany(), db.connector.deleteMany(),
     db.channel.deleteMany(), db.contact.deleteMany(), db.role.deleteMany(),
     db.apiKey.deleteMany(), db.webhook.deleteMany(),
-    db.subscription.deleteMany(), db.user.deleteMany(), db.tenant.deleteMany(),
+    db.subscription.deleteMany(), db.userSession.deleteMany(), db.loginAttempt.deleteMany(),
+    db.user.deleteMany(), db.adminRole.deleteMany(), db.tenant.deleteMany(),
     db.demoResult.deleteMany(), db.demoAttendance.deleteMany(), db.demoFeeAccount.deleteMany(),
     db.demoAppointment.deleteMany(), db.demoStudent.deleteMany(),
     db.demoAnnouncement.deleteMany(), db.demoTimetableSlot.deleteMany(),
@@ -61,9 +63,18 @@ async function main() {
     db.plan.create({ data: { key: "enterprise", name: "Enterprise", priceMonthly: 0, whiteLabel: true, sort: 3, limits: {} } }),
   ]);
 
+  // ── Platform admin RBAC: the 6 built-in roles (Users → Roles → Permissions
+  // → Resources → Actions → Scope → Audit — see src/lib/admin-permissions.ts
+  // for the full permission catalog and profile of each role). Not fixed
+  // forever: a Super Admin can create additional custom roles at /admin/roles. ─
+  const adminRoles: Record<BuiltInRoleKey, { id: string }> = {} as never;
+  for (const [key, def] of Object.entries(BUILT_IN_ROLES) as [BuiltInRoleKey, typeof BUILT_IN_ROLES[BuiltInRoleKey]][]) {
+    adminRoles[key] = await db.adminRole.create({ data: { key, name: def.name, permissions: def.permissions, isBuiltIn: true } });
+  }
+
   // ── Platform super admin ────────────────────────────────────────────────
   const pw = await bcrypt.hash("password", 10);
-  await db.user.create({ data: { name: "P2Less Admin", email: "admin@p2less.io", passwordHash: pw, isSuperAdmin: true } });
+  await db.user.create({ data: { name: "P2Less Admin", email: "admin@p2less.io", passwordHash: pw, isSuperAdmin: true, adminRoleId: adminRoles.super_admin.id } });
 
   // ── Tenant: Riverside Academy ───────────────────────────────────────────
   const tenant = await db.tenant.create({

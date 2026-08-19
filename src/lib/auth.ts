@@ -1,5 +1,5 @@
 import "server-only";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
@@ -7,8 +7,13 @@ import { db } from "./db";
 
 const secret = new TextEncoder().encode(process.env.AUTH_SECRET || "p2less-dev-secret");
 const COOKIE = "p2less_session";
+const SESSION_DAYS = 30;
 
-export type SessionPayload = { uid: string; tid: string | null; sa: boolean };
+// sid = the DB-backed UserSession row this JWT corresponds to. The JWT alone
+// is stateless and unrevokable; sid is what lets an admin's session actually
+// be killed from /admin/security (see revokeUserSession below) instead of
+// that button being decorative.
+export type SessionPayload = { uid: string; tid: string | null; sa: boolean; sid: string };
 
 export async function hashPassword(pw: string) {
   return bcrypt.hash(pw, 10);
@@ -17,11 +22,30 @@ export async function verifyPassword(pw: string, hash: string) {
   return bcrypt.compare(pw, hash);
 }
 
+async function clientMeta(): Promise<{ ip: string | null; userAgent: string | null }> {
+  try {
+    const h = await headers();
+    const fwd = h.get("x-forwarded-for");
+    return { ip: fwd ? fwd.split(",")[0]!.trim() : h.get("x-real-ip"), userAgent: h.get("user-agent") };
+  } catch {
+    return { ip: null, userAgent: null };
+  }
+}
+
+export async function recordLoginAttempt(email: string, success: boolean) {
+  const { ip, userAgent } = await clientMeta();
+  await db.loginAttempt.create({ data: { email: email.toLowerCase().trim(), success, ip, userAgent } }).catch(() => {});
+}
+
 export async function createSession(userId: string, tenantId: string | null, superAdmin: boolean) {
-  const token = await new SignJWT({ uid: userId, tid: tenantId, sa: superAdmin })
+  const { ip, userAgent } = await clientMeta();
+  const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
+  const session = await db.userSession.create({ data: { userId, ip, userAgent, expiresAt } });
+
+  const token = await new SignJWT({ uid: userId, tid: tenantId, sa: superAdmin, sid: session.id })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("30d")
+    .setExpirationTime(`${SESSION_DAYS}d`)
     .sign(secret);
   const jar = await cookies();
   jar.set(COOKIE, token, {
@@ -29,23 +53,51 @@ export async function createSession(userId: string, tenantId: string | null, sup
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: 60 * 60 * 24 * SESSION_DAYS,
   });
 }
 
 export async function destroySession() {
+  const token = (await cookies()).get(COOKIE)?.value;
   (await cookies()).delete(COOKIE);
+  if (!token) return;
+  try {
+    const { payload } = await jwtVerify(token, secret);
+    const sid = (payload as unknown as SessionPayload).sid;
+    if (sid) await db.userSession.update({ where: { id: sid }, data: { revokedAt: new Date() } }).catch(() => {});
+  } catch {
+    // token already invalid — nothing to revoke
+  }
 }
+
+/** Kills one session by id regardless of who's currently logged in as it —
+ *  this is what the admin security centre's "Revoke" button calls. */
+export async function revokeUserSession(sessionId: string) {
+  await db.userSession.update({ where: { id: sessionId }, data: { revokedAt: new Date() } });
+}
+
+const ACTIVITY_TOUCH_INTERVAL_MS = 60_000;
 
 export async function getSession(): Promise<SessionPayload | null> {
   const token = (await cookies()).get(COOKIE)?.value;
   if (!token) return null;
+  let payload: SessionPayload;
   try {
-    const { payload } = await jwtVerify(token, secret);
-    return payload as unknown as SessionPayload;
+    const result = await jwtVerify(token, secret);
+    payload = result.payload as unknown as SessionPayload;
   } catch {
     return null;
   }
+  if (!payload.sid) return null; // pre-migration token with no DB-backed session — treat as signed out
+
+  const dbSession = await db.userSession.findUnique({ where: { id: payload.sid } });
+  if (!dbSession || dbSession.revokedAt || dbSession.expiresAt < new Date()) return null;
+
+  if (Date.now() - dbSession.lastActiveAt.getTime() > ACTIVITY_TOUCH_INTERVAL_MS) {
+    await db.userSession.update({ where: { id: payload.sid }, data: { lastActiveAt: new Date() } }).catch(() => {});
+  }
+
+  return payload;
 }
 
 export async function getCurrentUser() {
@@ -53,7 +105,7 @@ export async function getCurrentUser() {
   if (!session) return null;
   const user = await db.user.findUnique({
     where: { id: session.uid },
-    include: { tenant: true, userRoles: { include: { role: true } } },
+    include: { tenant: true, userRoles: { include: { role: true } }, adminRole: true },
   });
   return user;
 }
@@ -73,9 +125,14 @@ export async function requireTenantUser(): Promise<CurrentUser> {
   return user;
 }
 
+/** Legacy coarse gate — still used by the admin layout to keep any platform
+ *  admin (any role) into /admin at all. Individual pages/actions must still
+ *  call requireAdminPermission/assertAdminPermission (admin-authz.ts) for the
+ *  SPECIFIC permission they need; being "some kind of admin" is not itself a
+ *  permission. */
 export async function requireSuperAdmin(): Promise<CurrentUser> {
   const user = await requireUser();
-  if (!user.isSuperAdmin) redirect("/dashboard");
+  if (!user.isSuperAdmin && !user.adminRoleId) redirect("/dashboard");
   return user;
 }
 

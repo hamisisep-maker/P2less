@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { toast } from "sonner";
+import { useState } from "react";
 import { ShieldOff, ShieldCheck, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import {
   useReactTable, getCoreRowModel, getSortedRowModel, getPaginationRowModel,
@@ -10,6 +9,7 @@ import {
 import { Badge } from "@/components/ui";
 import { Avatar } from "@/components/dashboard-ui";
 import { suspendTenantAction } from "@/lib/admin-actions";
+import { ReasonAction } from "@/components/admin/reason-action";
 
 export type AdminTenantRow = {
   id: string; name: string; industry: string; plan: string; status: string;
@@ -17,24 +17,22 @@ export type AdminTenantRow = {
 };
 
 function ActionCell({ tenant }: { tenant: AdminTenantRow }) {
-  const [pending, startTransition] = useTransition();
   const suspended = tenant.status === "suspended";
   return (
-    <button
-      disabled={pending}
-      onClick={() => startTransition(async () => {
-        await suspendTenantAction(tenant.id, !suspended);
-        toast.success(suspended ? `${tenant.name} reactivated` : `${tenant.name} suspended`, {
-          description: suspended ? "They can use P2Less again immediately." : "Their assistant will stop responding until reactivated.",
-        });
-      })}
-      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
-        suspended ? "border-green/30 text-green hover:bg-green-soft" : "border-rose/30 text-rose hover:bg-rose-soft"
-      }`}
-    >
-      {suspended ? <ShieldCheck size={13} /> : <ShieldOff size={13} />}
-      {pending ? "…" : suspended ? "Reactivate" : "Suspend"}
-    </button>
+    <ReasonAction
+      label={
+        <span className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+          suspended ? "border-green/30 text-green hover:bg-green-soft" : "border-rose/30 text-rose hover:bg-rose-soft"
+        }`}>
+          {suspended ? <ShieldCheck size={13} /> : <ShieldOff size={13} />}
+          {suspended ? "Reactivate" : "Suspend"}
+        </span>
+      }
+      confirmLabel={suspended ? "Reactivate" : "Suspend"}
+      placeholder="Reason (required)…"
+      onConfirm={(reason) => suspendTenantAction(tenant.id, !suspended, reason)}
+      successMessage={suspended ? `${tenant.name} reactivated` : `${tenant.name} suspended`}
+    />
   );
 }
 
