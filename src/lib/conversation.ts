@@ -21,6 +21,7 @@ import { setAiTenantContext } from "./ai-context";
 import { nextTicketNumber } from "./ticket-numbering";
 import { queueNotification } from "./notifications";
 import { resolveNumberBranch } from "./branches";
+import { evaluateCapabilityGate } from "./capability-gate";
 import { computeSlaDeadline } from "./ticket-sla";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1605,26 +1606,44 @@ async function runAction(args: RunArgs): Promise<{ replies: Reply[]; status: str
 
   const baseCtx: ConvContext = { lastResource: args.lastResource };
 
-  // 1. Permission check
-  if (!hasPermission(permissions, action.requiredPermission)) {
-    await audit({ tenantId, requestId: reqId, actorType: "contact", actorId: contact.id, action: "authz.deny", target: action.key, success: false, detail: { reason: "permission" } });
-    return { replies: [{ body: "You don't have permission to access that." }], status: "open", ctx: baseCtx };
+  // 1-4. Permission → resource (IDOR) → step-up → confirm — the single
+  // source-of-truth gate (Universal Platform roadmap Phase 3), replacing
+  // what used to be four separate inline checks here. See
+  // evaluateCapabilityGate() in capability-gate.ts for why approvalRequired
+  // is classified on the decision but not yet enforced.
+  const resolvedResourceId = action.resourceParam ? (args.resolved[action.resourceParam] as string | undefined) : undefined;
+  const grantedResourceIds = action.resourceGrantKey
+    ? ((grants as Record<string, ResourceGrant[] | undefined>)[action.resourceGrantKey] ?? []).map((g) => g.id)
+    : undefined;
+  // Only pay for the session lookup when step-up is actually required —
+  // same short-circuit the original inline check had.
+  const verifiedSession = action.requiresStepUp ? await hasVerifiedSession(contact.id) : true;
+  const decision = evaluateCapabilityGate({
+    action: {
+      requiredPermission: action.requiredPermission,
+      resourceGrantKey: action.resourceGrantKey,
+      resourceParam: action.resourceParam,
+      requiresStepUp: action.requiresStepUp,
+      requiresConfirm: action.requiresConfirm,
+      approvalRequired: action.approvalRequired,
+    },
+    permissions,
+    resolvedResourceId,
+    grantedResourceIds,
+    hasVerifiedSession: verifiedSession,
+    alreadyConfirmed: args.alreadyConfirmed,
+  });
+
+  if (!decision.allowed) {
+    await audit({ tenantId, requestId: reqId, actorType: "contact", actorId: contact.id, action: "authz.deny", target: action.key, success: false, detail: { reason: decision.reason, targetId: decision.reason === "resource" ? resolvedResourceId : undefined } });
+    return {
+      replies: [{ body: decision.reason === "permission" ? "You don't have permission to access that." : "You're not authorized to view that record." }],
+      status: "open",
+      ctx: baseCtx,
+    };
   }
 
-  // 2. Resource-level authorization (IDOR guard): the target id must be in the
-  //    contact's grants for the configured resource type.
-  if (action.resourceGrantKey && action.resourceParam) {
-    const targetId = args.resolved[action.resourceParam];
-    const allowed = (grants as Record<string, ResourceGrant[] | undefined>)[action.resourceGrantKey] ?? [];
-    const ok = allowed.some((g) => g.id === targetId);
-    if (!ok) {
-      await audit({ tenantId, requestId: reqId, actorType: "contact", actorId: contact.id, action: "authz.deny", target: action.key, success: false, detail: { reason: "resource", targetId } });
-      return { replies: [{ body: "You're not authorized to view that record." }], status: "open", ctx: baseCtx };
-    }
-  }
-
-  // 3. Step-up authentication for sensitive actions
-  if (action.requiresStepUp && !(await hasVerifiedSession(contact.id))) {
+  if (decision.step === "step_up") {
     const issued = await issueOtp(tenantId, contact.id);
     if ("error" in issued) return { replies: [{ body: issued.error }], status: "open", ctx: baseCtx };
     await audit({ tenantId, requestId: reqId, actorType: "contact", actorId: contact.id, action: "otp.issue", target: action.key, success: true });
@@ -1635,8 +1654,7 @@ async function runAction(args: RunArgs): Promise<{ replies: Reply[]; status: str
     };
   }
 
-  // 4. Confirmation for write actions — echo back exactly what will happen.
-  if (action.requiresConfirm && !args.alreadyConfirmed) {
+  if (decision.step === "confirm") {
     const values = { ...args.resolved, resourceName: args.lastResource?.name ?? "", studentName: args.lastResource?.name ?? "" };
     const summary = action.confirmTemplate ? fillTemplate(action.confirmTemplate, values) : (action.description ?? action.name);
     return {
@@ -1646,6 +1664,7 @@ async function runAction(args: RunArgs): Promise<{ replies: Reply[]; status: str
     };
   }
 
+  // decision.step === "execute" from here on.
   // 5. Execute the connector action (real HTTP to the external system)
   const result = await executeAction(action.id, args.resolved);
   if (!result.ok) {
