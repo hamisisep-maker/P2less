@@ -37,6 +37,17 @@ export function PageHeader({ title, subtitle, action }: { title: string; subtitl
   );
 }
 
+/** Compact "3h ago" / "2d ago" style relative time — server-safe (no client
+ *  hooks), computed once at render time from a fixed Date. */
+export function timeAgo(date: Date): string {
+  const s = Math.max(0, (Date.now() - date.getTime()) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  if (s < 2592000) return `${Math.floor(s / 86400)}d ago`;
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
 export function Logo({ dark = false }: { dark?: boolean }) {
   return (
     <div className="flex items-center gap-2.5">
