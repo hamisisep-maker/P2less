@@ -534,8 +534,13 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     // school") must NOT trigger a real write action on that false positive.
     const negateWords = /\b(cancel|no|nope|nah|don'?t|stop|nevermind|never mind|not now|forget it)\b/i;
     const affirmWords = /\b(confirm|ye(s|ah|p|a)|yup|ok|okay|sure|proceed|go ahead|do it|book it|go for it|please do|sounds good|looks good|that'?s (right|correct|good|fine))\b/i;
+    // "sure" alone in affirmWords false-matches genuinely uncertain replies like
+    // "not sure" / "I'm not sure" / "not really sure" — a negation immediately
+    // before "sure"/"certain" means the person is NOT confirming, found live
+    // while spot-checking the Phase 5 migration (2026-08-20).
+    const NEGATED_UNCERTAIN = /\bnot\s+(really\s+)?(sure|certain)\b|\bn['’]t\s+(really\s+)?(sure|certain)\b/i;
     const negate = isDirectReply(lower, negateWords);
-    const affirm = isDirectReply(lower, affirmWords);
+    const affirm = isDirectReply(lower, affirmWords) && !NEGATED_UNCERTAIN.test(lower);
     if (negate) {
       return emit([{ body: "No problem — I've cancelled that. Anything else I can help with?" }], "open", { lastResource: ctx.lastResource });
     }
@@ -550,22 +555,30 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     // Don't robotically repeat "reply CONFIRM". The user might change their mind,
     // ask something else, or just chat. Follow a genuine new request; otherwise
     // answer naturally and then remind them the booking is still waiting.
+    // Universal Platform roadmap Phase 5 migration (2026-08-20) — same
+    // reroute/pushback/reask/abandon shape as awaiting_param and
+    // awaiting_resource_pick, via evaluateWorkflowAsk(). Threshold stays at
+    // this flow's existing 0.6 (higher than awaiting_param's 0.55) — a
+    // payment/write-adjacent confirmation is more expensive to abandon on a
+    // false reroute than a still-collecting slot fill. See docs/PHASE5-
+    // WORKFLOW-ENGINE-SUBROADMAP-2026-08-19.md.
     const actionsNow = await loadActions(tenant.id);
     const reroute = await understand(text, actionsNow, history);
-    if (reroute.actionId && reroute.score >= 0.6 && reroute.actionKey !== ctx.pendingActionKey) {
+    const decision = evaluateWorkflowAsk(
+      { plausibleAnswer: false, rerouteConfident: !!reroute.actionId && reroute.score >= 0.6 && reroute.actionKey !== ctx.pendingActionKey, isPushback: PUSHBACK.test(lower), asidesSoFar: ctx.paramAsides ?? 0 },
+      { rerouteThreshold: 0.6 },
+    );
+    if (decision.kind === "reroute" && reroute.actionId) {
       const cBase: CollectBase = { tenantId: tenant.id, reqId, contact, permissions, grants, assistant, channelType: input.channelType, contactName: contact.displayName ?? undefined, userText: text, history };
       const run = await dispatchAction(cBase, reroute.actionId, reroute.entities, { lastResource: ctx.lastResource });
       return emit(run.replies, run.status, run.ctx);
     }
     const stc = aiEnabled() ? await smallTalk(assistant, text, [...actionsNow.map((a) => a.name), ...toolCapabilityLines()], history, knownFacts, orgFaqs) : null;
-    // Same anti-nag rule: push-back or a second stray message drops the pending
-    // confirmation instead of repeating "reply CONFIRM" forever.
-    const cAsides = (ctx.paramAsides ?? 0) + 1;
-    if (PUSHBACK.test(lower) || cAsides >= 2) {
+    if (decision.kind === "abandon") {
       return emit([{ body: stc ?? "No problem — I've set that aside. How can I help you?" }], "open", { lastResource: ctx.lastResource });
     }
     const remind = "Whenever you're ready, reply CONFIRM to go ahead, or CANCEL to drop it.";
-    return emit([{ body: stc ? `${stc}\n\n${remind}` : `Please reply CONFIRM to proceed, or CANCEL to stop.` }], "awaiting_confirm", { ...ctx, paramAsides: cAsides });
+    return emit([{ body: stc ? `${stc}\n\n${remind}` : `Please reply CONFIRM to proceed, or CANCEL to stop.` }], "awaiting_confirm", { ...ctx, paramAsides: decision.kind === "reask" ? decision.asidesSoFar : ctx.paramAsides });
   }
 
   // ── Resume: a "which student/employee/patient do you mean?" list is pending —
