@@ -201,6 +201,41 @@ export async function revokeApiKeyAction(formData: FormData) {
   revalidatePath("/dashboard/developers");
 }
 
+// ── Universal Platform roadmap Phase 8e (2026-08-20): embeddable website
+// chat widget key. Deliberately public (embedded in a <script> tag on the
+// org's own site) — unlike ApiKey, never hashed, since there's nothing to
+// keep secret; the origin allowlist + the widget route's rate limit are the
+// actual protection. Parses the origins textarea leniently (comma or
+// newline separated, trims, drops blanks) rather than requiring one format. ─
+function parseOrigins(raw: string): string[] {
+  return raw.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+}
+
+export async function createWidgetKeyAction(_prev: unknown, formData: FormData) {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.DEVELOPER_MANAGE)) return { error: "You don't have developer permission." };
+  const origins = parseOrigins(String(formData.get("origins") ?? ""));
+  const key = "wk_" + randomToken(20);
+  await db.widgetKey.create({ data: { tenantId: user.tenantId!, key, allowedOrigins: origins } });
+  revalidatePath("/dashboard/widget");
+  return { ok: true, key };
+}
+
+export async function updateWidgetOriginsAction(formData: FormData) {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.DEVELOPER_MANAGE)) return;
+  const origins = parseOrigins(String(formData.get("origins") ?? ""));
+  await db.widgetKey.updateMany({ where: { id: String(formData.get("id")), tenantId: user.tenantId! }, data: { allowedOrigins: origins } });
+  revalidatePath("/dashboard/widget");
+}
+
+export async function deactivateWidgetKeyAction(formData: FormData) {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.DEVELOPER_MANAGE)) return;
+  await db.widgetKey.updateMany({ where: { id: String(formData.get("id")), tenantId: user.tenantId! }, data: { active: false } });
+  revalidatePath("/dashboard/widget");
+}
+
 export async function addWebhookAction(_prev: unknown, formData: FormData) {
   const user = await requireTenantUser();
   if (!userPermissions(user).includes(PERMISSIONS.DEVELOPER_MANAGE)) return { error: "You don't have developer permission." };

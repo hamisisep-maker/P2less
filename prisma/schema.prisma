@@ -472,6 +472,7 @@ model Tenant {
   contacts      Contact[]
   channels      Channel[]
   numbers       WhatsAppNumber[]
+  widgetKeys    WidgetKey[]
   connectors    Connector[]
   conversations Conversation[]
   messages      Message[]
@@ -945,6 +946,24 @@ model WhatsAppNumber {
   createdAt          DateTime @default(now())
 
   conversations Conversation[]
+
+  @@index([tenantId])
+}
+
+// Universal Platform roadmap Phase 8e (2026-08-20) — the embeddable website
+// chat widget's registry entry. Deliberately NOT a private secret like
+// ApiKey — `key` is meant to be pasted into a public <script> tag, visible in
+// any page's source, so the security boundary is origin allowlisting + rate
+// limiting (enforced in the widget route), not keeping this value hidden.
+model WidgetKey {
+  id             String    @id @default(cuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key            String    @unique // public identifier embedded in the <script> tag
+  allowedOrigins Json // string[]; empty = dev/testing mode, any origin allowed (logged, not silent)
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  lastUsedAt     DateTime?
 
   @@index([tenantId])
 }

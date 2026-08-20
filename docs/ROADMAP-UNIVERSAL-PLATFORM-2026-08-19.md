@@ -240,6 +240,71 @@ User request, 2026-08-20: explored what it would take to embed P2Less on an exis
 
 **Recommended sequencing**: crawler/ingestion before the widget (ships value sooner, on existing channels, and removes the widget's biggest open question — "where does its knowledge come from" — before the widget itself is even started).
 
+### Phase 8e — widget implementation detail (scoped 2026-08-20, ready to build)
+
+Concrete build plan, checked against the real existing code so it reuses established patterns rather than inventing new ones — confirmed `channelType` on `Contact` is a plain `String` (not an enum), so `"widget"` as a new channel value needs zero schema change there.
+
+**1. New data model — a PUBLIC site key, structurally distinct from the private developer `ApiKey`**:
+```prisma
+model WidgetKey {
+  id             String    @id @default(cuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key            String    @unique // public identifier — safe to expose in page source, NOT a secret
+  allowedOrigins Json      // string[] of allowed domains; empty = dev/testing mode (any origin, logged)
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  lastUsedAt     DateTime?
+
+  @@index([tenantId])
+}
+```
+Deliberately NOT reusing `ApiKey` (which is hashed, secret, and scoped to the privileged developer API) — a widget key is public by design (anyone can view page source), so the security boundary can't be "keep the key secret." It has to be: origin allowlisting + rate limiting + the widget route being structurally incapable of reaching anything the general developer API can.
+
+**2. New route, NOT a reuse of `/api/channels/webchat`**: `/api/channels/widget/route.ts`. The existing webchat endpoint is fine for the internal `/demo` simulator but has zero origin-checking or rate-limiting — wrong to expose directly to arbitrary public websites. The new route:
+1. Accepts `{ widgetKey, text, sessionId }`.
+2. Looks up `WidgetKey` by `key`, requires `active`, checks the request's `Origin`/`Referer` against `allowedOrigins` (skip check only if the list is empty — logged as dev-mode usage, not a silent bypass).
+3. **Real rate limiting here — the actual fix for the audit's "no general API rate limiting anywhere" finding, applied first where it matters most**: per-`widgetKey` and per-IP token bucket.
+4. Resolves/creates a `Contact` scoped to `(tenantId, channelType:"widget", address: sessionId)` — the exact same `Contact`/`Conversation` shape every other channel already uses, `sessionId` playing the role a phone number plays elsewhere.
+5. Calls the SAME `handleInbound()` — zero new conversation logic. OTP step-up, permission checks, everything already enforced there applies unchanged to widget visitors.
+
+**3. Frontend — `widget.js`, vanilla JS, no framework dependency** (keep the bundle small and free of anything that could collide with the host site's own JS/CSS):
+- Reads its own `<script data-key="wk_...">` tag (renaming from the earlier illustrative `data-org` — the attribute holds the `WidgetKey.key` value, not the tenant slug, since that's what the route actually looks up).
+- Generates/persists a `sessionId` in `localStorage` so a returning visitor keeps their conversation.
+- Renders a floating bubble + collapsible chat window; optionally pulls `Tenant.branding.primaryColor` (already a real field) for a lightly on-brand look.
+- Renders both `body` text replies and `kind:"image"` replies — reuses the exact image-reply shape already built for WhatsApp product photos, no new reply type needed.
+
+**4. Dashboard UI — new page, e.g. `/dashboard/widget`**: generate a `WidgetKey`, show the exact copy-pasteable `<script>` snippet, an input for allowed domain(s), and a live count of widget-originated conversations (filter the existing Conversations list by `channelType:"widget"` — no new list view needed, just a filter).
+
+**5. Build/test order**: schema migration (additive, same low-risk shape as every prior migration this session) → widget API route + rate limiting → dashboard key-management page → `widget.js` → local end-to-end test (embed in a throwaway static HTML page, verify a full conversation including an OTP-gated read to confirm nothing bypasses existing security, verify a mismatched-origin request is rejected, verify the rate limit actually triggers) → deploy → smoke-test against a real or throwaway page pointed at production, same standard as every other live-verification this session.
+
+---
+
+## Phase 9 (IN PROGRESS, PAUSED 2026-08-20) — WhatsApp Self-Service Onboarding (Embedded Signup)
+
+**Status: genuinely started, NOT done — paused mid-setup to work on the multi-channel vision (Phase 8a-8e) instead, at the user's explicit direction. Recorded here precisely so it isn't lost.**
+
+**Why this matters**: today, connecting a new client's real WhatsApp number requires a P2Less operator to run `scripts/connect-number.ts` with real Meta-issued credentials — not self-service. This was identified as the single highest-leverage remaining onboarding gap (every other step in `/onboard` — tenant creation, roles, owner login — is already automated; this is the one manual step left). Real Meta "Embedded Signup" replaces that operator step with the client completing a Meta-hosted popup flow themselves.
+
+**What's confirmed already in place** (verified directly against `.env` and Meta's dashboard during this session, not assumed):
+- The Meta App already exists and is functional: App ID `2450932552082438`, App Secret already set as `WHATSAPP_APP_SECRET` (used today for webhook signature verification), `WHATSAPP_ACCESS_TOKEN`/`WHATSAPP_VERIFY_TOKEN` also already configured — this is the SAME app that already sends/receives real WhatsApp messages for the existing demo/production numbers.
+- The app is linked to a real, active Meta Business Manager ("Hamzone Technologies" business portfolio) — confirmed via screenshot, with real Apps and WhatsApp accounts already listed under it.
+- The WhatsApp product is already added to the app, with the existing "Integrate with API" (single own-number) path already fully working — this is a DIFFERENT path from what Embedded Signup needs (Embedded Signup is for onboarding OTHER businesses' own numbers, not the app owner's own).
+
+**Exactly where we left off, step by step** (so this can be resumed without re-discovering any of it):
+1. Navigated to `developers.facebook.com/apps/2450932552082438` → **Use cases** → **Connect on WhatsApp** → confirmed the "Integrate with API" vs "Become a Partner" fork exists, and that "Become a Partner" (not "Integrate with API") is the correct path for onboarding *other* businesses' numbers on P2Less's behalf.
+2. Clicked into **Become a Partner → Become Tech Provider**.
+3. Reached the **"Onboard as a Tech Provider"** dialog, presenting two choices: *Independent Tech Provider* (no partner app ID, can work with partners later, App Review required) vs *Working with a Solution Partner* (needs a partner's app ID, App Review required). **Selected "Independent Tech Provider"** — correct choice, since P2Less is building this directly rather than going through an existing Meta Solution Partner.
+4. **This is the exact point work paused.** The next click (continuing past this dialog) was never taken — we don't yet know what that screen shows, whether it leads straight to an Embedded Signup configuration screen with a `config_id`, or requires other steps first (e.g. business verification documents, a description of the use case for review).
+
+**What's still needed to finish this phase**:
+1. Resume from the "Independent Tech Provider" dialog, continue the Tech Provider onboarding flow, and locate the actual **Embedded Signup configuration** screen (create a configuration, choose requested permissions — at minimum `whatsapp_business_management` + `whatsapp_business_messaging` — and obtain the resulting **`config_id`**).
+2. **Confirmed requirement, not yet started**: Meta **App Review** (Advanced Access) for those permissions is required before Embedded Signup can onboard *real client* WABAs — the app's own "Become a Tech Provider" card literally states this ("submit to App Review and request access to... data from other businesses"). Development-mode testing against the app owner's own test WABA works without this; onboarding actual clients does not.
+3. Once App ID + `config_id` are both in hand: build the actual integration — client-side Embedded Signup popup (Meta's JS SDK), server-side authorization-code → access-token exchange, then using the Graph API to fetch the new WABA's phone_number_id and register/subscribe it — replacing the currently-stubbed section of `provisionOrganizationAction` (`src/lib/actions.ts:111-179`, which today only creates a `WhatsAppNumber` row with `verificationStatus:"pending"` and no real Meta handshake, by the code's own honest comment).
+4. Live-verify end-to-end against a real test WABA before considering this done, same standard as every other integration this session (M-Pesa sandbox, Resend email, etc.) — never claim a Meta integration works without an actual completed signup proven live.
+
+**Explicitly not resuming yet** — paused at the user's direction to work on Phase 8 (multi-channel) and widget scoping instead. Resume only when explicitly asked.
+
 ---
 
 ## Existing vs. Planned vs. Recommended vs. Future-Strategic
@@ -258,6 +323,7 @@ User request, 2026-08-20: explored what it would take to embed P2Less on an exis
 | Auto-publish new products to Facebook Page + Instagram (no ongoing human login) | **Scoped, ready to build — Phase 8c, scoped 2026-08-20, not started.** Low platform-ban risk (posting to an owned account, same as Meta Business Suite/Buffer); real risk is content staleness, not policy. Requires building real access-token health monitoring alongside it — flagged explicitly so it isn't skipped |
 | Telegram + Email as additional Mode 1 channels | **Scoped — Phase 8d, scoped 2026-08-20, not started.** Telegram is the easiest channel on the whole roadmap (open Bot API, zero approval gate). Email is lower-priority — universal reach but a messier interaction shape than the chat channels |
 | Website content ingestion (crawl → draft FAQs, human-approved) + embeddable chat widget | **Scoped — Phase 8e, scoped 2026-08-20, not started.** Two separate features that combine: the widget is only a new channel (no knowledge on its own), the crawler is the actual knowledge source. Build crawler first (valuable on every existing channel immediately); widget needs its own public-safe site key + real rate-limiting from day one, since it's the most exposed/anonymous surface P2Less would have |
+| WhatsApp self-service onboarding (real Meta Embedded Signup) | **IN PROGRESS, PAUSED — Phase 9, started 2026-08-20, explicitly NOT done.** App ID + App Secret + Business Manager confirmed already in place; paused mid-way through Meta's "Become a Tech Provider" flow right after selecting "Independent Tech Provider," before reaching the actual Embedded Signup `config_id` screen. Full step-by-step resume point recorded above — do not re-discover from scratch, pick up exactly where noted |
 | Multi-Channel Engine — Mode 2, outbound to known contacts (Facebook/Instagram/TikTok/SMS channels, marketing/notifications/follow-ups, consent/policy engine) | **Future-strategic — Phase 8, vision documented 2026-08-20, not started.** Today P2Less is WhatsApp(+webchat)-only and 100% inbound-triggered — no other channel and no proactive/marketing outbound exists in any form |
 | Public Social Agent — Mode 3, replies to public posts/comments/mentions on Facebook/Instagram/TikTok/X (Grok-on-X style) | **Future-strategic — Phase 8b, vision documented 2026-08-20, not started.** Distinct from Phase 8: public-visibility blast radius, different per-platform APIs/compliance (X requires a paid API tier + automation disclosure; TikTok requires approved-partner access), needs a new social-listening layer and stronger brand-voice guardrails than exist today. Recommended to build assisted (human-approves-before-posting) first, after Phase 8, not before |
 

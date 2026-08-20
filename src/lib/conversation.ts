@@ -1,4 +1,5 @@
 import "server-only";
+import type { Prisma } from "@prisma/client";
 import { db } from "./db";
 import { understand, humanizeReply, smallTalk, complete, aiEnabled, partOfDay, nowStr, classifyCommerceMessage, resolveOrderStepAnswer, type ChatTurn, type CommerceIntent } from "./ai";
 import { executeAction, type ParamSpec } from "./connector-engine";
@@ -38,9 +39,14 @@ import { computeSlaDeadline } from "./ticket-sla";
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type InboundInput = {
-  toNumber: string; // the ORGANIZATION number the user messaged — the routing key
+  toNumber?: string; // the ORGANIZATION number the user messaged — the routing key. Omit when tenantId is given directly.
+  // Universal Platform roadmap Phase 8e (2026-08-20) — direct tenant routing
+  // for channels with no phone number at all (the website widget). Bypasses
+  // the WhatsAppNumber lookup entirely; exactly one of toNumber/tenantId must
+  // be set.
+  tenantId?: string;
   fromNumber: string; // the sender's number — an identity signal, never sufficient alone
-  channelType: string; // whatsapp | webchat | sms (transport only)
+  channelType: string; // whatsapp | webchat | widget | sms (transport only)
   text: string;
   displayName?: string;
   // Super-app: an attached file (document/spreadsheet/image) to run a tool on.
@@ -159,30 +165,54 @@ export function normalizePhone(n: string): string {
 export async function handleInbound(input: InboundInput): Promise<HandleResult> {
   const reqId = newRequestId();
 
-  // ── ROUTING: the destination number → organization number → tenant. ──────
-  // The user messaged the organization's own number; P2Less resolves which
-  // tenant owns that number. This is the heart of the platform.
-  const number = await db.whatsAppNumber.findUnique({
-    where: { phoneNumber: input.toNumber },
-    include: { tenant: { include: { subscription: true } } },
-  });
-  if (!number || number.status !== "active" || number.tenant.status === "suspended") {
-    // Unknown/inactive number: nothing to reply as, and no tenant to bill/audit.
-    return { ok: false, replies: [{ body: "This number is not in service." }] };
+  // ── ROUTING: either the destination number → organization number → tenant
+  // (the original design, WhatsApp/webchat), or directly by tenantId for a
+  // channel with no phone number at all (the website widget, Phase 8e — the
+  // widget route already resolved the tenant via its own WidgetKey lookup
+  // before calling here). Both paths converge on the same tenant/assistant/
+  // fromIdentity/branding/numberId values; everything after this block is
+  // unchanged and genuinely channel-agnostic. ────────────────────────────
+  let number: Prisma.WhatsAppNumberGetPayload<{ include: { tenant: { include: { subscription: true } } } }> | null = null;
+  let tenant: Prisma.TenantGetPayload<{ include: { subscription: true } }>;
+  let assistant: string;
+  let fromIdentity: { number: string; name: string };
+  let branding: { assistantName?: string; welcome?: string; poweredBy?: string };
+  let branchLookup: { branchId: string | null; tenantId: string };
+
+  if (input.tenantId) {
+    const t = await db.tenant.findUnique({ where: { id: input.tenantId }, include: { subscription: true } });
+    if (!t || t.status === "suspended") {
+      return { ok: false, replies: [{ body: "This service is not available." }] };
+    }
+    tenant = t;
+    branding = (tenant.branding as { assistantName?: string; welcome?: string; poweredBy?: string } | null) ?? {};
+    assistant = branding.assistantName ?? tenant.name;
+    fromIdentity = { number: "widget", name: assistant };
+    branchLookup = { branchId: null, tenantId: tenant.id };
+  } else {
+    const num = await db.whatsAppNumber.findUnique({
+      where: { phoneNumber: input.toNumber },
+      include: { tenant: { include: { subscription: true } } },
+    });
+    if (!num || num.status !== "active" || num.tenant.status === "suspended") {
+      // Unknown/inactive number: nothing to reply as, and no tenant to bill/audit.
+      return { ok: false, replies: [{ body: "This number is not in service." }] };
+    }
+    number = num;
+    tenant = num.tenant;
+    // The identity the user sees is the ORGANIZATION (per-number branding wins).
+    const numBranding = (num.branding as { assistantName?: string; welcome?: string } | null) ?? {};
+    const tenantBranding = (tenant.branding as { assistantName?: string; welcome?: string; poweredBy?: string } | null) ?? {};
+    branding = { ...tenantBranding, ...numBranding };
+    assistant = num.displayName; // e.g. "Hamzone Technologies"
+    fromIdentity = { number: num.phoneNumber, name: num.displayName };
+    branchLookup = { branchId: num.branchId, tenantId: tenant.id };
   }
-  const tenant = number.tenant;
   // Every AI call from here on (understand/smallTalk/humanizeReply/etc., deep
   // inside this function) attributes its real token cost to this tenant —
   // see ai-context.ts for why this is enterWith() rather than a param threaded
   // through ~20 call sites.
   setAiTenantContext(tenant.id);
-
-  // The identity the user sees is the ORGANIZATION (per-number branding wins).
-  const numBranding = (number.branding as { assistantName?: string; welcome?: string } | null) ?? {};
-  const tenantBranding = (tenant.branding as { assistantName?: string; welcome?: string; poweredBy?: string } | null) ?? {};
-  const branding = { ...tenantBranding, ...numBranding };
-  const assistant = number.displayName; // e.g. "Hamzone Technologies"
-  const fromIdentity = { number: number.phoneNumber, name: number.displayName };
 
   // Identity: resolve/create the contact (scoped to THIS tenant) by sender number.
   // Normalize to canonical E.164 so a WhatsApp sender ("254739536255") and a
@@ -196,7 +226,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   const driver = await db.driver.findFirst({ where: { tenantId: tenant.id, active: true, phone: senderAddress } });
   if (driver) {
     const body = await handleDriverMessage(driver, input.text);
-    if (input.channelType === "whatsapp" && number.phoneNumberId) {
+    if (input.channelType === "whatsapp" && number?.phoneNumberId) {
       await sendWhatsAppText(number.phoneNumberId, input.fromNumber, body);
     }
     return { ok: true, replies: [{ body }], conversationId: `driver:${driver.id}`, from: fromIdentity };
@@ -216,9 +246,12 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     });
   }
 
-  // A conversation is per (contact, organization number).
+  // A conversation is per (contact, organization number) — for a numberless
+  // channel (the widget), numberId is explicitly null, not omitted, so this
+  // stays scoped to "this contact's widget conversation" specifically rather
+  // than accidentally matching a WhatsApp conversation for the same person.
   let conversation = await db.conversation.findFirst({
-    where: { tenantId: tenant.id, contactId: contact.id, numberId: number.id, status: { not: "closed" } },
+    where: { tenantId: tenant.id, contactId: contact.id, numberId: number?.id ?? null, status: { not: "closed" } },
     orderBy: { updatedAt: "desc" },
   });
   if (!conversation) {
@@ -226,9 +259,9 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     // not conversational state, so it belongs on the row itself rather than
     // in `context` (which many call sites below replace wholesale per emit()
     // rather than merge, so anything stashed there isn't durable).
-    const branch = await resolveNumberBranch(number);
+    const branch = await resolveNumberBranch(branchLookup);
     conversation = await db.conversation.create({
-      data: { tenantId: tenant.id, contactId: contact.id, numberId: number.id, branchId: branch?.id, status: "open", context: {} },
+      data: { tenantId: tenant.id, contactId: contact.id, numberId: number?.id ?? null, branchId: branch?.id, status: "open", context: {} },
     });
   }
 
@@ -239,7 +272,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   void dispatchWebhook(tenant.id, "message.received", { conversationId: conversation.id, from: input.fromNumber, to: input.toNumber, text: input.text }).catch(() => {});
   if (!limit.ok) {
     const reply: Reply = { body: "This service has reached its monthly message limit. Please contact the organization." };
-    await deliver({ tenantId: tenant.id, conversationId: conversation.id, channelType: input.channelType, to: input.fromNumber, body: reply.body, fromNumberId: number.phoneNumberId });
+    await deliver({ tenantId: tenant.id, conversationId: conversation.id, channelType: input.channelType, to: input.fromNumber, body: reply.body, fromNumberId: number?.phoneNumberId });
     return { ok: true, replies: [reply], conversationId: conversation.id, from: fromIdentity };
   }
 
@@ -275,7 +308,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     for (const r of replies) {
       // otp_hint / system notes are demo aids and are not re-metered as separate sends
       if (r.kind === "otp_hint" || r.kind === "system") continue;
-      await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body: r.body, meta: r.meta, fromNumberId: number.phoneNumberId, document: r.document, image: r.image });
+      await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body: r.body, meta: r.meta, fromNumberId: number?.phoneNumberId, document: r.document, image: r.image });
     }
     return { ok: true, replies, conversationId: conversation!.id, from: fromIdentity } satisfies HandleResult;
   };
@@ -285,7 +318,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // followed by typing dots. Does NOT touch conversation status/context; the
   // final emit() at the end of this turn still owns that.
   const announceNow = async (body: string) => {
-    await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body, fromNumberId: number.phoneNumberId });
+    await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body, fromNumberId: number?.phoneNumberId });
   };
 
   // The REAL amount to charge — product total plus a matched delivery fee, if
@@ -491,7 +524,13 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       return emit([{ body: "No problem — I've cancelled that. What would you like to do?" }], "open", { lastResource: ctx.lastResource });
     }
     // "where's the code / resend / didn't get it / send again" → issue a fresh code.
+    // Defensive, not the primary guard: reaching "awaiting_otp" on the widget
+    // channel at all should already be impossible now that both issuance
+    // sites below are blocked — kept consistent in case that ever changes.
     if (!codeMatch && /(resend|new code|another code|where.*(code|is it)|did ?n.?t|have ?n.?t|not receiv|no code|send.*again|try again)/i.test(lower)) {
+      if (input.channelType === "widget") {
+        return emit([{ body: await widgetOtpBlockedMessage(tenant.id, "verify that") }], "open", { lastResource: ctx.lastResource });
+      }
       const reissued = await issueOtp(tenant.id, contact.id);
       if ("error" in reissued) return emit([{ body: reissued.error }], "open", {});
       return emit([{ body: "No worries — here's a fresh code." }, ...buildOtpReplies(input.channelType, reissued.code, contact.displayName ?? undefined)], "awaiting_otp", { ...ctx, otpChallengeId: reissued.challengeId });
@@ -746,6 +785,15 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       const personId = String(res.data.personId ?? text.trim());
       // Second factor: send a one-time code before linking, so a known ID alone
       // isn't enough — the person must also receive the code on this number.
+      // Website widget (Phase 8e, 2026-08-20): blocked by explicit user
+      // decision, live-testing found the widget has no real second channel to
+      // deliver a code to — a code would just be echoed back in the same HTTP
+      // response, proving nothing. Never silently weaken this to a "demo
+      // hint" the way the internal webchat simulator does; decline honestly
+      // instead, until a real secondary delivery channel is built.
+      if (input.channelType === "widget") {
+        return emit([{ body: await widgetOtpBlockedMessage(tenant.id, "link your account") }], "open", {});
+      }
       const issued = await issueOtp(tenant.id, contact.id);
       if ("error" in issued) return emit([{ body: issued.error }], "open", {});
       await audit({ tenantId: tenant.id, requestId: reqId, actorType: "contact", actorId: contact.id, action: "otp.issue", target: "link", success: true });
@@ -1775,6 +1823,12 @@ async function runAction(args: RunArgs): Promise<{ replies: Reply[]; status: str
   }
 
   if (decision.step === "step_up") {
+    // Website widget (Phase 8e, 2026-08-20): same block as self-service
+    // linking above, same reason — no real second channel to verify a code
+    // against, so decline honestly rather than pretend this is secure.
+    if (args.channelType === "widget") {
+      return { replies: [{ body: await widgetOtpBlockedMessage(tenantId, "view that") }], status: "open", ctx: baseCtx };
+    }
     const issued = await issueOtp(tenantId, contact.id);
     if ("error" in issued) return { replies: [{ body: issued.error }], status: "open", ctx: baseCtx };
     await audit({ tenantId, requestId: reqId, actorType: "contact", actorId: contact.id, action: "otp.issue", target: action.key, success: true });
@@ -1931,6 +1985,20 @@ function buildOtpReplies(channelType: string, code: string, registeredName?: str
     return [{ body: prompt }, { kind: "otp_hint", body: `Demo only — your code is ${code}.` }];
   }
   return [{ body: prompt }, { body: `Your verification code is: ${code}\n(expires in 5 minutes)` }];
+}
+
+// Website widget (Phase 8e, 2026-08-20, explicit user decision): OTP step-up
+// is blocked entirely on this channel rather than weakened to a visible
+// "demo hint" — live testing found the widget has no real second channel to
+// deliver a code to (unlike WhatsApp, where receiving the code on that
+// number IS the proof), so a code would just be echoed back to the same
+// browser session that asked for it, verifying nothing. Points the visitor
+// at the org's real WhatsApp number when one exists, so this is a genuine
+// next step, not a dead end.
+async function widgetOtpBlockedMessage(tenantId: string, actionPhrase: string): Promise<string> {
+  const number = await db.whatsAppNumber.findFirst({ where: { tenantId, status: "active" }, orderBy: { createdAt: "asc" } });
+  const via = number?.phoneNumber ? ` on WhatsApp (${number.phoneNumber})` : " on WhatsApp";
+  return `For your security, we can't ${actionPhrase} through this website chat yet — please message us${via} instead, or contact us directly.`;
 }
 
 // ── Self-service onboarding for unknown contacts ────────────────────────────

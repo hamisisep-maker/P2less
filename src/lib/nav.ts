@@ -4,7 +4,7 @@
 // to work in some dev sessions but breaks in others/production ("Functions
 // cannot be passed directly to Client Components"). A string key is always
 // safe; sidebar-nav.tsx (a client file) owns the actual icon lookup table.
-export type NavIconName = "LayoutDashboard" | "Smartphone" | "Plug" | "MessagesSquare" | "ScrollText" | "Users" | "HelpCircle" | "Package" | "LineChart" | "MapPinned" | "Truck" | "Code2" | "CreditCard" | "Building2" | "Wallet" | "BrainCircuit" | "Settings" | "Boxes" | "ShieldCheck" | "Lock" | "GitMerge" | "HeartPulse" | "AlertTriangle" | "LifeBuoy";
+export type NavIconName = "LayoutDashboard" | "Smartphone" | "Plug" | "MessagesSquare" | "ScrollText" | "Users" | "HelpCircle" | "Package" | "LineChart" | "MapPinned" | "Truck" | "Code2" | "CreditCard" | "Building2" | "Wallet" | "BrainCircuit" | "Settings" | "Boxes" | "ShieldCheck" | "Lock" | "GitMerge" | "HeartPulse" | "AlertTriangle" | "LifeBuoy" | "Globe";
 
 export const NAV: { href: string; label: string; icon: NavIconName }[] = [
   { href: "/dashboard", label: "Overview", icon: "LayoutDashboard" },
@@ -19,5 +19,6 @@ export const NAV: { href: string; label: string; icon: NavIconName }[] = [
   { href: "/dashboard/delivery", label: "Delivery Zones", icon: "MapPinned" },
   { href: "/dashboard/drivers", label: "Drivers", icon: "Truck" },
   { href: "/dashboard/developers", label: "Developers", icon: "Code2" },
+  { href: "/dashboard/widget", label: "Website Widget", icon: "Globe" },
   { href: "/dashboard/billing", label: "Billing", icon: "CreditCard" },
 ];

@@ -109,8 +109,9 @@ export async function deliver(msg: OutboundMessage): Promise<{ delivered: boolea
 
   switch (msg.channelType) {
     case "webchat":
-      // Returned to the browser by the API route; nothing to push.
-      return { delivered: true, transport: "webchat" };
+    case "widget":
+      // Returned to the caller by the API route; nothing to push server-side.
+      return { delivered: true, transport: msg.channelType };
 
     case "whatsapp": {
       // Real functional gate: an admin disabling WhatsApp at /admin/integrations
