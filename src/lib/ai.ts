@@ -365,8 +365,10 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
         }),
       });
       if (!res || !res.ok) {
-        recordAiStat(p, false, res?.status);
-        if (track) recordAiCallEvent(track, p, model, opts.feature ?? "unknown", false, { statusCode: res?.status, latencyMs: Date.now() - attemptStartedAt });
+        const body = res ? (await res.text()).slice(0, 300) : "no response";
+        console.error(`[ai:${p}] status=${res?.status} body=${body}`);
+        recordAiStat(p, false, res?.status, body);
+        if (track) recordAiCallEvent(track, p, model, opts.feature ?? "unknown", false, { statusCode: res?.status, errorSnippet: body, latencyMs: Date.now() - attemptStartedAt });
         return null;
       }
       recordAiStat(p, true, res.status);
@@ -391,8 +393,10 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
         }),
       });
       if (!res || !res.ok) {
-        recordAiStat(p, false, res?.status);
-        if (track) recordAiCallEvent(track, p, process.env.ANTHROPIC_MODEL || "claude-sonnet-5", opts.feature ?? "unknown", false, { statusCode: res?.status, latencyMs: Date.now() - attemptStartedAt });
+        const body = res ? (await res.text()).slice(0, 300) : "no response";
+        console.error(`[ai:${p}] status=${res?.status} body=${body}`);
+        recordAiStat(p, false, res?.status, body);
+        if (track) recordAiCallEvent(track, p, process.env.ANTHROPIC_MODEL || "claude-sonnet-5", opts.feature ?? "unknown", false, { statusCode: res?.status, errorSnippet: body, latencyMs: Date.now() - attemptStartedAt });
         return null;
       }
       recordAiStat(p, true, res.status, undefined, extractRateLimit(res));
