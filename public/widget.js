@@ -43,6 +43,11 @@
     ".p2l-input{flex:1;border:1px solid #e6e6f0;border-radius:20px;padding:8px 14px;font-size:13px;outline:none;}",
     ".p2l-send{background:#0d9488;color:#fff;border:none;border-radius:50%;width:34px;height:34px;cursor:pointer;font-size:14px;flex-shrink:0;}",
     ".p2l-send:disabled{opacity:.5;cursor:default;}",
+    ".p2l-typing{align-self:flex-start;background:#fff;border:1px solid #e6e6f0;border-radius:12px;border-bottom-left-radius:4px;padding:10px 14px;display:flex;gap:4px;}",
+    ".p2l-typing span{width:6px;height:6px;border-radius:50%;background:#9395a8;animation:p2l-bounce 1.2s infinite ease-in-out;}",
+    ".p2l-typing span:nth-child(2){animation-delay:.15s;}",
+    ".p2l-typing span:nth-child(3){animation-delay:.3s;}",
+    "@keyframes p2l-bounce{0%,60%,100%{transform:translateY(0);opacity:.5;}30%{transform:translateY(-4px);opacity:1;}}",
   ].join("\n");
   document.head.appendChild(style);
 
@@ -88,6 +93,21 @@
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
+  var typingEl = null;
+  function showTyping() {
+    if (typingEl) return;
+    typingEl = document.createElement("div");
+    typingEl.className = "p2l-typing";
+    typingEl.innerHTML = "<span></span><span></span><span></span>";
+    messagesEl.appendChild(typingEl);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+  function hideTyping() {
+    if (!typingEl) return;
+    typingEl.remove();
+    typingEl = null;
+  }
+
   var open = false;
   function toggle() {
     open = !open;
@@ -105,6 +125,7 @@
     inputEl.value = "";
     sending = true;
     sendBtn.disabled = true;
+    showTyping();
 
     fetch(apiUrl, {
       method: "POST",
@@ -113,6 +134,7 @@
     })
       .then(function (r) { return r.json(); })
       .then(function (data) {
+        hideTyping();
         if (!data.ok) {
           addMessage("Sorry, something went wrong. Please try again.", "in");
           return;
@@ -123,6 +145,7 @@
         });
       })
       .catch(function () {
+        hideTyping();
         addMessage("Sorry, we couldn't reach the server. Please check your connection and try again.", "in");
       })
       .finally(function () {

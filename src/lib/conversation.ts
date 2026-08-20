@@ -1304,7 +1304,19 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   }
 
   // ── Unknown contact → warm welcome + self-service linking, never a cold "no" ─
-  if (contact.contactRoles.length === 0) {
+  // Gated on history.length === 0 (genuinely the FIRST message ever in this
+  // conversation — `history` already excludes the current inbound message),
+  // not just "still unlinked" — an unlinked contact stays unlinked forever,
+  // so without this gate this block would fire on EVERY message from them,
+  // repeating the full welcome+decline boilerplate instead of ever reaching
+  // real answer-handling below. Real bug found live-testing the widget
+  // (2026-08-21): the widget deliberately sets status "open" here (not
+  // "awaiting_identify", since that flow can never succeed on this channel —
+  // see below), so nothing else was catching turn 2+ before this fix. Also
+  // improves a related pre-existing WhatsApp edge case: someone who CANCELs
+  // out of the identify flow and then asks something else previously hit
+  // this same block again instead of just being answered.
+  if (contact.contactRoles.length === 0 && history.length === 0) {
     const ob = onboardingFor(tenant.industry);
     const identify = await db.connectorAction.findFirst({ where: { key: "IDENTIFY", connector: { tenantId: tenant.id, status: "active" } } });
     const actionsNow0 = await loadActions(tenant.id);
@@ -1321,6 +1333,21 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       ? await smallTalk(assistant, text, [...actionsNow0.map((a) => a.name), ...toolCapabilityLines()], history, knownFacts, orgFaqs)
       : null;
     const intro = st0 ? `${st0}\n\n${hello}` : hello;
+    // Website widget (Phase 8e, 2026-08-21 — real bug, not just copy): the
+    // "reply with your admission number" invitation is a dead end on this
+    // channel, not just currently blocked. The identify check requires the
+    // caller's identity to be a REAL registered phone number (verified
+    // against the org's own backend, e.g. demo-school/identify's
+    // parentPhones match) — a widget session id never is one, so self-
+    // service linking cannot succeed here no matter what's typed. Also,
+    // "this number" is a confusing phrase on a channel with no visible
+    // number at all. Never invite it, never set awaiting_identify — point to
+    // WhatsApp honestly instead, same pattern as the OTP block one step
+    // later in this same flow.
+    if (input.channelType === "widget") {
+      const note = await widgetOtpBlockedMessage(tenant.id, "connect your account for personalized help");
+      return emit([{ body: `${intro}\n\nI can help ${ob?.audience ?? "you"} with things like:\n${caps}\n\n${note}` }], "open", {});
+    }
     if (ob && identify) {
       return emit([{ body: `${intro}\n\nI can help ${ob.audience} with things like:\n${caps}\n\nI don't recognize this number yet. To connect you securely, reply with your ${ob.idLabel} — the one ${ob.office} has on file for you.` }], "awaiting_identify", {});
     }
