@@ -774,6 +774,19 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     if (ob0 && (isGreeting(text) || /^help\b/.test(lower))) {
       return emit([{ body: `👋 To connect you, just reply with your ${ob0.idLabel} — the one ${ob0.office} has on file for you. Or reply CANCEL.` }], "awaiting_identify", {});
     }
+    // A genuine question ("what are your fees", "do you have space in Grade
+    // 4") is NOT an ID attempt — don't force-fit it into executeAction()
+    // below and repeat "couldn't match that ID" at someone asking something
+    // real. Same "don't misread a real question as slot-filling input"
+    // discipline already used by the order flow's looksLikeAQuestion()
+    // checks. Answer it for real, stay in awaiting_identify so they can
+    // still connect their account whenever they're ready.
+    if (ob0 && looksLikeAQuestion(text)) {
+      const actionsNow = await loadActions(tenant.id);
+      const st = aiEnabled() ? await smallTalk(assistant, text, [...actionsNow.map((a) => a.name), ...toolCapabilityLines()], history, knownFacts, orgFaqs) : null;
+      const remind = `\n\nWhenever you're ready, reply with your ${ob0.idLabel} to connect your account for personalized help.`;
+      return emit([{ body: (st ?? "Happy to help — what would you like to know?") + remind }], "awaiting_identify", {});
+    }
     const ob = onboardingFor(tenant.industry);
     const identify = await db.connectorAction.findFirst({ where: { key: "IDENTIFY", connector: { tenantId: tenant.id, status: "active" } } });
     if (!ob || !identify) {
@@ -1267,12 +1280,24 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   if (contact.contactRoles.length === 0) {
     const ob = onboardingFor(tenant.industry);
     const identify = await db.connectorAction.findFirst({ where: { key: "IDENTIFY", connector: { tenantId: tenant.id, status: "active" } } });
-    const caps = numberedMenu(await loadActions(tenant.id)).text;
+    const actionsNow0 = await loadActions(tenant.id);
+    const caps = numberedMenu(actionsNow0).text;
     const hello = branding.welcome ?? `👋 Hello! You've reached ${assistant}.`;
+    // "Never recognize you" must never be the WHOLE reply to someone's actual
+    // first question — a prospective parent/visitor's very first message is
+    // often already a real question ("what are your fees"), not a greeting.
+    // Answer it for real (grounded in the org's FAQs, same as everyone else
+    // gets) before/alongside the welcome, instead of only ever showing the
+    // generic intro. Skipped for a pure greeting — no point calling the AI to
+    // "answer" a plain "hi".
+    const st0 = (!isGreeting(text) && aiEnabled())
+      ? await smallTalk(assistant, text, [...actionsNow0.map((a) => a.name), ...toolCapabilityLines()], history, knownFacts, orgFaqs)
+      : null;
+    const intro = st0 ? `${st0}\n\n${hello}` : hello;
     if (ob && identify) {
-      return emit([{ body: `${hello}\n\nI can help ${ob.audience} with things like:\n${caps}\n\nI don't recognize this number yet. To connect you securely, reply with your ${ob.idLabel} — the one ${ob.office} has on file for you.` }], "awaiting_identify", {});
+      return emit([{ body: `${intro}\n\nI can help ${ob.audience} with things like:\n${caps}\n\nI don't recognize this number yet. To connect you securely, reply with your ${ob.idLabel} — the one ${ob.office} has on file for you.` }], "awaiting_identify", {});
     }
-    return emit([{ body: `${hello}\n\nI can help ${ob?.audience ?? "registered users"} with things like:\n${caps}\n\nI don't recognize this number yet — please contact ${ob?.office ?? "the organization"} to get set up.` }], "open", {});
+    return emit([{ body: `${intro}\n\nI can help ${ob?.audience ?? "registered users"} with things like:\n${caps}\n\nI don't recognize this number yet — please contact ${ob?.office ?? "the organization"} to get set up.` }], "open", {});
   }
 
   // ── Greetings / help / escalation ───────────────────────────────────────
