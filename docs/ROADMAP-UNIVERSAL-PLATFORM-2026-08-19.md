@@ -80,6 +80,168 @@ Confirmed scope with the user first: the vision doc's open-developer-publishing 
 
 ---
 
+## Phase 8 (Future-strategic, deliberately unscoped) — Multi-Channel Engine
+
+User-provided vision, 2026-08-20, documented here verbatim as the architecture sketch, not yet scoped into phases or started:
+
+```
+CHANNEL
+
+                         P2Less
+                           │
+              ┌────────────┴────────────┐
+              │                         │
+           INBOUND                   OUTBOUND
+              │                         │
+       Who contacted us?          Who do we reach?
+              │                         │
+              ▼                         ▼
+      Customer / Student          Target Audience
+              │                         │
+              └────────────┬────────────┘
+                           │
+                    CHANNEL LAYER
+                           │
+       ┌──────────┬────────┼────────┬──────────┐
+       ▼          ▼        ▼        ▼          ▼
+   WhatsApp   Facebook  Instagram  TikTok     SMS
+       │          │        │        │          │
+       └──────────┴────────┼────────┴──────────┘
+                           │
+                  CHANNEL-SPECIFIC RULES
+                           │
+                           ▼
+                Permissions / Policies
+                Templates / Consent
+                Rate Limits / Restrictions
+                           │
+                           ▼
+                     P2Less Engine
+   │
+   ├── Inbound
+   │     ├── Receive messages
+   │     ├── Receive media
+   │     └── Create/update conversation
+   │
+   └── Outbound
+         ├── Transactional
+         ├── Marketing
+         ├── Notifications
+         └── Follow-ups
+                │
+                ▼
+        POLICY / PERMISSION ENGINE
+                │
+        ┌───────┴────────┐
+        │                │
+      Allowed          Not Allowed
+        │                │
+        ▼                ▼
+      SEND             BLOCK
+```
+
+**What this reuses vs. what's genuinely new**, read against what's actually built today (not assumed):
+
+- **Inbound / receive messages, media, create-or-update conversation** — this is `handleInbound()` in `conversation.ts`, already real and already channel-agnostic in its internal design (WhatsApp and the web-chat demo already share one pipeline). Adding a new inbound channel means a new thin webhook adapter that resolves to a tenant and calls the same pipeline — the same shape the WhatsApp webhook already is. Real work, but a known, proven pattern, not a new architecture.
+- **Channel layer beyond WhatsApp** — Facebook, Instagram, TikTok, SMS integrations: **none exist today**. SMS specifically is confirmed mocked (a literal `console.log`, per the system discovery audit), not partially built. Each of these is its own real integration project (different APIs, different auth, different message-format constraints), not a config toggle.
+- **Outbound / Transactional** — the closest existing analog is real: every reply the assistant sends back in response to something the user asked (confirmations, answers, documents) already goes out today via `transport.ts`. That's "transactional" in spirit already, just not labeled as a distinct category.
+- **Outbound / Notifications** — partially real: Priority 6 built a genuine notification engine (email, to *platform staff and tenant admins* for incidents/tickets/billing events). That is NOT the same thing as this diagram's "notifications" arrow, which reads as reaching **end customers/students** proactively (e.g. "your appointment is tomorrow") — that specific capability, an admin-triggered or system-triggered proactive outbound message to an end user on WhatsApp/SMS/etc. outside of them messaging first, **does not exist today**. P2Less is 100% inbound-triggered on the customer side right now — nothing reaches a customer unless they messaged first (or, for orders/tickets, unless they're already mid-flow).
+- **Outbound / Marketing** and **Outbound / Follow-ups** — **do not exist in any form today.** No broadcast/campaign tool, no scheduled drip sequence, no audience/segment concept for end users at all (the `Contact` model has no "marketing consent" or "campaign membership" field). This is genuinely new product surface, not an extension of something partially built.
+- **Channel-specific rules (permissions/policies/templates/consent/rate limits)** and the **Policy/Permission engine (Allowed → Send / Not Allowed → Block)** — conceptually this generalizes a pattern P2Less already has in a narrower form: `evaluateCapabilityGate()` already gates whether an *action* is allowed for a given actor. This diagram asks for the same shape of gate, but for a different dimension entirely — whether a specific *outbound message, to this specific person, on this specific channel, of this specific type (marketing vs transactional), right now* is allowed. That's a real, non-trivial new engine, not a reuse of the existing one, even though the *shape* (a pure decision function gating an action) is the same proven pattern used everywhere else in this codebase.
+
+**A real external constraint worth being honest about now, not discovering it mid-build**: WhatsApp's own Cloud API already enforces this exact distinction at the platform level — free-form replies are only allowed within a 24-hour window after the customer's last message; anything outside that window (including any marketing-style message) requires a pre-approved message *template* and, for genuine marketing sends, explicit opt-in tracking. So the "Policy/Permission engine" in this diagram isn't just an internal nice-to-have — for WhatsApp specifically, a real implementation is *required* to stay compliant with Meta's own platform rules, not just a P2Less design choice. The same kind of constraint (opt-in, quiet hours, carrier filtering) exists for SMS too, differently per channel — this is exactly why "channel-specific rules" is drawn as its own layer in the diagram, and it's correct to keep it that way.
+
+**Sequencing note**: this depends on nothing else in this roadmap (additive, like Phase 7), but it's meaningfully larger than Phase 7's scope — Phase 7 added one new capability *within* the existing single-channel, inbound-only model; this adds a second axis (outbound) and multiple new channels at once. Recommend treating "outbound engine + policy gate" and "each new channel integration" as separate, independently-scoped pieces of work when this is picked up, not one monolithic build — and starting with outbound *notifications to existing customers* (the smallest, least platform-risk piece, and the most directly requested by real prospects like the college example) before marketing/broadcast, which carries the most compliance risk and the least proven demand so far.
+
+### Phase 8b (Future-strategic, deliberately unscoped) — Public Social Agent ("Grok-on-X" mode)
+
+User request, 2026-08-20: distinguish this from Phase 8's outbound-to-known-contacts model — some clients will want P2Less to **initiate conversations** (Phase 8 covers that) and separately, some will want it to **monitor and reply to public posts/comments/mentions** on Facebook, Instagram, TikTok, and X/Twitter, the way Grok engages publicly on X. This is a **third, distinct product mode**, not a channel added to Phase 8 — the blast radius, APIs, and compliance model are all different enough that conflating it with Phase 8 would blur real risk differences:
+
+| | Mode 1 — Access & Automation (built) | Mode 2 — Outbound CRM (Phase 8) | Mode 3 — Public Social Agent (this section) |
+|---|---|---|---|
+| Who starts it | The customer | The organization, to a known contact | Nobody — it's monitoring public posts/comments/mentions |
+| Visibility of a mistake | One person | One person | **Everyone** — public, screenshotable |
+| Primary buyer | Ops/admin | Ops/admin or marketing | Marketing/brand/comms |
+
+**Per-channel API and compliance reality, as of what's publicly documented today (not legal advice — verify against each platform's current terms before any client goes live):**
+
+- **Meta (Facebook/Instagram) comments & mentions** — real, documented Graph API access, comparable build difficulty to what's already shipped for WhatsApp/Messenger. Meta's Platform Terms require disclosing automated responses where relevant, and standard spam/abuse enforcement applies.
+- **TikTok** — comment/reply API access is restricted to approved business partners, not open by default; expect a longer access-approval lead time than Meta. TikTok's Community Guidelines prohibit spammy/bot-like automated engagement without clear disclosure that it's automated.
+- **X/Twitter** — X's **Automation Rules** require automated accounts/replies to be clearly labeled as such and require Developer Agreement compliance. Meaningful reply volume requires a **paid API tier** (the free tier is too limited for real use) — unlike Grok, which has privileged first-party platform access a third party does not get by default. X actively enforces against inauthentic/spam-like coordinated engagement.
+- **The one rule constant across all three**: **disclose automation.** Every platform either requires this explicitly or enforces against undisclosed bots as a trust/authenticity violation — this isn't a P2Less design preference, it's a policy requirement everywhere this mode would run.
+
+**What this needs that doesn't exist today**: a social-listening/ingestion layer (poll or subscribe to mentions/comments/DMs per platform), a much stronger brand-voice/tone-safety guardrail than today's grounded-but-narrow assistant prompts (a wrong PUBLIC reply is a brand incident, not a support ticket), and — strongly recommended for at least the initial rollout — a human-approval step before a reply posts publicly, reusing the same risk-tiered confirm/approval pattern already established elsewhere in this codebase (`evaluateCapabilityGate`'s `approvalRequired` concept), just applied to "post publicly" as a high-risk action rather than a data-mutating one.
+
+**Recommended sequencing relative to Phase 8**: build after Phase 8's outbound-notifications slice (lowest risk, most-requested), and specifically start with **assisted mode** (AI drafts, a human approves and posts) rather than fully autonomous public posting — both because it's the safer engineering default and because it's the only version of this that's honestly sellable before there's a real track record to point to.
+
+### Phase 8a (scoped, ready to build) — Mode 1 channel expansion: Facebook Messenger + Instagram DMs
+
+User request, 2026-08-20: extend the EXISTING access-and-automation model (Mode 1 — the customer messages first, gets a real grounded answer from their own systems) to Facebook Messenger and Instagram, rather than building a new mode. **This is genuinely the lowest-risk, fastest-to-ship item on this whole roadmap** — it reuses the existing channel-agnostic `handleInbound()` pipeline unchanged, and because it's reactive (the customer initiates), it does NOT hit the marketing-template/opt-in restrictions that apply to Phase 8's outbound mode. Numbered "8a" for filing purposes only — it does not need to wait for Phase 8 or 8b and can be built first.
+
+**What it reuses, unchanged**: the entire conversation engine, connector engine, OTP/permission gates, grounded-AI/never-invents-facts behavior, and the existing product-photo-in-chat feature (`Product.imageUrl` + `storeProductImage()`) — a photo sent in reply to "what does this look like?" on Messenger uses the exact same data and mechanism already proven on WhatsApp. No new capability there, just a new delivery channel.
+
+**What's genuinely new — the scoping**:
+1. **New webhook adapter** (`src/app/api/channels/messenger/webhook/route.ts`, mirroring the existing WhatsApp webhook's shape): verifies Meta's webhook signature, resolves the inbound Page ID to a tenant (same "number → tenant" pattern as WhatsApp, just "Page ID → tenant" instead), then calls the same `handleInbound()`.
+2. **New registry model or field**, mirroring `WhatsAppNumber`: a `FacebookPage`/`SocialChannel` row per tenant storing the Page ID, a per-page access token (encrypted at rest, same `encryptJSON` pattern already used for connector credentials and WhatsApp tokens), and connection status.
+3. **New outbound delivery function** in `transport.ts` alongside the existing `sendWhatsAppText()`/WhatsApp image sender: Messenger's Send API for text and image attachments — different request shape than WhatsApp's Graph API call, same underlying Meta infrastructure and same App/credentials already in place.
+4. **Page connection flow**: an org connects their own Facebook Page (OAuth-style page-linking through the same Meta App, granting `pages_messaging` permission) — this is a smaller, better-documented version of the Embedded Signup work already scoped for WhatsApp, not a new pattern to invent.
+5. **Instagram is the same build, not a second build**: Instagram DMs run through the same Meta Graph API family (Instagram Messaging API) once a Page's connected Instagram Business account is linked — steps 1-4 above extend to Instagram with the same webhook adapter (routing on Instagram-scoped IDs) and the same Send API family, not a separate integration project.
+
+**Explicitly NOT in scope for this phase**: the bot only ever *replies* in a conversation here — it does not publish new posts to a Page's public feed/timeline. That's a different capability, scoped separately as Phase 8c below.
+
+**TikTok — explicitly deferred, not part of this phase**: unlike Messenger/Instagram, TikTok's private-messaging API for businesses is newer, more restricted, and largely tied to TikTok's ad products rather than an open "reply to any DM" API — it needs its own scoping and a longer platform-access lead time, closer in difficulty to Phase 8b's restricted-access problem than to this phase's Meta-family reuse. Revisit separately when there's real client demand specifically for TikTok.
+
+### Phase 8c (scoped, ready to build) — Auto-publish new products to Facebook Page + Instagram
+
+User request, 2026-08-20, follow-up to Phase 8a: distinguish *replying* (Phase 8a) from *originating new public content* — specifically, when a product is uploaded via the existing Products dashboard, automatically publish it (photo + name) to the org's own connected Facebook Page and Instagram Business account, with **zero ongoing human login required** after one initial setup step. Confirmed this is genuinely low platform-ban risk, distinct from the earlier Phase 8b public-reply risk discussion — publishing to an account you already own/administer is exactly what the Pages/Instagram Content Publishing APIs are for (the same thing Meta Business Suite, Buffer, and Hootsuite already do for thousands of businesses), not "reaching out" to anyone. The real remaining risk is **content accuracy/staleness**, not policy — a published post is a snapshot; if a product's price or stock changes afterward, the post silently goes stale while still public.
+
+**The automation model, confirmed end-to-end**:
+- **One-time human step, per tenant, ever**: the org owner authorizes P2Less once (OAuth-style Page/Instagram Business account linking, granting `pages_manage_posts` + Instagram content-publish permission) — the same one-time connection flow already scoped for Phase 8a's Messenger/Instagram DMs, not a separate flow to build.
+- **Every post after that is fully automatic**: no app login, no button click, no human step. Mechanism: Instagram's two-step Content Publishing API (create a media container with an image URL + caption, then publish it) and Facebook's Pages feed-publish API — both reuse P2Less's *existing* public image-hosting (`/d/[token]`, the same mechanism already serving WhatsApp product photos), so no new image infrastructure is needed.
+- **Known platform limit, not a practical concern**: Instagram caps API-published posts at roughly 25–50 per account per 24 hours — irrelevant for "post when a product is added" cadence, only relevant at high-volume automated-posting scale far beyond a product catalog.
+
+**What must be built, honestly, alongside the happy path — not an afterthought**: **access-token health monitoring**. A Page/Instagram access token can be silently revoked (org changes their Facebook password, removes the app's access, etc.) — without active monitoring, posting would just quietly stop working with nobody noticing, which directly defeats the "no human ever needs to log back in and check" goal this feature exists for. This is the same class of gap the system discovery audit already flagged for WhatsApp numbers (`checkWhatsAppHealth()` only checks recent message activity, never a live token-validity probe) — build real monitoring for this channel from day one rather than repeating that gap. Concretely: a periodic health-check job (same shape as the existing `integration_health_sweep`/`db_health_sweep` background jobs) that probes token validity and opens a real incident/notification (reusing the Priority 6 notification engine) the moment a token goes bad, not after a client notices their products silently stopped appearing.
+
+**Also requires**: the same Meta App Review (Advanced Access) for `pages_manage_posts`/Instagram publish permissions as Phase 8a, before this works for tenants other than the app's own test Page — not a new review, the same one.
+
+**Explicitly NOT in scope**: editing/deleting a post automatically when stock hits zero, or any other post-lifecycle management beyond initial publish — a real, named follow-up idea, not built or fully scoped yet. Flag it when this phase is picked up, decide then whether it's in the first version or a fast-follow.
+
+### Phase 8d (scoped) — Telegram + Email as additional Mode 1 channels
+
+User request, 2026-08-20: add these as future channels alongside Facebook/Instagram, since they were previously only briefly noted as candidates.
+
+- **Telegram** — genuinely the easiest channel to add after Messenger/Instagram: Telegram's Bot API is open, well-documented, requires no App Review or business-verification gate at all (a bot token is issued instantly via Telegram's own `@BotFather`). Same shape of work as Phase 8a: a new webhook adapter (Telegram's bot webhook → resolve which bot/tenant → `handleInbound()`), a new registry model or field for the bot token (encrypted at rest, same pattern as everywhere else), and a new send-message function in `transport.ts` for Telegram's Bot API. No token-health-monitoring gap here in the same way as Meta — Telegram bot tokens don't expire or get silently revoked by user action the way OAuth-based Page tokens can, only if the org explicitly revokes the bot via BotFather.
+- **Email** — universal reach, zero platform-ban risk, but a different interaction shape than the chat channels (no "typing," slower expected reply time, and inbound parsing is messier — need to strip quoted reply chains/signatures before feeding text into `handleInbound()`, which none of the current channels need to do). Needs an inbound email-receiving mechanism (a provider webhook, e.g. the same Resend integration already wired for outbound notifications may also support inbound parsing, or a dedicated inbound-email provider) plus an outbound send path (Resend, already integrated for Priority 6's notification engine — reusable here, not a new provider integration). Best suited as a fallback/lowest-priority channel — real value for organizations whose customers genuinely prefer email, but not the primary channel to build next given WhatsApp/Messenger/Instagram/Telegram all offer richer, faster interaction shapes already proven in this codebase.
+
+**Recommended build order across 8a/8c/8d**: Messenger+Instagram DMs (8a) and Facebook+Instagram auto-publish (8c) share the same one-time Page-connection flow — genuinely efficient to scope and build together in one pass rather than sequentially. Telegram (8d) is a clean, independent add-on afterward with no shared dependency. Email (8d) last, given its lower interaction fit relative to everything else on this list.
+
+### Phase 8e (scoped) — Website content ingestion + embeddable chat widget
+
+User request, 2026-08-20: explored what it would take to embed P2Less on an existing website ("drop a script tag") and have it already know the site's content, without a human re-typing everything into the FAQ editor. Landed on an important distinction, kept as two separate features that combine rather than one feature: the **widget** is only a new *channel* (a place people can chat); it does not, by itself, teach P2Less anything — it reads the exact same `Tenant.faqs`/connectors/products every other channel already reads from. Getting P2Less to actually *learn* from a website's own content is the separate **crawler/ingestion** feature. Neither is built today.
+
+**1. Website content ingestion (build first)** — a backend/dashboard feature, independent of the widget, valuable immediately on every existing channel (WhatsApp included), not gated on the widget shipping:
+- Input: a URL. Fetch same-domain pages only, respect `robots.txt`, capped crawl depth — same SSRF-conscious discipline already established for the OpenAPI-import feature, which deliberately never lets the server fetch an arbitrary admin-supplied URL unboundedly.
+- Strip navigation/ads/boilerplate down to real page content, then have the AI extract candidate Q&A pairs into the exact same shape as the existing `Tenant.faqs`.
+- **Never auto-publish** — present the extracted Q&A list as an editable draft for a human to review, edit, and approve before anything goes live, reusing the same reviewable-draft pattern already proven for OpenAPI import and the connector marketplace (Phases 6/7). An automated parser reading untrusted external content can get things wrong; a wrong "official" organization answer going out live is a real trust problem, not just a bug — the review step is non-negotiable, not a nice-to-have.
+- Keep re-scanning manual/on-demand ("re-scan our website" button) rather than a silent background re-crawl job, at least for the first version — avoids live FAQs changing without a human ever looking again.
+
+**2. Embeddable chat widget (build second)** — by the time this ships, orgs already have real, human-approved FAQs (crawled-then-approved, or manually typed) sitting in the same place every other channel reads from, so the widget needs no separate content-integration work — it inherits existing knowledge automatically. This is what makes "drop in a script and it already knows the site" true in practice: run the crawler once during onboarding, approve the draft, then hand over the embed script.
+- A single `<script src="https://p2less.io/widget.js" data-org="...">` tag, injecting a chat bubble UI, talking to the same underlying engine as `/api/channels/webchat`.
+- **`data-org` must be a separate public-safe "site key," not the private developer API key** — least-privilege: a widget embed can be seen by anyone viewing page source, so it must only be able to identify which tenant to route to, never usable to pull data via the general developer API.
+- **Real rate-limiting on the public widget endpoint, built in from day one, not deferred**: unlike WhatsApp (phone-verified) or the developer API (key-authenticated), a public website widget is the most anonymous, most exposed surface P2Less would have. This is also the highest-priority place to finally close the "no general API rate limiting anywhere" gap already named in the system discovery audit — build it here first, don't defer it again.
+- **Requires an existing P2Less tenant — not a way to create one.** `data-org` must point at an organization already provisioned on P2Less, same as WhatsApp needs a tenant to exist before a number connects to it. The widget is a delivery mechanism, not a signup flow.
+- **Installing the widget does NOT itself trigger a crawl.** By design (see the crawler's own "never auto-publish" rule above), pasting the script is a separate action from scanning the site — no silent/automatic content ingestion just from embedding. **Nice discovery refinement, not a shortcut on safety**: since the script runs on the org's own page, it already knows its own domain — on first load it could notify the dashboard "we're now live on `<detected domain>` — want to scan this site?", saving the admin from retyping the URL, while the actual review-and-approve step stays mandatory exactly as scoped above.
+
+**No-code installation paths, so "doesn't want to touch code" isn't a blocker** (in priority order):
+1. Most website platforms already have a built-in, admin-panel "paste code here" field that isn't editing source files — WordPress ("Custom HTML" widget or the free "Insert Headers and Footers" plugin), Squarespace (Settings → Advanced → Code Injection), Wix (Settings → Custom Code), Shopify/Webflow (theme code-injection settings). For an org with basic admin access to their own site, this already counts as no-code.
+2. If the site already runs Google Tag Manager (common for businesses doing any analytics/ads), the script can be added as a GTM tag through GTM's own UI — no site-editing at all. Worth checking for during onboarding.
+3. **The genuine fallback, matching the existing WhatsApp-connection pattern**: if neither applies (an old static site, no CMS, no admin access), someone on P2Less's side does the one-time paste for the client during onboarding — not a new operational pattern, the same white-glove model already used for connecting a WhatsApp number today.
+4. **Real product-level answer if this becomes a common ask**: purpose-built marketplace plugins (a WordPress plugin, a Shopify app) installable by a non-technical person with one click from their own platform's app store — genuinely zero-paste, not just zero-code. Real additional scope beyond the base widget script; worth its own line item only once there's real demand for it.
+
+**Recommended sequencing**: crawler/ingestion before the widget (ships value sooner, on existing channels, and removes the widget's biggest open question — "where does its knowledge come from" — before the widget itself is even started).
+
+---
+
 ## Existing vs. Planned vs. Recommended vs. Future-Strategic
 
 | | Status |
@@ -92,6 +254,12 @@ Confirmed scope with the user first: the vision doc's open-developer-publishing 
 | Workflow-engine primitive (`evaluateWorkflowAsk`) + sub-roadmap | **Phase 5** — primitive shipped; `awaiting_resource_pick`, `awaiting_param`, `awaiting_confirm`, and all 6 `awaiting_order_*` states (9 total, all 2026-08-20) now use it. The order-flow slice was a genuine feature addition (reroute/pushback/abandon didn't exist there before), not a pure refactor. 4 bespoke-candidate flows (`awaiting_otp`/`awaiting_identify`/`awaiting_cv_details`/`awaiting_delivery_feedback`) deliberately still NOT migrated — may stay permanently bespoke |
 | OpenAPI-driven connector drafting | **Shipped — Phase 6** |
 | Marketplace, social media, OCR pipeline, research tooling | **Future-strategic** — do not start before a real need exists |
+| Mode 1 channel expansion — Facebook Messenger + Instagram DMs (reactive, same engine as WhatsApp) | **Scoped, ready to build — Phase 8a, scoped 2026-08-20, not started.** Lowest-risk item on this roadmap: reuses `handleInbound()` unchanged, no marketing-template/consent restrictions since it's reactive. TikTok explicitly deferred (harder API access) |
+| Auto-publish new products to Facebook Page + Instagram (no ongoing human login) | **Scoped, ready to build — Phase 8c, scoped 2026-08-20, not started.** Low platform-ban risk (posting to an owned account, same as Meta Business Suite/Buffer); real risk is content staleness, not policy. Requires building real access-token health monitoring alongside it — flagged explicitly so it isn't skipped |
+| Telegram + Email as additional Mode 1 channels | **Scoped — Phase 8d, scoped 2026-08-20, not started.** Telegram is the easiest channel on the whole roadmap (open Bot API, zero approval gate). Email is lower-priority — universal reach but a messier interaction shape than the chat channels |
+| Website content ingestion (crawl → draft FAQs, human-approved) + embeddable chat widget | **Scoped — Phase 8e, scoped 2026-08-20, not started.** Two separate features that combine: the widget is only a new channel (no knowledge on its own), the crawler is the actual knowledge source. Build crawler first (valuable on every existing channel immediately); widget needs its own public-safe site key + real rate-limiting from day one, since it's the most exposed/anonymous surface P2Less would have |
+| Multi-Channel Engine — Mode 2, outbound to known contacts (Facebook/Instagram/TikTok/SMS channels, marketing/notifications/follow-ups, consent/policy engine) | **Future-strategic — Phase 8, vision documented 2026-08-20, not started.** Today P2Less is WhatsApp(+webchat)-only and 100% inbound-triggered — no other channel and no proactive/marketing outbound exists in any form |
+| Public Social Agent — Mode 3, replies to public posts/comments/mentions on Facebook/Instagram/TikTok/X (Grok-on-X style) | **Future-strategic — Phase 8b, vision documented 2026-08-20, not started.** Distinct from Phase 8: public-visibility blast radius, different per-platform APIs/compliance (X requires a paid API tier + automation disclosure; TikTok requires approved-partner access), needs a new social-listening layer and stronger brand-voice guardrails than exist today. Recommended to build assisted (human-approves-before-posting) first, after Phase 8, not before |
 
 ## Open questions only the user can answer before Phase 1 starts
 
