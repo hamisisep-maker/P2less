@@ -636,6 +636,8 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       const actionsNow = await loadActions(tenant.id);
       const collectBase: CollectBase = { tenantId: tenant.id, reqId, contact, permissions, grants, assistant, channelType: input.channelType, contactName: contact.displayName ?? undefined, userText: text, history };
       // A broad "tell me about her" → abandon this slot and give the overview.
+      // Its own special resolution, unrelated to intent-scoring — checked
+      // before the reroute/pushback ladder below, same position as always.
       if (isOverviewRequest(lower)) {
         const target = await resolveOverviewTarget(text, grants, tenant.id, ctx.lastResource);
         if (target && !("ask" in target)) {
@@ -643,23 +645,32 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
           return emit(ov.replies, ov.status, ov.ctx);
         }
       }
+      // Universal Platform roadmap Phase 5 migration (2026-08-20) — this flow
+      // already had the full reroute/pushback/reask/abandon shape
+      // evaluateWorkflowAsk() (workflow-engine.ts) was modeled on, unlike
+      // the awaiting_resource_pick pilot (which had none of this and needed
+      // real new behavior) — this migration is verified behaviorally
+      // identical, not an enhancement. See docs/PHASE5-WORKFLOW-ENGINE-
+      // SUBROADMAP-2026-08-19.md.
       const reroute = await understand(text, actionsNow, history);
-      if (reroute.actionId && reroute.score >= 0.55 && reroute.actionKey !== ctx.pendingActionKey) {
+      // Extra condition beyond the primitive's own inputs: a reroute to the
+      // SAME pending action doesn't count as a genuine topic switch — folded
+      // into rerouteConfident here rather than taught to the pure primitive.
+      const decision = evaluateWorkflowAsk(
+        { plausibleAnswer: false, rerouteConfident: !!reroute.actionId && reroute.score >= 0.55 && reroute.actionKey !== ctx.pendingActionKey, isPushback: PUSHBACK.test(lower), asidesSoFar: ctx.paramAsides ?? 0 },
+        { rerouteThreshold: 0.55 },
+      );
+      if (decision.kind === "reroute" && reroute.actionId) {
         // Genuine topic switch → abandon the half-filled flow and follow them.
         const run = await dispatchAction(collectBase, reroute.actionId, reroute.entities, { lastResource: ctx.lastResource });
         return emit(run.replies, run.status, run.ctx);
       }
-      // Push-back ("I didn't ask for this", "date for what?") or a second stray
-      // message → STOP nagging. Abandon the flow and just answer them. Only a
-      // genuine first-time aside keeps the booking alive (with a skippable hint).
-      const asides = (ctx.paramAsides ?? 0) + 1;
-      const pushback = PUSHBACK.test(lower);
       const st = aiEnabled() ? await smallTalk(assistant, text, [...actionsNow.map((a) => a.name), ...toolCapabilityLines()], history, knownFacts, orgFaqs) : null;
-      if (pushback || asides >= 2) {
+      if (decision.kind === "abandon") {
         return emit([{ body: st ?? "No problem — I've set that aside. How can I help you?" }], "open", { lastResource: ctx.lastResource });
       }
       const reask = `${promptFor(expected)}\n\n(Or just say "cancel" if you didn't mean to start this.)`;
-      return emit([{ body: st ? `${st}\n\n${reask}` : reask }], "awaiting_param", { ...ctx, paramAsides: asides });
+      return emit([{ body: st ? `${st}\n\n${reask}` : reask }], "awaiting_param", { ...ctx, paramAsides: decision.kind === "reask" ? decision.asidesSoFar : ctx.paramAsides });
     }
     const value = resolveEntityFromText(expected, text);
     const resolved = { ...(ctx.pendingResolved ?? {}), [ctx.missingParam]: value };
