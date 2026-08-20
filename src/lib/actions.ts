@@ -17,6 +17,8 @@ import { handleSubscriptionPaymentConfirmed } from "./billing-lifecycle";
 import { assertChannelEnabled } from "./payment-channels";
 import type { ParamSpec } from "./connector-engine";
 import { getSettingNumber } from "./platform-settings";
+import { crawlSite } from "./website-crawl";
+import { extractFaqDraft } from "./ai";
 
 /** Real brute-force protection — LoginAttempt was already logged for every
  *  try but never actually consulted before this; a fixed number of recent
@@ -275,6 +277,29 @@ export async function saveFaqsAction(_prev: unknown, formData: FormData) {
   await db.tenant.update({ where: { id: user.tenantId! }, data: { faqs: clean as object } });
   revalidatePath("/dashboard/faqs");
   return { ok: true, count: clean.length };
+}
+
+// Universal Platform roadmap Phase 8e (2026-08-21) — website content
+// ingestion. Returns a DRAFT only, never writes to Tenant.faqs itself — the
+// admin reviews/edits in the client, then saves through the existing
+// saveFaqsAction above, same reviewable-draft discipline as OpenAPI import
+// and the connector marketplace (Phases 6/7).
+export async function crawlWebsiteAction(_prev: unknown, formData: FormData) {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE)) return { error: "You don't have permission to edit organization settings." };
+  const url = String(formData.get("url") ?? "").trim();
+  if (!url) return { error: "Enter a URL to scan." };
+  const tenant = await db.tenant.findUnique({ where: { id: user.tenantId! } });
+  let pages;
+  try {
+    pages = await crawlSite(url);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Couldn't reach that site." };
+  }
+  if (pages.length === 0) return { error: "Couldn't find any readable pages at that address." };
+  const draft = await extractFaqDraft(tenant?.name ?? "the organization", pages);
+  if (draft.length === 0) return { error: "Scanned the site but didn't find any clear FAQ-worthy content — try a more specific page (e.g. an FAQ or admissions page) or add entries manually." };
+  return { ok: true, draft, pagesScanned: pages.length };
 }
 
 // ── Business catalog — products a tenant sells, browsable/orderable on WhatsApp ─

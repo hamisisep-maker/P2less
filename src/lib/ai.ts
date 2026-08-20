@@ -637,6 +637,35 @@ Respond with ONLY compact JSON:
   }
 }
 
+// Universal Platform roadmap Phase 8e (2026-08-21) — website content
+// ingestion. Extracts a candidate FAQ draft from real, already-fetched page
+// text (fetching/crawling itself lives in website-crawl.ts, kept separate
+// from this AI call, same "engine does the work, AI only rephrases/extracts
+// from what's already retrieved" discipline as everywhere else in this
+// file). Deliberately grounded-only — never invents a fact not present in
+// the supplied text — and the caller (the dashboard action) NEVER saves this
+// straight to Tenant.faqs; it's always a draft a human reviews first.
+export async function extractFaqDraft(orgName: string, pages: { url: string; text: string }[]): Promise<{ q: string; a: string }[]> {
+  if (!aiEnabled() || pages.length === 0) return [];
+  const combined = pages.map((p) => `--- ${p.url} ---\n${p.text}`).join("\n\n").slice(0, 15000);
+  const system = `You are extracting a candidate FAQ list for ${orgName}'s WhatsApp/website assistant, from real content scraped off their own public website.
+
+Read the page content below and produce Q&A pairs a real visitor might plausibly ask, ONLY where the answer is explicitly stated in the content — never invent, infer, or embellish a fact that isn't literally there. Skip anything not clearly answerable from the text (navigation labels, marketing fluff with no real fact, anything ambiguous). Prefer practical, commonly-asked things: hours, location, contact details, admission/enrollment requirements, fees mentioned, programs/services offered, policies.
+
+Keep each answer SHORT and factual — one or two sentences, in the org's own wording where possible, no invented flourishes.
+
+Respond with ONLY a compact JSON array: [{"q":"<question>","a":"<answer>"}, ...] — an EMPTY array [] if nothing on the page is clearly FAQ-worthy. Never pad with low-value or invented entries just to have something to show.`;
+  const raw = await callLLM(system, `WEBSITE CONTENT:\n${combined}`, { maxTokens: 1200, temperature: 0.2, feature: "faq_extraction" });
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw.slice(raw.indexOf("["), raw.lastIndexOf("]") + 1)) as { q?: string; a?: string }[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((f) => ({ q: String(f.q ?? "").trim(), a: String(f.a ?? "").trim() })).filter((f) => f.q && f.a).slice(0, 30);
+  } catch {
+    return [];
+  }
+}
+
 // ── 2) Human-like reply (grounded rephrase — no hallucination, in flow) ─────
 export async function humanizeReply(orgName: string, userText: string, factText: string, history: ChatTurn[] = []): Promise<string> {
   if (!aiEnabled() || !factText) return factText;

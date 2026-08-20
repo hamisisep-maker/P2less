@@ -1,15 +1,31 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { saveFaqsAction } from "@/lib/actions";
+import { useActionState, useState, useEffect } from "react";
+import { saveFaqsAction, crawlWebsiteAction } from "@/lib/actions";
 import { Card } from "@/components/ui";
 
 type Faq = { q: string; a: string };
 type State = { ok?: boolean; count?: number; error?: string } | null;
+type CrawlState = { ok?: boolean; draft?: Faq[]; pagesScanned?: number; error?: string } | null;
 
 export function FaqsEditor({ initial, canManage }: { initial: Faq[]; canManage: boolean }) {
   const [rows, setRows] = useState<Faq[]>(initial.length ? initial : [{ q: "", a: "" }]);
   const [state, action, pending] = useActionState(saveFaqsAction, null as State);
+  const [crawlState, crawlAction, crawling] = useActionState(crawlWebsiteAction, null as CrawlState);
+
+  // Merge a fresh crawl draft into the editable list — never auto-saved,
+  // the admin still reviews/edits/removes rows here before hitting the
+  // existing Save button below, same reviewable-draft rule as everywhere
+  // else new content gets pulled in (OpenAPI import, the marketplace).
+  useEffect(() => {
+    if (crawlState?.ok && crawlState.draft?.length) {
+      setRows((r) => {
+        const withoutBlank = r.filter((row) => row.q || row.a);
+        return [...withoutBlank, ...crawlState.draft!];
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [crawlState]);
 
   const update = (i: number, key: keyof Faq, value: string) =>
     setRows((r) => r.map((row, idx) => (idx === i ? { ...row, [key]: value } : row)));
@@ -19,10 +35,35 @@ export function FaqsEditor({ initial, canManage }: { initial: Faq[]; canManage: 
   const payload = JSON.stringify(rows.map((r) => ({ q: r.q.trim(), a: r.a.trim() })).filter((r) => r.q && r.a));
 
   return (
-    <form action={action}>
-      <input type="hidden" name="faqs" value={payload} />
+    <>
+      {/* A genuinely separate <form>, not nested inside the Save FAQs form
+          below (HTML doesn't allow forms to nest) — its own input/button are
+          literal children of THIS form, the standard, reliably-supported
+          pattern for a distinct server action. */}
+      {canManage && (
+        <form action={crawlAction}>
+          <Card className="mb-4 p-4">
+            <h3 className="mb-1 text-sm font-semibold">Import from your website</h3>
+            <p className="mb-3 text-xs text-muted">Scans your site&apos;s own public pages and drafts candidate FAQ entries below for you to review — nothing is saved until you edit/approve and hit Save FAQs.</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                name="url"
+                placeholder="https://your-school.example.com"
+                className="min-w-[220px] flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
+              />
+              <button type="submit" disabled={crawling} className="rounded-xl border border-line px-4 py-2 text-sm font-medium hover:bg-surface-2 disabled:opacity-60">
+                {crawling ? "Scanning…" : "Scan this site"}
+              </button>
+            </div>
+            {crawlState?.ok && <p className="mt-2 text-xs text-green">Scanned {crawlState.pagesScanned} page{crawlState.pagesScanned === 1 ? "" : "s"} — {crawlState.draft?.length} draft answer{crawlState.draft?.length === 1 ? "" : "s"} added below. Review before saving.</p>}
+            {crawlState?.error && <p className="mt-2 text-xs text-rose">{crawlState.error}</p>}
+          </Card>
+        </form>
+      )}
+      <form action={action}>
+        <input type="hidden" name="faqs" value={payload} />
 
-      {state?.ok && (
+        {state?.ok && (
         <div className="mb-3 rounded-xl border border-green/30 bg-green-soft p-3 text-sm text-green">
           Saved — your assistant now uses {state.count} approved answer{state.count === 1 ? "" : "s"}.
         </div>
@@ -69,6 +110,7 @@ export function FaqsEditor({ initial, canManage }: { initial: Faq[]; canManage: 
           </button>
         </div>
       )}
-    </form>
+      </form>
+    </>
   );
 }
