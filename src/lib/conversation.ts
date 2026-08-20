@@ -842,6 +842,39 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // Native P2Less data (not a connector), tenant-scoped by the SAME routing
   // already used everywhere (destination number → tenant). Universal like the
   // file tools and CV writer — works for anyone messaging this number.
+
+  // Universal Platform roadmap Phase 5, order-flow slice (2026-08-20,
+  // user-approved scope after live-reading the actual code showed these 6
+  // states DON'T share awaiting_confirm/awaiting_param's shape — there was no
+  // reroute/pushback/abandon here at all; a non-answer just re-asked the same
+  // question forever, the exact robotic-re-nagging class of bug fixed
+  // everywhere else in this file. Shared by the 5 slot-filling order states
+  // (NOT awaiting_order_confirm, which keeps its own inline ladder below,
+  // money-adjacent 0.6 threshold matching awaiting_confirm's). Called only
+  // AFTER the existing resolveOrderStepAnswer() attempt fails to resolve the
+  // message as an answer to the specific question being asked — this adds
+  // reroute/pushback/abandon on top of that, doesn't replace it.
+  const orderAskLadder = async (
+    status: "awaiting_order_quantity" | "awaiting_order_option" | "awaiting_order_fulfillment" | "awaiting_order_address" | "awaiting_order_payment_phone",
+    reaskBody: string,
+  ) => {
+    const actionsNow = await loadActions(tenant.id);
+    const reroute = await understand(text, actionsNow, history);
+    const decision = evaluateWorkflowAsk(
+      { plausibleAnswer: false, rerouteConfident: !!reroute.actionId && reroute.score >= 0.55, isPushback: PUSHBACK.test(lower), asidesSoFar: ctx.paramAsides ?? 0 },
+      { rerouteThreshold: 0.55 },
+    );
+    if (decision.kind === "reroute" && reroute.actionId) {
+      const cBase: CollectBase = { tenantId: tenant.id, reqId, contact, permissions, grants, assistant, channelType: input.channelType, contactName: contact.displayName ?? undefined, userText: text, history };
+      const run = await dispatchAction(cBase, reroute.actionId, reroute.entities, { lastResource: ctx.lastResource });
+      return emit(run.replies, run.status, run.ctx);
+    }
+    if (decision.kind === "abandon") {
+      return emit([{ body: "No problem — I've set that order aside. How can I help you?" }], "open", { lastResource: ctx.lastResource });
+    }
+    return emit([{ body: reaskBody }], status, { ...ctx, paramAsides: decision.kind === "reask" ? decision.asidesSoFar : ctx.paramAsides });
+  };
+
   if (conversation.status === "awaiting_order_quantity" && ctx.pendingOrder) {
     const po = ctx.pendingOrder;
     if (isDirectReply(lower, /\b(cancel|no|nope|nah|stop|don'?t)\b/i)) {
@@ -862,11 +895,11 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
           const n = parseInt(resolved.value.replace(/[^\d]/g, ""), 10);
           if (n > 0) return advanceOrder({ ...po, quantity: n });
         } else if (resolved.reply) {
-          return emit([{ body: resolved.reply }], "awaiting_order_quantity", ctx);
+          return orderAskLadder("awaiting_order_quantity", resolved.reply);
         }
       }
       const attrInfo = await productAttributeFallback(po, lower);
-      return emit([{ body: attrInfo ? `${attrInfo} And how many ${po.productName} would you like?` : `Sorry, how many ${po.productName} would you like? (Just the number, e.g. "2")` }], "awaiting_order_quantity", ctx);
+      return orderAskLadder("awaiting_order_quantity", attrInfo ? `${attrInfo} And how many ${po.productName} would you like?` : `Sorry, how many ${po.productName} would you like? (Just the number, e.g. "2")`);
     }
     const qty = extractQuantity(text);
     return advanceOrder({ ...po, quantity: qty });
@@ -888,9 +921,9 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
           knownFacts: await productKnownFacts(po),
         });
         if (resolved.answered) return advanceOrder({ ...po, optionChosen: resolved.value });
-        if (resolved.reply) return emit([{ body: resolved.reply }], "awaiting_order_option", ctx);
+        if (resolved.reply) return orderAskLadder("awaiting_order_option", resolved.reply);
       }
-      return emit([{ body: `Sorry, just to be clear — for ${po.productName}, which would you like? (${po.options})` }], "awaiting_order_option", ctx);
+      return orderAskLadder("awaiting_order_option", `Sorry, just to be clear — for ${po.productName}, which would you like? (${po.options})`);
     }
     return advanceOrder({ ...po, optionChosen: trimmed });
   }
@@ -918,14 +951,14 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
         if (v.includes("deliver")) return advanceOrder({ ...po, fulfillment: "delivery" });
         if (v.includes("pick")) return advanceOrder({ ...po, fulfillment: "pickup" });
       } else if (resolved.reply) {
-        return emit([{ body: resolved.reply }], "awaiting_order_fulfillment", ctx);
+        return orderAskLadder("awaiting_order_fulfillment", resolved.reply);
       }
     }
     // Ambiguous or unrelated reply — ask again rather than guessing either way.
     // If it was actually a product-attribute question (size/color/etc.), answer
     // it first — deterministically, so an AI outage never leaves it unanswered.
     const attrInfo = await productAttributeFallback(po, lower);
-    return emit([{ body: attrInfo ? `${attrInfo} Now, would you like ${po.productName} delivered to you, or will you pick it up yourself?` : `Sorry — just to confirm, would you like ${po.productName} delivered to you, or will you pick it up yourself?` }], "awaiting_order_fulfillment", ctx);
+    return orderAskLadder("awaiting_order_fulfillment", attrInfo ? `${attrInfo} Now, would you like ${po.productName} delivered to you, or will you pick it up yourself?` : `Sorry — just to confirm, would you like ${po.productName} delivered to you, or will you pick it up yourself?`);
   }
   if (conversation.status === "awaiting_order_address" && ctx.pendingOrder) {
     const po = ctx.pendingOrder;
@@ -949,11 +982,11 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
             return advanceOrder({ ...po, deliveryAddress: resolved.value, deliveryFee: zone?.fee, deliveryZoneName: zone?.name });
           }
         } else if (resolved.reply) {
-          return emit([{ body: resolved.reply }], "awaiting_order_address", ctx);
+          return orderAskLadder("awaiting_order_address", resolved.reply);
         }
       }
       const attrInfo = await productAttributeFallback(po, lower);
-      return emit([{ body: attrInfo ? `${attrInfo} Now, could you share the delivery address — area, street, and a landmark nearby — so it actually finds you?` : `Could you share a bit more detail — area, street, and a landmark nearby — so the delivery actually finds you?` }], "awaiting_order_address", ctx);
+      return orderAskLadder("awaiting_order_address", attrInfo ? `${attrInfo} Now, could you share the delivery address — area, street, and a landmark nearby — so it actually finds you?` : `Could you share a bit more detail — area, street, and a landmark nearby — so the delivery actually finds you?`);
     }
     const address = text.trim();
     const zones = await db.deliveryZone.findMany({ where: { tenantId: tenant.id, active: true } });
@@ -988,11 +1021,11 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
         const m = resolved.value.match(/(?:\+?254|0)\d{9}\b|\+\d{9,12}\b/);
         if (m) return advanceOrder({ ...po, paymentPhone: normalizePhone(m[0]) });
       } else if (resolved.reply) {
-        return emit([{ body: resolved.reply }], "awaiting_order_payment_phone", ctx);
+        return orderAskLadder("awaiting_order_payment_phone", resolved.reply);
       }
     }
     const attrInfo = await productAttributeFallback(po, lower);
-    return emit([{ body: attrInfo ? `${attrInfo} Now, should I send the M-Pesa payment request to this number (${senderAddress}), or would you like to give a different one?` : `Sorry — just to confirm, should I send the M-Pesa payment request to this number (${senderAddress}), or would you like to give a different one?` }], "awaiting_order_payment_phone", ctx);
+    return orderAskLadder("awaiting_order_payment_phone", attrInfo ? `${attrInfo} Now, should I send the M-Pesa payment request to this number (${senderAddress}), or would you like to give a different one?` : `Sorry — just to confirm, should I send the M-Pesa payment request to this number (${senderAddress}), or would you like to give a different one?`);
   }
   if (conversation.status === "awaiting_order_confirm" && ctx.pendingOrder) {
     // This gates a REAL money charge — a false positive here means firing an
@@ -1074,9 +1107,28 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
         { pendingOrder: updated },
       );
     }
+    // Universal Platform roadmap Phase 5, order-flow slice (2026-08-20,
+    // user-approved scope) — this gates a REAL M-Pesa charge, so the reroute
+    // threshold matches awaiting_confirm's own money-adjacent 0.6 (higher
+    // than the 0.55 used by the slot-filling states above and by
+    // orderAskLadder), not blindly reused from that shared helper.
+    const actionsNow = await loadActions(tenant.id);
+    const reroute = await understand(text, actionsNow, history);
+    const decision = evaluateWorkflowAsk(
+      { plausibleAnswer: false, rerouteConfident: !!reroute.actionId && reroute.score >= 0.6, isPushback: PUSHBACK.test(lower), asidesSoFar: ctx.paramAsides ?? 0 },
+      { rerouteThreshold: 0.6 },
+    );
+    if (decision.kind === "reroute" && reroute.actionId) {
+      const cBase: CollectBase = { tenantId: tenant.id, reqId, contact, permissions, grants, assistant, channelType: input.channelType, contactName: contact.displayName ?? undefined, userText: text, history };
+      const run = await dispatchAction(cBase, reroute.actionId, reroute.entities, { lastResource: ctx.lastResource });
+      return emit(run.replies, run.status, run.ctx);
+    }
     const stc = aiEnabled() ? await smallTalk(assistant, text, [], history, knownFacts, orgFaqs) : null;
+    if (decision.kind === "abandon") {
+      return emit([{ body: stc ?? "No problem — I've set that order aside. How can I help you?" }], "open", { lastResource: ctx.lastResource });
+    }
     const remind = `${orderRecapText(po)}\n\nReply CONFIRM to pay via M-Pesa, or CANCEL to stop.`;
-    return emit([{ body: stc ? `${stc}\n\n${remind}` : remind }], "awaiting_order_confirm", ctx);
+    return emit([{ body: stc ? `${stc}\n\n${remind}` : remind }], "awaiting_order_confirm", { ...ctx, paramAsides: decision.kind === "reask" ? decision.asidesSoFar : ctx.paramAsides });
   }
   // A driver just reported this delivery as complete (see dispatch.ts) — the
   // customer's very next message is their real account of how it went, real
