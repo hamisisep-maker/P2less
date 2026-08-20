@@ -147,6 +147,27 @@ function looksLikeAQuestion(text: string): boolean {
   return /\?/.test(t) || /^\s*(which|what|who|why|how|when|where|do you|does it|is there|are there|can (i|you)|could (i|you)|any idea|any of)\b/i.test(t);
 }
 
+/** Does this message plausibly look like someone typing an admission/
+ *  employee/patient ID, as opposed to a genuine message? Every real ID
+ *  format used in this system is a short alphanumeric token, usually with a
+ *  digit and often a hyphen ("STU-001", "ADM-1002", "EMP-184") — essentially
+ *  never a multi-word sentence or one containing ordinary English words.
+ *  Deliberately a POSITIVE check (does this look like an ID) rather than a
+ *  negative one (does this look like a question) — a narrower "is this a
+ *  question" filter missed real messages like "hello how are you" (no "?",
+ *  doesn't start with a question word), letting them fall through into a
+ *  failed ID-match attempt. Defaults to false (treat as a genuine message,
+ *  answer it for real) for anything ambiguous — wrongly treating a real
+ *  message as a bad ID attempt is worse than occasionally re-prompting for
+ *  a genuinely malformed ID. */
+function looksLikeIdAttempt(text: string): boolean {
+  const t = text.trim();
+  if (!t || !/\d/.test(t)) return false;
+  if (t.split(/\s+/).filter(Boolean).length > 2) return false;
+  if (/\b(hello|hi|hey|how|are|you|what|when|where|why|who|please|thanks|thank|is|the|can|do|does|my|son|daughter|child)\b/i.test(t)) return false;
+  return true;
+}
+
 // A resource the contact is authorized to reference — a student, employee,
 // patient, order, member, etc. The grants JSON holds arrays keyed by type.
 type ResourceGrant = { id: string; name: string; grade?: string; [k: string]: unknown };
@@ -774,14 +795,20 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     if (ob0 && (isGreeting(text) || /^help\b/.test(lower))) {
       return emit([{ body: `👋 To connect you, just reply with your ${ob0.idLabel} — the one ${ob0.office} has on file for you. Or reply CANCEL.` }], "awaiting_identify", {});
     }
-    // A genuine question ("what are your fees", "do you have space in Grade
-    // 4") is NOT an ID attempt — don't force-fit it into executeAction()
-    // below and repeat "couldn't match that ID" at someone asking something
-    // real. Same "don't misread a real question as slot-filling input"
-    // discipline already used by the order flow's looksLikeAQuestion()
-    // checks. Answer it for real, stay in awaiting_identify so they can
-    // still connect their account whenever they're ready.
-    if (ob0 && looksLikeAQuestion(text)) {
+    // A genuine message ("what are your fees", "hello how are you") is NOT
+    // an ID attempt — don't force-fit it into executeAction() below and
+    // repeat "couldn't match that ID" at someone saying something real.
+    // FIRST FIX (2026-08-20) used looksLikeAQuestion() here, which only
+    // catches "?" or a message STARTING with a question word — live-tested
+    // by the user and found too narrow: "hello how are you" starts with
+    // "hello", isn't a pure greeting (isGreeting caps at 3 words), and has
+    // no "?", so it slipped through both checks into a failed ID-match.
+    // CORRECTED to the inverse, more robust check: does this look like it
+    // COULD be an ID at all? Default to "no" (answer it for real) for
+    // anything ambiguous — the cost of wrongly treating a real message as a
+    // failed ID attempt is worse than occasionally re-prompting for a
+    // genuinely bad ID.
+    if (ob0 && !looksLikeIdAttempt(text)) {
       const actionsNow = await loadActions(tenant.id);
       const st = aiEnabled() ? await smallTalk(assistant, text, [...actionsNow.map((a) => a.name), ...toolCapabilityLines()], history, knownFacts, orgFaqs) : null;
       const remind = `\n\nWhenever you're ready, reply with your ${ob0.idLabel} to connect your account for personalized help.`;
