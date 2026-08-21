@@ -13,8 +13,8 @@ import { Card } from "@/components/ui";
 const field = "mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent";
 const label = "text-xs font-medium text-muted";
 
-type CardData = { setupIntentId: string; clientSecret: string; stripePublishableKey: string; orgName: string; industry: string; phoneNumber: string; adminName: string; adminEmail: string; useCases: string[] };
-type OtpData = { challengeId: string; demoCode?: string; orgName: string; industry: string; phoneNumber: string; adminName: string; adminEmail: string; useCases: string[] };
+type CardData = { setupIntentId: string; clientSecret: string; stripePublishableKey: string; orgName: string; industry: string; phoneNumber: string; adminName: string; adminEmail: string; useCases: string[]; channelsNeeded: string[] };
+type OtpData = { challengeId: string; demoCode?: string; orgName: string; industry: string; phoneNumber: string; adminName: string; adminEmail: string; useCases: string[]; channelsNeeded: string[] };
 
 // Registration reframe (roadmap doc "Registration reframe" section,
 // 2026-08-21): honest about what's real today — no social media, no SMS
@@ -25,6 +25,19 @@ const USE_CASE_OPTIONS: { value: string; label: string }[] = [
   { value: "connect_systems", label: "Connect my existing software/systems" },
   { value: "developer_api", label: "I'm a developer — building on the API" },
   { value: "exploring", label: "Just exploring" },
+];
+
+// Registration reframe, continued: a DISTINCT question from use cases above
+// — which channels the org's own customers actually use. WhatsApp and
+// Messenger are genuinely live (Phase 8a shipped 2026-08-21); the rest are
+// real demand signal for what to build next, labeled honestly as not yet
+// available rather than implied to already work.
+const CHANNEL_OPTIONS: { value: string; label: string }[] = [
+  { value: "whatsapp", label: "WhatsApp" },
+  { value: "messenger", label: "Facebook Messenger" },
+  { value: "web_chat", label: "Our website (chat widget)" },
+  { value: "sms_interested", label: "SMS (coming soon — let us know you need it)" },
+  { value: "instagram_interested", label: "Instagram (coming soon — let us know you need it)" },
 ];
 
 // Resume-on-refresh: see the "UX design — resuming an interrupted /onboard
@@ -101,6 +114,7 @@ function CardStep({ data, error, confirmAction, pending, onStartOver }: { data: 
       <input type="hidden" name="adminEmail" value={data.adminEmail} />
       <input type="hidden" name="setupIntentId" value={data.setupIntentId} />
       {(data.useCases ?? []).map((uc) => <input key={uc} type="hidden" name="useCases" value={uc} />)}
+      {(data.channelsNeeded ?? []).map((c) => <input key={c} type="hidden" name="channelsNeeded" value={c} />)}
       <h2 className="text-lg font-semibold">Verify a card</h2>
       <p className="text-sm text-muted">Last step — we verify a real card is on file before connecting your number. <b>This never charges anything</b>, it&apos;s a $0 verification only.</p>
       <div>
@@ -214,6 +228,7 @@ export function OnboardForm() {
           <input type="hidden" name="adminEmail" value={otp.adminEmail} />
           <input type="hidden" name="challengeId" value={otp.challengeId} />
           {(otp.useCases ?? []).map((uc) => <input key={uc} type="hidden" name="useCases" value={uc} />)}
+          {(otp.channelsNeeded ?? []).map((c) => <input key={c} type="hidden" name="channelsNeeded" value={c} />)}
           <h2 className="text-lg font-semibold">Verify your phone number</h2>
           <p className="text-sm text-muted">We sent a 6-digit code to <span className="font-mono">{otp.phoneNumber}</span> to confirm you actually control this number before we connect it. Enter it below.</p>
           {demoCode && (
@@ -247,6 +262,17 @@ export function OnboardForm() {
             {USE_CASE_OPTIONS.map((opt) => (
               <label key={opt.value} className="flex items-center gap-2 text-sm">
                 <input type="checkbox" name="useCases" value={opt.value} className="rounded border-line" />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className={label}>Which channels do your customers use? (pick any that apply)</label>
+          <div className="mt-1 space-y-1.5">
+            {CHANNEL_OPTIONS.map((opt) => (
+              <label key={opt.value} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="channelsNeeded" value={opt.value} className="rounded border-line" />
                 {opt.label}
               </label>
             ))}

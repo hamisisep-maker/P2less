@@ -135,14 +135,25 @@ const provisionSchema = z.object({
   // role industry already plays (nothing branches on either to restrict
   // features). Empty is fine (nothing checked / JS disabled).
   useCases: z.array(z.string()).default([]),
+  // Registration reframe, continued: WHICH channels the org's own
+  // customers actually use — a distinct question from "what do you want
+  // P2Less to do" (proposal's step 2, "which channels do your users
+  // need?"). Same honest, context-not-gate role as useCases/industry —
+  // captures real demand signal for channels not built yet (SMS, Instagram)
+  // without pretending they're active.
+  channelsNeeded: z.array(z.string()).default([]),
 });
 
 // FormData collapses repeated same-named fields (checkboxes, or the hidden-
 // input round-trip between /onboard's steps) down to just the last value via
-// Object.fromEntries — this restores the array for useCases specifically
-// before handing off to Zod, everywhere a step's incoming fields get parsed.
+// Object.fromEntries — this restores the array shape for these specific
+// fields before handing off to Zod, everywhere a step's incoming fields get
+// parsed.
+const ARRAY_FIELDS = ["useCases", "channelsNeeded"] as const;
 function formDataWithArrays(formData: FormData): Record<string, unknown> {
-  return { ...Object.fromEntries(formData.entries()), useCases: formData.getAll("useCases").map(String) };
+  const base: Record<string, unknown> = Object.fromEntries(formData.entries());
+  for (const field of ARRAY_FIELDS) base[field] = formData.getAll(field).map(String);
+  return base;
 }
 
 // Closes the most common free-trial-abuse trick: Gmail ignores dots in the
@@ -232,13 +243,13 @@ export async function requestOnboardOtpAction(_prev: unknown, formData: FormData
 
   return {
     ok: true, step: "otp" as const, challengeId: issued.challengeId, demoCode,
-    orgName: d.orgName, industry: d.industry, phoneNumber: d.phoneNumber, adminName: d.adminName, adminEmail: d.adminEmail, useCases: d.useCases,
+    orgName: d.orgName, industry: d.industry, phoneNumber: d.phoneNumber, adminName: d.adminName, adminEmail: d.adminEmail, useCases: d.useCases, channelsNeeded: d.channelsNeeded,
   };
 }
 
 const confirmOtpSchema = provisionSchema.extend({ challengeId: z.string().min(1), code: z.string().min(1) });
 
-type OtpStepFields = { orgName: string; industry: z.infer<typeof provisionSchema>["industry"]; phoneNumber: string; adminName: string; adminEmail: string; useCases: string[] };
+type OtpStepFields = { orgName: string; industry: z.infer<typeof provisionSchema>["industry"]; phoneNumber: string; adminName: string; adminEmail: string; useCases: string[]; channelsNeeded: string[] };
 type FinalizeOk = { ok: true; email: string; password: string; slug: string };
 
 /** The actual tenant-creation transaction, shared by both the no-card-step
@@ -261,6 +272,7 @@ async function finalizeOnboarding(
         data: {
           name: d.orgName, slug, industry: d.industry, status: "trial",
           useCases: d.useCases.length > 0 ? d.useCases : undefined,
+          channelsNeeded: d.channelsNeeded.length > 0 ? d.channelsNeeded : undefined,
           branding: { assistantName: d.orgName, poweredBy: "Powered by P2Less" },
           stripeCustomerId: card?.customerId, stripePaymentMethodId: card?.paymentMethodId,
         },
@@ -368,7 +380,7 @@ export async function confirmOnboardOtpAction(_prev: unknown, formData: FormData
   if ("error" in setupIntent) return { error: setupIntent.error };
   return {
     ok: true, step: "card" as const, setupIntentId: setupIntent.setupIntentId, clientSecret: setupIntent.clientSecret, stripePublishableKey: publishableKey(),
-    orgName: d.orgName, industry: d.industry, phoneNumber: d.phoneNumber, adminName: d.adminName, adminEmail: d.adminEmail, useCases: d.useCases,
+    orgName: d.orgName, industry: d.industry, phoneNumber: d.phoneNumber, adminName: d.adminName, adminEmail: d.adminEmail, useCases: d.useCases, channelsNeeded: d.channelsNeeded,
   };
 }
 

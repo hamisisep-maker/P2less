@@ -464,6 +464,12 @@ model Tenant {
   // honest role today (nothing in the app branches on it to gate features).
   // Nullable array of strings, e.g. ["automate_conversations","developer_api"].
   useCases  Json?
+  // Registration reframe, continued (2026-08-21) — a DISTINCT question from
+  // useCases above: which channels the org's own customers actually use,
+  // not what the org wants to accomplish. Real demand signal for channels
+  // not built yet (SMS, Instagram) without pretending they're active —
+  // e.g. ["whatsapp","messenger","sms_interested"].
+  channelsNeeded Json?
   status    String   @default("active") // active | suspended | trial
   // White-label branding. Free/basic tenants fall back to P2Less defaults.
   branding  Json? // { assistantName, logoText, primaryColor, welcome, poweredBy, pdfFooter }
