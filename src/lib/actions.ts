@@ -129,7 +129,20 @@ const provisionSchema = z.object({
   phoneNumber: z.string().min(7),
   adminName: z.string().min(2),
   adminEmail: z.string().email(),
+  // Registration reframe: what the org said they want P2Less to do,
+  // collected alongside industry. CONTEXT, not a hard gate — same honest
+  // role industry already plays (nothing branches on either to restrict
+  // features). Empty is fine (nothing checked / JS disabled).
+  useCases: z.array(z.string()).default([]),
 });
+
+// FormData collapses repeated same-named fields (checkboxes, or the hidden-
+// input round-trip between /onboard's steps) down to just the last value via
+// Object.fromEntries — this restores the array for useCases specifically
+// before handing off to Zod, everywhere a step's incoming fields get parsed.
+function formDataWithArrays(formData: FormData): Record<string, unknown> {
+  return { ...Object.fromEntries(formData.entries()), useCases: formData.getAll("useCases").map(String) };
+}
 
 // Closes the most common free-trial-abuse trick: Gmail ignores dots in the
 // local part and treats anything after "+" as a tag, so you@gmail.com /
@@ -163,7 +176,7 @@ async function validateOnboardFields(formData: FormData): Promise<{ error: strin
   if (!limit.ok) {
     return { error: "Too many signup attempts from this connection. Please try again later, or contact us if you need help getting started." };
   }
-  const parsed = provisionSchema.safeParse(Object.fromEntries(formData.entries()));
+  const parsed = provisionSchema.safeParse(formDataWithArrays(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   const d = parsed.data;
   const emailCanonical = canonicalizeEmail(d.adminEmail);
@@ -218,13 +231,13 @@ export async function requestOnboardOtpAction(_prev: unknown, formData: FormData
 
   return {
     ok: true, step: "otp" as const, challengeId: issued.challengeId, demoCode,
-    orgName: d.orgName, industry: d.industry, phoneNumber: d.phoneNumber, adminName: d.adminName, adminEmail: d.adminEmail,
+    orgName: d.orgName, industry: d.industry, phoneNumber: d.phoneNumber, adminName: d.adminName, adminEmail: d.adminEmail, useCases: d.useCases,
   };
 }
 
 const confirmOtpSchema = provisionSchema.extend({ challengeId: z.string().min(1), code: z.string().min(1) });
 
-type OtpStepFields = { orgName: string; industry: z.infer<typeof provisionSchema>["industry"]; phoneNumber: string; adminName: string; adminEmail: string };
+type OtpStepFields = { orgName: string; industry: z.infer<typeof provisionSchema>["industry"]; phoneNumber: string; adminName: string; adminEmail: string; useCases: string[] };
 type FinalizeOk = { ok: true; email: string; password: string; slug: string };
 
 /** The actual tenant-creation transaction, shared by both the no-card-step
@@ -246,6 +259,7 @@ async function finalizeOnboarding(
       const tenant = await tx.tenant.create({
         data: {
           name: d.orgName, slug, industry: d.industry, status: "trial",
+          useCases: d.useCases.length > 0 ? d.useCases : undefined,
           branding: { assistantName: d.orgName, poweredBy: "Powered by P2Less" },
           stripeCustomerId: card?.customerId, stripePaymentMethodId: card?.paymentMethodId,
         },
@@ -274,6 +288,14 @@ async function finalizeOnboarding(
       // before this phase.
       await tx.whatsAppNumber.create({
         data: { tenantId: tenant.id, phoneNumber: d.phoneNumber, displayName: d.orgName, department: "General", status: "active", verificationStatus: "pending" },
+      });
+      // The generic channel-resource record (see the Channel model's own
+      // comment in schema.prisma) — a real, queryable "this tenant has a
+      // whatsapp channel" row, kept in sync with WhatsAppNumber but not yet
+      // read by anything else (no second real channel exists to make that
+      // worth wiring — see the roadmap doc's "Registration reframe" section).
+      await tx.channel.create({
+        data: { tenantId: tenant.id, type: "whatsapp", address: d.phoneNumber, status: "active" },
       });
 
       return { password };
@@ -322,7 +344,7 @@ export type ConfirmOtpResult =
  *  card-on-file deterrent degrades gracefully rather than blocking signup,
  *  same philosophy as every other optional provider in this codebase). */
 export async function confirmOnboardOtpAction(_prev: unknown, formData: FormData): Promise<ConfirmOtpResult> {
-  const parsed = confirmOtpSchema.safeParse(Object.fromEntries(formData.entries()));
+  const parsed = confirmOtpSchema.safeParse(formDataWithArrays(formData));
   // A malformed resubmission (missing/corrupt hidden fields) has no org data
   // to hand back — can't stay on the OTP step honestly, so this falls back
   // to the start rather than pretending. Shouldn't happen via the real UI.
@@ -345,7 +367,7 @@ export async function confirmOnboardOtpAction(_prev: unknown, formData: FormData
   if ("error" in setupIntent) return { error: setupIntent.error };
   return {
     ok: true, step: "card" as const, setupIntentId: setupIntent.setupIntentId, clientSecret: setupIntent.clientSecret, stripePublishableKey: publishableKey(),
-    orgName: d.orgName, industry: d.industry, phoneNumber: d.phoneNumber, adminName: d.adminName, adminEmail: d.adminEmail,
+    orgName: d.orgName, industry: d.industry, phoneNumber: d.phoneNumber, adminName: d.adminName, adminEmail: d.adminEmail, useCases: d.useCases,
   };
 }
 
@@ -360,7 +382,7 @@ export type ConfirmCardResult =
  *  save the verified card against a real Stripe Customer, then create the
  *  tenant exactly as confirmOnboardOtpAction used to do directly. */
 export async function confirmOnboardCardAction(_prev: unknown, formData: FormData): Promise<ConfirmCardResult> {
-  const parsed = confirmCardSchema.safeParse(Object.fromEntries(formData.entries()));
+  const parsed = confirmCardSchema.safeParse(formDataWithArrays(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   const { setupIntentId, ...rest } = parsed.data;
 

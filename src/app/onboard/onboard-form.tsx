@@ -13,8 +13,19 @@ import { Card } from "@/components/ui";
 const field = "mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent";
 const label = "text-xs font-medium text-muted";
 
-type CardData = { setupIntentId: string; clientSecret: string; stripePublishableKey: string; orgName: string; industry: string; phoneNumber: string; adminName: string; adminEmail: string };
-type OtpData = { challengeId: string; demoCode?: string; orgName: string; industry: string; phoneNumber: string; adminName: string; adminEmail: string };
+type CardData = { setupIntentId: string; clientSecret: string; stripePublishableKey: string; orgName: string; industry: string; phoneNumber: string; adminName: string; adminEmail: string; useCases: string[] };
+type OtpData = { challengeId: string; demoCode?: string; orgName: string; industry: string; phoneNumber: string; adminName: string; adminEmail: string; useCases: string[] };
+
+// Registration reframe (roadmap doc "Registration reframe" section,
+// 2026-08-21): honest about what's real today — no social media, no SMS
+// conversations, no outbound-notification product yet. Context for
+// personalization later, never a gate on what the org can actually do.
+const USE_CASE_OPTIONS: { value: string; label: string }[] = [
+  { value: "automate_conversations", label: "Automate WhatsApp conversations for my customers" },
+  { value: "connect_systems", label: "Connect my existing software/systems" },
+  { value: "developer_api", label: "I'm a developer — building on the API" },
+  { value: "exploring", label: "Just exploring" },
+];
 
 // Resume-on-refresh: see the "UX design — resuming an interrupted /onboard
 // signup" note in docs/ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md for the full
@@ -89,6 +100,7 @@ function CardStep({ data, error, confirmAction, pending, onStartOver }: { data: 
       <input type="hidden" name="adminName" value={data.adminName} />
       <input type="hidden" name="adminEmail" value={data.adminEmail} />
       <input type="hidden" name="setupIntentId" value={data.setupIntentId} />
+      {(data.useCases ?? []).map((uc) => <input key={uc} type="hidden" name="useCases" value={uc} />)}
       <h2 className="text-lg font-semibold">Verify a card</h2>
       <p className="text-sm text-muted">Last step — we verify a real card is on file before connecting your number. <b>This never charges anything</b>, it&apos;s a $0 verification only.</p>
       <div>
@@ -201,6 +213,7 @@ export function OnboardForm() {
           <input type="hidden" name="adminName" value={otp.adminName} />
           <input type="hidden" name="adminEmail" value={otp.adminEmail} />
           <input type="hidden" name="challengeId" value={otp.challengeId} />
+          {(otp.useCases ?? []).map((uc) => <input key={uc} type="hidden" name="useCases" value={uc} />)}
           <h2 className="text-lg font-semibold">Verify your phone number</h2>
           <p className="text-sm text-muted">We sent a 6-digit code to <span className="font-mono">{otp.phoneNumber}</span> to confirm you actually control this number before we connect it. Enter it below.</p>
           {demoCode && (
@@ -229,7 +242,18 @@ export function OnboardForm() {
       <form action={requestAction} className="space-y-4">
         <div><label className={label}>Organization name</label><input name="orgName" required placeholder="Acme Clinic" className={field} /></div>
         <div>
-          <label className={label}>Industry</label>
+          <label className={label}>What do you want P2Less to do? (pick any that apply)</label>
+          <div className="mt-1 space-y-1.5">
+            {USE_CASE_OPTIONS.map((opt) => (
+              <label key={opt.value} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="useCases" value={opt.value} className="rounded border-line" />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className={label}>Industry <span className="font-normal text-faint">(for templates &amp; context — doesn&apos;t limit what you can do)</span></label>
           <select name="industry" className={field} defaultValue="business">
             <option value="school">School</option><option value="hospital">Hospital</option>
             <option value="business">Business</option><option value="sacco">SACCO</option>

@@ -457,6 +457,13 @@ model Tenant {
   name      String
   slug      String   @unique
   industry  String   @default("school") // school | hospital | sacco | business | ngo | government | ...
+  // Registration reframe (roadmap doc "Registration reframe" section,
+  // 2026-08-21): what the org said they want P2Less to do, collected at
+  // signup alongside industry. CONTEXT for personalization later, not a
+  // hard boundary on what they can do — industry above plays the same
+  // honest role today (nothing in the app branches on it to gate features).
+  // Nullable array of strings, e.g. ["automate_conversations","developer_api"].
+  useCases  Json?
   status    String   @default("active") // active | suspended | trial
   // White-label branding. Free/basic tenants fall back to P2Less defaults.
   branding  Json? // { assistantName, logoText, primaryColor, welcome, poweredBy, pdfFooter }
@@ -987,6 +994,16 @@ model WidgetKey {
 // CHANNELS (transport type; the engine is channel-agnostic)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Generic per-channel-type resource, one row per tenant per channel type —
+// exactly the "channel resource" concept from the "Registration reframe"
+// section of the roadmap doc. Existed in the schema but had zero real rows
+// anywhere in the app before 2026-08-21 (Conversation.channelId was always
+// null; only Conversation.numberId, a WhatsApp-specific FK, was ever
+// populated). Now wired: finalizeOnboarding() (actions.ts) creates one
+// alongside every new WhatsAppNumber. Deliberately NOT yet wired into
+// Conversation routing or dashboard UI — no second real channel exists yet
+// to make that worth building (see the roadmap doc for why this stays a
+// data-model-only step for now).
 model Channel {
   id        String  @id @default(cuid())
   tenantId  String
