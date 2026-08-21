@@ -94,7 +94,7 @@ model ModelPricing {
 /// of a hard-coded schedule, same as it always did.
 model NotificationRule {
   id         String   @id @default(cuid())
-  event      String // renewal_reminder | payment_received | payment_failed | subscription_expired | account_suspended | account_reactivated | payment_reconciliation_needed | incident_critical | incident_opened | ticket_created | ticket_assigned | ticket_sla_breached | whatsapp_connection_failed | ai_provider_degraded | usage_limit_exceeded
+  event      String // renewal_reminder | payment_received | payment_failed | subscription_expired | account_suspended | account_reactivated | payment_reconciliation_needed | incident_critical | incident_opened | ticket_created | ticket_assigned | ticket_sla_breached | whatsapp_connection_failed | ai_provider_degraded | usage_limit_exceeded | onboard_signup_anomaly
   channel    String // email | whatsapp | sms — see Notification for which channels actually dispatch today
   timingDays Int      @default(0) // days BEFORE the triggering date (renewal reminders); 0 = fires immediately on the event. Non-nullable deliberately — Prisma's compound @@unique below doesn't handle a nullable member cleanly.
   enabled    Boolean  @default(true)
@@ -1224,6 +1224,7 @@ model OtpChallenge {
   contactId   String?
   contact     Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
   phone       String? // set instead of contactId for pre-tenant flows (e.g. /onboard signup)
+  ip          String? // onboard_signup only — lets the admin anomaly check count successful signups clustered on one IP
   purpose     String   @default("step_up") // step_up | login | onboard_signup
   codeHash    String // OTP is hashed at rest, never stored in plaintext
   attempts    Int      @default(0)

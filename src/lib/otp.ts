@@ -99,7 +99,7 @@ export async function hasVerifiedSession(contactId: string): Promise<boolean> {
 // proceeds straight to tenant creation on a successful result.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function issuePhoneOtp(phone: string): Promise<IssuedOtp | { error: string }> {
+export async function issuePhoneOtp(phone: string, ip: string | null): Promise<IssuedOtp | { error: string }> {
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
   const recent = await db.otpChallenge.count({ where: { phone, purpose: "onboard_signup", createdAt: { gte: oneHourAgo } } });
   if (recent >= MAX_ACTIVE_PER_HOUR) {
@@ -107,7 +107,7 @@ export async function issuePhoneOtp(phone: string): Promise<IssuedOtp | { error:
   }
   const code = randomOtp(6);
   const challenge = await db.otpChallenge.create({
-    data: { phone, purpose: "onboard_signup", codeHash: sha256(code), expiresAt: new Date(Date.now() + OTP_TTL_MS) },
+    data: { phone, ip, purpose: "onboard_signup", codeHash: sha256(code), expiresAt: new Date(Date.now() + OTP_TTL_MS) },
   });
   return { challengeId: challenge.id, code };
 }
@@ -115,4 +115,18 @@ export async function issuePhoneOtp(phone: string): Promise<IssuedOtp | { error:
 export async function verifyPhoneOtp(challengeId: string, code: string): Promise<VerifyResult> {
   const { result } = await verifyChallengeCore(challengeId, code);
   return result;
+}
+
+/** How many DIFFERENT signups have actually completed (not just started) from
+ *  this IP in the last 24h, including the one just verified — used by
+ *  requestOnboardOtpAction's caller to decide whether this looks like
+ *  clustered trial abuse worth a human admin's attention. Counts completed
+ *  signups, not mere attempts, since a genuine visitor retrying a typo'd
+ *  code isn't suspicious the way several DIFFERENT orgs signing up from one
+ *  IP in a day is. */
+export async function countRecentCompletedSignupsFromIp(ip: string): Promise<number> {
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  return db.otpChallenge.count({
+    where: { purpose: "onboard_signup", ip, consumedAt: { not: null, gte: oneDayAgo } },
+  });
 }

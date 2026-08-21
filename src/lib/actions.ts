@@ -20,8 +20,9 @@ import type { ParamSpec } from "./connector-engine";
 import { getSettingNumber } from "./platform-settings";
 import { crawlSite } from "./website-crawl";
 import { extractFaqDraft } from "./ai";
-import { issuePhoneOtp, verifyPhoneOtp } from "./otp";
+import { issuePhoneOtp, verifyPhoneOtp, countRecentCompletedSignupsFromIp } from "./otp";
 import { sendSms, smsEnabled } from "./sms";
+import { queueNotification } from "./notifications";
 
 /** Real brute-force protection — LoginAttempt was already logged for every
  *  try but never actually consulted before this; a fixed number of recent
@@ -192,7 +193,8 @@ export async function requestOnboardOtpAction(_prev: unknown, formData: FormData
   const { data: d } = validated;
 
   const phone = normalizePhone(d.phoneNumber);
-  const issued = await issuePhoneOtp(phone);
+  const { ip } = await clientMeta();
+  const issued = await issuePhoneOtp(phone, ip);
   if ("error" in issued) return { error: issued.error };
 
   const message = `Your P2Less verification code is ${issued.code}. It expires in 5 minutes.`;
@@ -281,6 +283,27 @@ export async function confirmOnboardOtpAction(_prev: unknown, formData: FormData
 
       return { password };
     });
+
+    // Real signup-clustering check — several DIFFERENT signups completing
+    // from the same IP within a day is exactly the trial-abuse pattern
+    // flagged earlier (see roadmap doc); queues a real admin notification
+    // through the existing Notification Engine rather than a new delivery
+    // mechanism. Never allowed to break the user's own success response.
+    try {
+      const { ip } = await clientMeta();
+      if (ip) {
+        const count = await countRecentCompletedSignupsFromIp(ip);
+        if (count >= 3) {
+          await queueNotification(
+            "onboard_signup_anomaly",
+            `${count} self-service signups completed from the same IP (${ip}) in the last 24 hours — most recently "${d.orgName}". Worth a quick look in case this is trial abuse rather than a legitimate agency/reseller signing up several clients.`,
+          );
+        }
+      }
+    } catch (e) {
+      console.error("[confirmOnboardOtpAction] anomaly check failed:", e);
+    }
+
     return { ok: true, email: d.adminEmail, password, slug };
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {

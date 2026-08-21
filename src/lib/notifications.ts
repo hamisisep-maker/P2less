@@ -30,6 +30,7 @@ const PLATFORM_EVENT_PERMISSION: Partial<Record<string, AdminPermission>> = {
   ticket_sla_breached: "tickets.manage",
   whatsapp_connection_failed: "integrations.manage",
   ai_provider_degraded: "providers.manage",
+  onboard_signup_anomaly: "security.manage",
 };
 
 export async function resolveTenantRecipientEmail(tenantId: string): Promise<string | null> {
