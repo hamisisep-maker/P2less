@@ -6,6 +6,7 @@ import { Logo, Badge } from "@/components/ui";
 import { NotificationBell, UserMenu, LiveClock, type NotifItem } from "@/components/dashboard-ui";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { MaintenanceScreen } from "@/components/maintenance-screen";
+import { resolveVisibleNav } from "@/lib/nav";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const user = await requireTenantUser();
@@ -20,11 +21,28 @@ export default async function DashboardLayout({ children }: { children: React.Re
     return <MaintenanceScreen message={message} onLogout={logoutAction} />;
   }
 
-  const [escalated, lowStock, outOfStock] = await Promise.all([
+  const [escalated, lowStock, outOfStock, connectorCount, apiKeyCount, webhookCount, productCount, widgetKeyCount] = await Promise.all([
     db.conversation.count({ where: { tenantId, status: "escalated" } }),
     db.product.findMany({ where: { tenantId, stockQuantity: { not: null, gt: 0, lte: 5 } }, select: { name: true, stockQuantity: true }, take: 5 }),
     db.product.count({ where: { tenantId, OR: [{ stockQuantity: 0 }, { inStock: false }] } }),
+    db.connector.count({ where: { tenantId } }),
+    db.apiKey.count({ where: { tenantId } }),
+    db.webhook.count({ where: { tenantId } }),
+    db.product.count({ where: { tenantId } }),
+    db.widgetKey.count({ where: { tenantId } }),
   ]);
+
+  // Registration reframe Track B — capability-based nav (see nav.ts). Self-
+  // reported useCases/channelsNeeded, empty for every pre-existing tenant,
+  // fall back cleanly to the real data-presence signals above.
+  const navItems = resolveVisibleNav({
+    useCases: (user.tenant?.useCases as string[] | null) ?? [],
+    channelsNeeded: (user.tenant?.channelsNeeded as string[] | null) ?? [],
+    hasConnectors: connectorCount > 0,
+    hasApiActivity: apiKeyCount > 0 || webhookCount > 0,
+    hasProducts: productCount > 0,
+    hasWidgetKey: widgetKeyCount > 0,
+  });
 
   const notifications: NotifItem[] = [
     ...(escalated > 0 ? [{ id: "escalated", title: `${escalated} conversation${escalated === 1 ? "" : "s"} escalated`, detail: "Waiting on a human reply", tone: "rose" as const, href: "/dashboard/conversations" }] : []),
@@ -37,7 +55,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       {/* Sidebar — deliberately its own dark palette (var(--color-side-*)), scrolls on its own on desktop */}
       <aside className="flex flex-col border-b border-side-line bg-side-bg lg:h-screen lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="p-5"><Logo dark /></div>
-        <SidebarNav />
+        <SidebarNav items={navItems} />
         <div className="mt-auto hidden border-t border-side-line p-4 lg:block">
           <div className="flex items-center justify-between">
             <span className="text-xs text-side-text">{user.tenant?.name}</span>

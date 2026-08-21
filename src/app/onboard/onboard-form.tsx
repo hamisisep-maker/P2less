@@ -22,6 +22,7 @@ type OtpData = { challengeId: string; demoCode?: string; orgName: string; indust
 // personalization later, never a gate on what the org can actually do.
 const USE_CASE_OPTIONS: { value: string; label: string }[] = [
   { value: "automate_conversations", label: "Automate WhatsApp conversations for my customers" },
+  { value: "sell_products", label: "Sell products & manage orders/delivery" },
   { value: "connect_systems", label: "Connect my existing software/systems" },
   { value: "developer_api", label: "I'm a developer — building on the API" },
   { value: "exploring", label: "Just exploring" },
