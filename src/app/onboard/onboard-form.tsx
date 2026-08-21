@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useRef, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
@@ -14,6 +14,35 @@ const field = "mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 te
 const label = "text-xs font-medium text-muted";
 
 type CardData = { setupIntentId: string; clientSecret: string; stripePublishableKey: string; orgName: string; industry: string; phoneNumber: string; adminName: string; adminEmail: string };
+type OtpData = { challengeId: string; demoCode?: string; orgName: string; industry: string; phoneNumber: string; adminName: string; adminEmail: string };
+
+// Resume-on-refresh: see the "UX design — resuming an interrupted /onboard
+// signup" note in docs/ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md for the full
+// rationale and what this deliberately does/doesn't cover.
+const STORAGE_KEY = "p2less_onboard_progress";
+type SavedProgress = ({ step: "otp" } & OtpData) | ({ step: "card" } & CardData);
+
+function saveProgress(p: SavedProgress | null) {
+  try {
+    if (p) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(p));
+    else sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Storage disabled/unavailable (private browsing, quota) — resuming
+    // just won't work this time; never let this break the signup itself.
+  }
+}
+
+function loadProgress(): SavedProgress | null {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed?.step === "otp" || parsed?.step === "card") return parsed as SavedProgress;
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 /** The card-collection sub-form. Split out because useStripe()/useElements()
  *  only work INSIDE an <Elements> provider. The visible button is type="button"
@@ -21,7 +50,7 @@ type CardData = { setupIntentId: string; clientSecret: string; stripePublishable
  *  details never touch our server, staying out of PCI scope), and only on a
  *  real "succeeded" result does it trigger the actual form submission to
  *  confirmOnboardCardAction, which re-verifies server-side before trusting it. */
-function CardStep({ data, error, confirmAction, pending }: { data: CardData; error?: string; confirmAction: (formData: FormData) => void; pending: boolean }) {
+function CardStep({ data, error, confirmAction, pending, onStartOver }: { data: CardData; error?: string; confirmAction: (formData: FormData) => void; pending: boolean; onStartOver: () => void }) {
   const stripe = useStripe();
   const elements = useElements();
   const formRef = useRef<HTMLFormElement>(null);
@@ -73,6 +102,7 @@ function CardStep({ data, error, confirmAction, pending }: { data: CardData; err
         {busy ? "Verifying card…" : "Verify card & create workspace"}
       </button>
       <p className="text-center text-[11px] text-faint">Secured by Stripe — your card details never touch P2Less servers.</p>
+      <button type="button" onClick={onStartOver} className="block w-full text-center text-[11px] text-faint underline hover:text-muted">Not you, or details wrong? Start over</button>
     </form>
   );
 }
@@ -82,45 +112,84 @@ export function OnboardForm() {
   const [confirmOtpState, confirmOtpAction, confirmOtpPending] = useActionState(confirmOnboardOtpAction, null as ConfirmOtpResult | null);
   const [confirmCardState, confirmCardAction, confirmCardPending] = useActionState(confirmOnboardCardAction, null as ConfirmCardResult | null);
 
-  const stripePromise = useMemo(() => {
-    const key = (confirmOtpState && "step" in confirmOtpState && confirmOtpState.step === "card" && confirmOtpState.stripePublishableKey)
-      || (confirmCardState && "step" in confirmCardState && confirmCardState.stripePublishableKey);
-    return key ? loadStripe(key) : null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [confirmOtpState, confirmCardState]);
+  // Resume-on-refresh: read once on mount (client-only — sessionStorage
+  // doesn't exist during SSR, so this deliberately runs in an effect rather
+  // than a lazy useState initializer, to avoid a hydration mismatch. Means
+  // the very first paint always shows step 1 for a split second before
+  // snapping to the resumed step, an acceptable tradeoff for correctness
+  // over avoiding a one-frame flash.
+  const [restored, setRestored] = useState<SavedProgress | null>(null);
+  useEffect(() => { setRestored(loadProgress()); }, []);
 
-  if (confirmCardState && "ok" in confirmCardState) return <SuccessScreen email={confirmCardState.email} password={confirmCardState.password} />;
+  // All derived "what should we show" values are computed unconditionally,
+  // every render, as plain values — only the actual JSX return is
+  // conditional. Every hook below (useEffect, useMemo) is likewise called
+  // unconditionally on every render; only their INTERNAL logic branches.
+  // Rules of Hooks — hooks must never be called conditionally.
+
+  const cardSuccess = confirmCardState && "ok" in confirmCardState ? confirmCardState : null;
   // confirmOtpState's "ok" branch is FinalizeOk ONLY when Stripe isn't
   // configured (finalizeOnboarding called directly, no "step" field) — when
   // Stripe IS configured, "ok:true" there means "move to the card step",
-  // handled separately below, not a final success.
-  if (confirmOtpState && "ok" in confirmOtpState && !("step" in confirmOtpState)) {
-    return <SuccessScreen email={confirmOtpState.email} password={confirmOtpState.password} />;
-  }
+  // not a final success.
+  const otpDirectSuccess = confirmOtpState && "ok" in confirmOtpState && !("step" in confirmOtpState) ? confirmOtpState : null;
+  const finalSuccess = cardSuccess ?? otpDirectSuccess;
 
   // A failed card attempt returns here (confirmCardState); a fresh success
-  // from the OTP step also lands here (confirmOtpState). The card-error
-  // state wins when present since it reflects the most recent attempt.
+  // from the OTP step also lands here (confirmOtpState); a resumed session
+  // (page refresh) falls back to sessionStorage. Live states always win over
+  // the restored snapshot once any real action has actually fired.
   const cardFromError = confirmCardState && "step" in confirmCardState && confirmCardState.step === "card" ? confirmCardState : null;
   const cardFromOtpSuccess = confirmOtpState && "step" in confirmOtpState && confirmOtpState.step === "card" ? confirmOtpState : null;
-  const card = cardFromError ?? cardFromOtpSuccess;
+  const cardFromStorage = !cardFromError && !cardFromOtpSuccess && restored?.step === "card" ? restored : null;
+  const card = cardFromError ?? cardFromOtpSuccess ?? cardFromStorage;
+
+  // Same precedence pattern as the card step: live error > live fresh success
+  // > resumed sessionStorage snapshot. Only relevant if we're not already
+  // past the OTP step (i.e. no card data yet).
+  const otpError = confirmOtpState && "step" in confirmOtpState && confirmOtpState.step === "otp" ? confirmOtpState : null;
+  const otpFresh = requestState && "step" in requestState ? requestState : null;
+  const otpFromStorage = !otpError && !otpFresh && restored?.step === "otp" ? restored : null;
+  const otp = !card ? (otpError ?? otpFresh ?? otpFromStorage) : null;
+  const demoCode = otpFresh?.demoCode ?? otpFromStorage?.demoCode;
+
+  // Persist whichever step is currently showing, and clear on real
+  // completion — a genuinely finished signup shouldn't leave stale progress
+  // behind for a future visit to this browser tab.
+  useEffect(() => {
+    if (finalSuccess) saveProgress(null);
+    else if (card) saveProgress(card);
+    else if (otp) saveProgress({ ...otp, demoCode });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finalSuccess, card, otp, demoCode]);
+
+  const stripePromise = useMemo(() => {
+    const key = (confirmOtpState && "step" in confirmOtpState && confirmOtpState.step === "card" && confirmOtpState.stripePublishableKey)
+      || (confirmCardState && "step" in confirmCardState && confirmCardState.stripePublishableKey)
+      || (restored?.step === "card" && restored.stripePublishableKey);
+    return key ? loadStripe(key) : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmOtpState, confirmCardState, restored]);
+
+  function startOver() {
+    saveProgress(null);
+    // useActionState has no public "reset" — a full reload is the simplest
+    // way to guarantee every step's state (and any in-progress OTP/card
+    // data) is genuinely cleared, not just visually hidden.
+    window.location.reload();
+  }
+
+  if (finalSuccess) return <SuccessScreen email={finalSuccess.email} password={finalSuccess.password} />;
 
   if (card && stripePromise) {
     return (
       <Card className="p-6">
         <Elements stripe={stripePromise}>
-          <CardStep data={card} error={cardFromError?.error} confirmAction={confirmCardAction} pending={confirmCardPending} />
+          <CardStep data={card} error={cardFromError?.error} confirmAction={confirmCardAction} pending={confirmCardPending} onStartOver={startOver} />
         </Elements>
       </Card>
     );
   }
-
-  // A failed OTP attempt returns to this step (with an error) via
-  // confirmOtpState; a fresh step-1 success also lands here via requestState.
-  const otpError = confirmOtpState && "step" in confirmOtpState && confirmOtpState.step === "otp" ? confirmOtpState : null;
-  const otpFresh = requestState && "step" in requestState ? requestState : null;
-  const otp = otpError ?? otpFresh;
-  const demoCode = otpFresh?.demoCode;
 
   if (otp) {
     return (
@@ -145,6 +214,7 @@ export function OnboardForm() {
             {confirmOtpPending ? "Verifying…" : "Verify & continue"}
           </button>
           <p className="text-center text-[11px] text-faint">Code expires in 5 minutes.</p>
+          <button type="button" onClick={startOver} className="block w-full text-center text-[11px] text-faint underline hover:text-muted">Not you, or details wrong? Start over</button>
         </form>
       </Card>
     );
