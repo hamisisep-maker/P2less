@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { createConnectorFromDraftAction } from "@/lib/actions";
 import type { DraftAction } from "@/lib/openapi-import";
 import { Card, Badge } from "@/components/ui";
@@ -9,6 +9,51 @@ const field = "mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 te
 const label = "text-xs font-medium text-muted";
 
 type EditableAction = DraftAction & { included: boolean; requiredPermission: string };
+
+// Resume-on-refresh: see the "UX pattern — resuming an interrupted multi-step
+// flow" note in docs/ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md, flagged there
+// as the same gap /onboard had before that fix. Deliberately does NOT persist
+// credential fields (apiKeyValue/bearerToken/basicPass) — those stay plain
+// uncontrolled inputs, never touch React state, and are never written to
+// sessionStorage even indirectly. A refresh loses a not-yet-submitted
+// credential the same way any browser form would; it does NOT lose the
+// (much more tedious to redo) per-capability review edits.
+const REVIEW_STORAGE_KEY = "p2less_connector_review_progress";
+type SavedReview = {
+  draftHash: string;
+  connectorName: string;
+  connectorDescription: string;
+  baseUrl: string;
+  authType: string;
+  actions: EditableAction[];
+};
+
+function hashDraft(name: string, baseUrl: string, actions: DraftAction[]): string {
+  const s = name + "|" + baseUrl + "|" + JSON.stringify(actions);
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return String(h);
+}
+
+function saveReview(r: SavedReview | null) {
+  try {
+    if (r) sessionStorage.setItem(REVIEW_STORAGE_KEY, JSON.stringify(r));
+    else sessionStorage.removeItem(REVIEW_STORAGE_KEY);
+  } catch {
+    // Storage disabled/unavailable — resuming just won't work this time.
+  }
+}
+
+function loadReview(): SavedReview | null {
+  try {
+    const raw = sessionStorage.getItem(REVIEW_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.draftHash ? (parsed as SavedReview) : null;
+  } catch {
+    return null;
+  }
+}
 
 /** The reviewed-draft-then-create step, shared by BOTH ways of getting a
  *  draft capability set in front of an admin: pasting an OpenAPI spec
@@ -31,6 +76,8 @@ export function ConnectorDraftReviewForm({
   onBack: () => void;
   backLabel: string;
 }) {
+  const draftHash = hashDraft(initialName, initialBaseUrl, initialActions);
+
   const [connectorName, setConnectorName] = useState(initialName);
   const [connectorDescription, setConnectorDescription] = useState(initialDescription);
   const [baseUrl, setBaseUrl] = useState(initialBaseUrl);
@@ -38,6 +85,44 @@ export function ConnectorDraftReviewForm({
   const [actions, setActions] = useState<EditableAction[]>(() => initialActions.map((a) => ({ ...a, included: true, requiredPermission: "" })));
 
   const [createState, createAction, creating] = useActionState(createConnectorFromDraftAction, null as { error?: string } | null);
+
+  // Guards against a real timing bug: a plain boolean ref flipped in the
+  // restore effect is NOT enough here — both effects fire in the same
+  // commit on mount (declared-order, one after the other), so a ref flip in
+  // the first is already visible to the second in that SAME pass, before
+  // the restore effect's setState calls have actually taken effect (those
+  // land on the NEXT render). The save effect would still fire once with
+  // the stale pre-restore values and wipe the snapshot it was meant to
+  // preserve. Using STATE (not a ref) for the gate fixes it: setHydrated
+  // batches with the other restore setState calls, so "hydrated" and the
+  // restored values become true/current together, on the same next render —
+  // the save effect only ever sees the fully-restored state, never the
+  // stale mid-restore snapshot.
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    const saved = loadReview();
+    if (saved && saved.draftHash === draftHash) {
+      setConnectorName(saved.connectorName);
+      setConnectorDescription(saved.connectorDescription);
+      setBaseUrl(saved.baseUrl);
+      setAuthType(saved.authType);
+      setActions(saved.actions);
+    }
+    setHydrated(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    saveReview({ draftHash, connectorName, connectorDescription, baseUrl, authType, actions });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, draftHash, connectorName, connectorDescription, baseUrl, authType, actions]);
+
+  function handleBack() {
+    saveReview(null);
+    onBack();
+  }
 
   function updateAction(i: number, patch: Partial<EditableAction>) {
     setActions((prev) => prev.map((a, idx) => (idx === i ? { ...a, ...patch } : a)));
@@ -129,7 +214,7 @@ export function ConnectorDraftReviewForm({
 
       {createState?.error && <div className="rounded-lg bg-rose-soft px-3 py-2 text-sm text-rose">{createState.error}</div>}
       <div className="flex items-center gap-3">
-        <button type="button" onClick={onBack} className="rounded-xl border border-line px-5 py-2.5 text-sm font-medium text-muted hover:bg-surface-2">
+        <button type="button" onClick={handleBack} className="rounded-xl border border-line px-5 py-2.5 text-sm font-medium text-muted hover:bg-surface-2">
           {backLabel}
         </button>
         <button
