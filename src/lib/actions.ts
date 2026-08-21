@@ -23,6 +23,9 @@ import { extractFaqDraft } from "./ai";
 import { issuePhoneOtp, verifyPhoneOtp, countRecentCompletedSignupsFromIp } from "./otp";
 import { sendSms, smsEnabled } from "./sms";
 import { queueNotification } from "./notifications";
+import {
+  isConfigured as stripeIsConfigured, publishableKey, createSetupIntent, verifySetupIntentSucceeded, createCustomerWithCard,
+} from "./stripe";
 
 /** Real brute-force protection — LoginAttempt was already logged for every
  *  try but never actually consulted before this; a fixed number of recent
@@ -221,30 +224,17 @@ export async function requestOnboardOtpAction(_prev: unknown, formData: FormData
 const confirmOtpSchema = provisionSchema.extend({ challengeId: z.string().min(1), code: z.string().min(1) });
 
 type OtpStepFields = { orgName: string; industry: z.infer<typeof provisionSchema>["industry"]; phoneNumber: string; adminName: string; adminEmail: string };
-export type ConfirmOtpResult =
-  | { ok: true; email: string; password: string; slug: string }
-  | ({ error: string; step: "otp"; challengeId: string } & OtpStepFields)
-  | { error: string };
+type FinalizeOk = { ok: true; email: string; password: string; slug: string };
 
-/** Step 2: verify the code, re-validate (defensive — real time passed since
- *  step 1), then create the tenant. Identical transaction to what this
- *  action used to do in one step before OTP verification was inserted. */
-export async function confirmOnboardOtpAction(_prev: unknown, formData: FormData): Promise<ConfirmOtpResult> {
-  const parsed = confirmOtpSchema.safeParse(Object.fromEntries(formData.entries()));
-  // A malformed resubmission (missing/corrupt hidden fields) has no org data
-  // to hand back — can't stay on the OTP step honestly, so this falls back
-  // to the start rather than pretending. Shouldn't happen via the real UI.
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
-  const { challengeId, code, ...rest } = parsed.data;
-
-  const verified = await verifyPhoneOtp(challengeId, code);
-  if (!verified.ok) {
-    return { error: verified.message, step: "otp" as const, challengeId, ...rest };
-  }
-
-  const validated = await validateOnboardFields(formData);
-  if ("error" in validated) return { error: validated.error };
-  const { data: d, emailCanonical } = validated;
+/** The actual tenant-creation transaction, shared by both the no-card-step
+ *  path (Stripe unconfigured) and confirmOnboardCardAction. Identical to
+ *  what confirmOnboardOtpAction used to do inline before the card step was
+ *  inserted between phone verification and tenant creation. */
+async function finalizeOnboarding(
+  d: z.infer<typeof provisionSchema>,
+  emailCanonical: string,
+  card?: { customerId: string; paymentMethodId: string },
+): Promise<FinalizeOk | { error: string }> {
   const slug = d.orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) + "-" + randomToken(2).toLowerCase();
 
   // Everything below must succeed together — a partial failure (e.g. a phone
@@ -253,7 +243,11 @@ export async function confirmOnboardOtpAction(_prev: unknown, formData: FormData
   try {
     const { password } = await db.$transaction(async (tx) => {
       const tenant = await tx.tenant.create({
-        data: { name: d.orgName, slug, industry: d.industry, status: "trial", branding: { assistantName: d.orgName, poweredBy: "Powered by P2Less" } },
+        data: {
+          name: d.orgName, slug, industry: d.industry, status: "trial",
+          branding: { assistantName: d.orgName, poweredBy: "Powered by P2Less" },
+          stripeCustomerId: card?.customerId, stripePaymentMethodId: card?.paymentMethodId,
+        },
       });
       const freePlan = (await tx.plan.findUnique({ where: { key: "free" } })) ?? (await tx.plan.findFirst({ orderBy: { sort: "asc" } }));
       if (freePlan) await tx.subscription.create({ data: { tenantId: tenant.id, planId: freePlan.id, period: "monthly", status: "trial", renewsAt: new Date(Date.now() + 30 * 864e5) } });
@@ -301,7 +295,7 @@ export async function confirmOnboardOtpAction(_prev: unknown, formData: FormData
         }
       }
     } catch (e) {
-      console.error("[confirmOnboardOtpAction] anomaly check failed:", e);
+      console.error("[finalizeOnboarding] anomaly check failed:", e);
     }
 
     return { ok: true, email: d.adminEmail, password, slug };
@@ -309,9 +303,79 @@ export async function confirmOnboardOtpAction(_prev: unknown, formData: FormData
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       return { error: "That phone number or email is already in use. Please try different details." };
     }
-    console.error("[confirmOnboardOtpAction] failed:", e);
+    console.error("[finalizeOnboarding] failed:", e);
     return { error: "Something went wrong setting up your organization. Please try again." };
   }
+}
+
+type CardStepFields = { setupIntentId: string; clientSecret: string; stripePublishableKey: string };
+export type ConfirmOtpResult =
+  | FinalizeOk
+  | ({ ok: true; step: "card" } & CardStepFields & OtpStepFields)
+  | ({ error: string; step: "otp"; challengeId: string } & OtpStepFields)
+  | { error: string };
+
+/** Step 2: verify the code, re-validate (defensive — real time passed since
+ *  step 1), then either start card verification (step 3, if Stripe is
+ *  configured) or create the tenant directly (Stripe unconfigured — the
+ *  card-on-file deterrent degrades gracefully rather than blocking signup,
+ *  same philosophy as every other optional provider in this codebase). */
+export async function confirmOnboardOtpAction(_prev: unknown, formData: FormData): Promise<ConfirmOtpResult> {
+  const parsed = confirmOtpSchema.safeParse(Object.fromEntries(formData.entries()));
+  // A malformed resubmission (missing/corrupt hidden fields) has no org data
+  // to hand back — can't stay on the OTP step honestly, so this falls back
+  // to the start rather than pretending. Shouldn't happen via the real UI.
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  const { challengeId, code, ...rest } = parsed.data;
+
+  const verified = await verifyPhoneOtp(challengeId, code);
+  if (!verified.ok) {
+    return { error: verified.message, step: "otp" as const, challengeId, ...rest };
+  }
+
+  const validated = await validateOnboardFields(formData);
+  if ("error" in validated) return { error: validated.error };
+  const { data: d, emailCanonical } = validated;
+
+  if (!stripeIsConfigured()) {
+    return finalizeOnboarding(d, emailCanonical);
+  }
+  const setupIntent = await createSetupIntent();
+  if ("error" in setupIntent) return { error: setupIntent.error };
+  return {
+    ok: true, step: "card" as const, setupIntentId: setupIntent.setupIntentId, clientSecret: setupIntent.clientSecret, stripePublishableKey: publishableKey(),
+    orgName: d.orgName, industry: d.industry, phoneNumber: d.phoneNumber, adminName: d.adminName, adminEmail: d.adminEmail,
+  };
+}
+
+const confirmCardSchema = provisionSchema.extend({ setupIntentId: z.string().min(1) });
+export type ConfirmCardResult =
+  | FinalizeOk
+  | ({ error: string; step: "card" } & CardStepFields & OtpStepFields)
+  | { error: string };
+
+/** Step 3 (only reached if Stripe is configured): re-verify the SetupIntent
+ *  server-side — never trust the browser's own "it succeeded" claim alone —
+ *  save the verified card against a real Stripe Customer, then create the
+ *  tenant exactly as confirmOnboardOtpAction used to do directly. */
+export async function confirmOnboardCardAction(_prev: unknown, formData: FormData): Promise<ConfirmCardResult> {
+  const parsed = confirmCardSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  const { setupIntentId, ...rest } = parsed.data;
+
+  const verified = await verifySetupIntentSucceeded(setupIntentId);
+  if (!verified.ok) {
+    return { error: verified.error, step: "card" as const, setupIntentId, clientSecret: verified.clientSecret, stripePublishableKey: publishableKey(), ...rest };
+  }
+
+  const validated = await validateOnboardFields(formData);
+  if ("error" in validated) return { error: validated.error };
+  const { data: d, emailCanonical } = validated;
+
+  const customer = await createCustomerWithCard(d.adminEmail, d.adminName, verified.paymentMethodId);
+  if ("error" in customer) return { error: customer.error };
+
+  return finalizeOnboarding(d, emailCanonical, { customerId: customer.customerId, paymentMethodId: verified.paymentMethodId });
 }
 
 // ── Developer platform: API keys + webhooks ───────────────────────────────────

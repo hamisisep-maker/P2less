@@ -467,6 +467,12 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Card-on-file (trial-abuse deterrent, /onboard signup) — a real card
+  // verified via a $0 Stripe SetupIntent, never charged. Nullable: existing
+  // tenants predate this and never went through the card step.
+  stripeCustomerId      String?
+  stripePaymentMethodId String?
+
   users         User[]
   roles         Role[]
   contacts      Contact[]
