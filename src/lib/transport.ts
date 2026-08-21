@@ -4,6 +4,7 @@ import { db } from "./db";
 import { meter } from "./usage";
 import { decryptJSON } from "./crypto";
 import { dispatchWebhook } from "./webhooks";
+import { resolveMessengerToken } from "./messenger";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Channel transport. The engine emits outbound messages through deliver(); each
@@ -23,6 +24,9 @@ export type OutboundMessage = {
   meta?: Record<string, unknown>;
   // The organization's Cloud-API phone_number_id to send FROM (routing identity).
   fromNumberId?: string | null;
+  // Same routing role as fromNumberId, for Messenger — the org's connected
+  // Facebook Page id.
+  fromPageId?: string | null;
   // When set, deliver this as a document (PDF) attachment, not just text.
   document?: { url: string; filename: string };
   // When set, deliver this as an image attachment (e.g. a product photo).
@@ -149,6 +153,35 @@ export async function deliver(msg: OutboundMessage): Promise<{ delivered: boolea
       } catch (e) {
         console.error("[whatsapp:send-error]", e);
         return { delivered: false, transport: "whatsapp", error: "network error" };
+      }
+    }
+
+    case "messenger": {
+      if (!msg.fromPageId) {
+        return { delivered: false, transport: "messenger:not-configured", error: "No connected Facebook Page for this organization" };
+      }
+      const token = await resolveMessengerToken(msg.fromPageId);
+      if (!token) {
+        if (process.env.NODE_ENV !== "production") console.log(`[messenger:not-configured →${msg.to}] ${msg.body}`);
+        return { delivered: false, transport: "messenger:not-configured", error: "Messenger Page token not configured" };
+      }
+      try {
+        // Send API contract confirmed against Meta's own docs: POST
+        // /{PAGE_ID}/messages?access_token=..., body {recipient,messaging_type,message}.
+        const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${msg.fromPageId}/messages?access_token=${encodeURIComponent(token)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recipient: { id: msg.to }, messaging_type: "RESPONSE", message: { text: msg.body } }),
+        });
+        if (!res.ok) {
+          const detail = await res.text().catch(() => "");
+          console.error(`[messenger:send-failed ${res.status}] ${detail.slice(0, 300)}`);
+          return { delivered: false, transport: "messenger", error: `Send API ${res.status}` };
+        }
+        return { delivered: true, transport: "messenger" };
+      } catch (e) {
+        console.error("[messenger:send-error]", e);
+        return { delivered: false, transport: "messenger", error: "network error" };
       }
     }
 

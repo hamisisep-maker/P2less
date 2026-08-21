@@ -1017,6 +1017,7 @@ model Channel {
 
   @@unique([tenantId, type])
   @@index([tenantId])
+  @@index([type, address])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

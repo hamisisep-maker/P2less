@@ -24,6 +24,7 @@ import { issuePhoneOtp, verifyPhoneOtp, countRecentCompletedSignupsFromIp } from
 import { sendSms, smsEnabled } from "./sms";
 import { queueNotification } from "./notifications";
 import { buildEmbeddedSignupLink } from "./whatsapp-embedded-signup";
+import { buildMessengerConnectLink } from "./messenger";
 import {
   isConfigured as stripeIsConfigured, publishableKey, createSetupIntent, verifySetupIntentSucceeded, createCustomerWithCard,
 } from "./stripe";
@@ -849,6 +850,20 @@ export async function startWhatsAppEmbeddedSignupAction(_prev: unknown, _formDat
     return { error: "Only an organization owner can connect a WhatsApp number." };
   }
   const link = buildEmbeddedSignupLink(user.tenantId!);
+  if (!link.ok) return { error: link.error };
+  redirect(link.url);
+}
+
+// ── Facebook Messenger connection (Phase 8a) ──────────────────────────────────
+// Owner-only, same shape as the WhatsApp Embedded Signup action above —
+// standard Facebook Login OAuth rather than Meta's Embedded Signup, since
+// Messenger has no equivalent "hosted" onboarding product.
+export async function startMessengerConnectAction(_prev: unknown, _formData: FormData) {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE)) {
+    return { error: "Only an organization owner can connect a Facebook Page." };
+  }
+  const link = buildMessengerConnectLink(user.tenantId!);
   if (!link.ok) return { error: link.error };
   redirect(link.url);
 }

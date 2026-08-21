@@ -4,11 +4,12 @@
 // to work in some dev sessions but breaks in others/production ("Functions
 // cannot be passed directly to Client Components"). A string key is always
 // safe; sidebar-nav.tsx (a client file) owns the actual icon lookup table.
-export type NavIconName = "LayoutDashboard" | "Smartphone" | "Plug" | "MessagesSquare" | "ScrollText" | "Users" | "HelpCircle" | "Package" | "LineChart" | "MapPinned" | "Truck" | "Code2" | "CreditCard" | "Building2" | "Wallet" | "BrainCircuit" | "Settings" | "Boxes" | "ShieldCheck" | "Lock" | "GitMerge" | "HeartPulse" | "AlertTriangle" | "LifeBuoy" | "Globe";
+export type NavIconName = "LayoutDashboard" | "Smartphone" | "Plug" | "MessagesSquare" | "ScrollText" | "Users" | "HelpCircle" | "Package" | "LineChart" | "MapPinned" | "Truck" | "Code2" | "CreditCard" | "Building2" | "Wallet" | "BrainCircuit" | "Settings" | "Boxes" | "ShieldCheck" | "Lock" | "GitMerge" | "HeartPulse" | "AlertTriangle" | "LifeBuoy" | "Globe" | "MessageCircle";
 
 export const NAV: { href: string; label: string; icon: NavIconName }[] = [
   { href: "/dashboard", label: "Overview", icon: "LayoutDashboard" },
   { href: "/dashboard/numbers", label: "WhatsApp Numbers", icon: "Smartphone" },
+  { href: "/dashboard/messenger", label: "Messenger", icon: "MessageCircle" },
   { href: "/dashboard/connectors", label: "Integrations", icon: "Plug" },
   { href: "/dashboard/conversations", label: "Conversations", icon: "MessagesSquare" },
   { href: "/dashboard/audit", label: "Audit log", icon: "ScrollText" },
