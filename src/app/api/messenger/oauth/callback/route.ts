@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { exchangeCodeForPages, saveConnectedPage } from "@/lib/messenger";
+import { exchangeCodeForPages, saveConnectedPage, subscribePageToWebhook } from "@/lib/messenger";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 8a — Meta redirects here after an org authorizes Facebook Login for
@@ -41,6 +41,18 @@ export async function GET(req: Request) {
     redirect(`/dashboard/messenger?connect=error&message=${encodeURIComponent("No Facebook Pages found for that account — connect an account that manages at least one Page.")}`);
   }
 
-  await saveConnectedPage(tenant.id, result.pages[0]);
+  const page = result.pages[0];
+  await saveConnectedPage(tenant.id, page);
+
+  // The Page connection alone isn't enough for messages to reach the
+  // webhook — Meta needs the Page explicitly subscribed. The Channel row
+  // is already saved either way (a real connection, even if this specific
+  // step needs retrying), so a subscription failure surfaces as a distinct
+  // warning rather than pretending the whole thing failed.
+  const sub = await subscribePageToWebhook(page.id, page.access_token);
+  if (!sub.ok) {
+    redirect(`/dashboard/messenger?connect=partial&message=${encodeURIComponent("Page connected, but the webhook subscription failed: " + sub.error)}`);
+  }
+
   redirect("/dashboard/messenger?connect=success");
 }

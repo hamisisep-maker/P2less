@@ -28,6 +28,12 @@ export default async function MessengerPage({ searchParams }: { searchParams: Pr
           Couldn&apos;t connect a Facebook Page: {message || "something went wrong on Meta's side."}
         </div>
       )}
+      {connectResult === "partial" && (
+        <div className="mb-4 rounded-xl border border-amber/30 bg-amber-soft px-4 py-3 text-sm text-amber">
+          {message || "Page connected, but the webhook subscription needs another try."} Try connecting again — the
+          Page itself is already saved.
+        </div>
+      )}
       {canConnect && (
         <div className="mb-4">
           {messengerConnectConfigured() ? (

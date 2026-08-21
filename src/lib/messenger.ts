@@ -101,6 +101,24 @@ export async function saveConnectedPage(tenantId: string, page: PageAccount): Pr
   });
 }
 
+/** Connecting a Page (OAuth) is necessary but NOT sufficient for messages to
+ *  actually reach our webhook — Meta requires the Page to be explicitly
+ *  subscribed to this app's webhook events, a separate real API call
+ *  (confirmed via Meta's own Messenger Platform docs). Called right after
+ *  saveConnectedPage() so every connection is fully wired automatically,
+ *  not a manual dashboard step someone has to remember. */
+export async function subscribePageToWebhook(pageId: string, pageAccessToken: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await fetch(
+    `https://graph.facebook.com/${GRAPH_VERSION}/${pageId}/subscribed_apps?subscribed_fields=messages&access_token=${encodeURIComponent(pageAccessToken)}`,
+    { method: "POST" },
+  );
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || !body?.success) {
+    return { ok: false, error: body?.error?.message || `Page subscription failed (${res.status})` };
+  }
+  return { ok: true };
+}
+
 export async function resolveMessengerToken(pageId: string): Promise<string | null> {
   const channel = await db.channel.findFirst({ where: { type: "messenger", address: pageId, status: "active" } });
   const cfg = channel?.config as { tokenEnc?: string } | null;
