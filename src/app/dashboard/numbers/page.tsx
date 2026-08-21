@@ -1,14 +1,19 @@
-import { requireTenantUser } from "@/lib/auth";
+import { requireTenantUser, userPermissions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Card, PageHeader, Badge } from "@/components/ui";
+import { PERMISSIONS } from "@/lib/permissions";
+import { embeddedSignupConfigured } from "@/lib/whatsapp-embedded-signup";
+import { ConnectWhatsAppButton } from "./connect-whatsapp-button";
 
-export default async function NumbersPage() {
+export default async function NumbersPage({ searchParams }: { searchParams: Promise<{ embedded_signup?: string; message?: string }> }) {
   const user = await requireTenantUser();
+  const { embedded_signup: signupResult, message } = await searchParams;
   const numbers = await db.whatsAppNumber.findMany({
     where: { tenantId: user.tenantId! },
     include: { _count: { select: { conversations: true } } },
     orderBy: { createdAt: "asc" },
   });
+  const canConnect = userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE);
 
   return (
     <div>
@@ -16,6 +21,25 @@ export default async function NumbersPage() {
         title="WhatsApp Numbers"
         subtitle="Your organization's own numbers. Each is a routing front door — messages to it reach only your systems. Connect a Cloud API number, then assign capabilities."
       />
+      {signupResult === "success" && (
+        <div className="mb-4 rounded-xl border border-accent/30 bg-accent-soft px-4 py-3 text-sm text-accent-ink">
+          WhatsApp connection started. Meta is finishing the link on their side — this can take a few minutes to fully appear below.
+        </div>
+      )}
+      {signupResult === "error" && (
+        <div className="mb-4 rounded-xl bg-rose-soft px-4 py-3 text-sm text-rose">
+          Couldn&apos;t connect WhatsApp: {message || "something went wrong on Meta's side."}
+        </div>
+      )}
+      {canConnect && (
+        <div className="mb-4">
+          {embeddedSignupConfigured() ? (
+            <ConnectWhatsAppButton />
+          ) : (
+            <p className="text-xs text-faint">Real self-service WhatsApp connection isn&apos;t configured yet on this deployment.</p>
+          )}
+        </div>
+      )}
       <div className="space-y-3">
         {numbers.length === 0 && <Card className="p-6 text-sm text-muted">No numbers connected yet.</Card>}
         {numbers.map((n) => (

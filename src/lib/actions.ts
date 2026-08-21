@@ -23,6 +23,7 @@ import { extractFaqDraft } from "./ai";
 import { issuePhoneOtp, verifyPhoneOtp, countRecentCompletedSignupsFromIp } from "./otp";
 import { sendSms, smsEnabled } from "./sms";
 import { queueNotification } from "./notifications";
+import { buildEmbeddedSignupLink } from "./whatsapp-embedded-signup";
 import {
   isConfigured as stripeIsConfigured, publishableKey, createSetupIntent, verifySetupIntentSucceeded, createCustomerWithCard,
 } from "./stripe";
@@ -813,4 +814,19 @@ export async function createConnectorFromDraftAction(_prev: unknown, formData: F
   });
   revalidatePath("/dashboard/connectors");
   redirect("/dashboard/connectors");
+}
+
+// ── WhatsApp Embedded Signup (Phase 9) ────────────────────────────────────────
+// Owner-only: connecting the org's real WhatsApp number via Meta's Meta-hosted
+// Embedded Signup. `state` carries the tenant id through Meta's redirect so the
+// callback route (src/app/api/whatsapp/embedded-signup/callback/route.ts) knows
+// which tenant the returned authorization code belongs to.
+export async function startWhatsAppEmbeddedSignupAction(_prev: unknown, _formData: FormData) {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE)) {
+    return { error: "Only an organization owner can connect a WhatsApp number." };
+  }
+  const link = buildEmbeddedSignupLink(user.tenantId!);
+  if (!link.ok) return { error: link.error };
+  redirect(link.url);
 }

@@ -29,7 +29,9 @@ export async function GET(req: Request) {
 
 type WaPayload = {
   entry?: {
+    id?: string;
     changes?: {
+      field?: string;
       value?: {
         metadata?: { phone_number_id?: string };
         contacts?: { profile?: { name?: string }; wa_id?: string }[];
@@ -40,6 +42,12 @@ type WaPayload = {
           document?: { id?: string; mime_type?: string; filename?: string; caption?: string };
           image?: { id?: string; mime_type?: string; caption?: string };
         }[];
+        // account_update's shape varies by event subtype (Meta docs cover
+        // AD_ACCOUNT_LINKED explicitly; the "a Tech Provider's client finished
+        // Embedded Signup" event is not confirmed here — see the honest
+        // log-first handling in processAccountUpdate() below).
+        event?: string;
+        [key: string]: unknown;
       };
     }[];
   }[];
@@ -101,6 +109,19 @@ async function processEvents(payload: WaPayload): Promise<void> {
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
       const value = change.value;
+
+      // Phase 9 (Embedded Signup): the ONLY channel left to learn a newly
+      // connected client's wabaId/phoneNumberId for the hosted-redirect signup
+      // variant (see the callback route's comment). Genuinely unverified which
+      // `event` value/shape Meta sends for "Tech Provider client finished
+      // onboarding" — logging the full raw payload every time until a real one
+      // is observed, rather than guessing a shape and silently dropping events
+      // that don't match it.
+      if (change.field === "account_update") {
+        console.log("[whatsapp:account_update]", JSON.stringify({ entryId: entry.id, value }));
+        continue;
+      }
+
       const phoneNumberId = value?.metadata?.phone_number_id;
       const messages = value?.messages ?? [];
       if (!phoneNumberId || messages.length === 0) continue;
