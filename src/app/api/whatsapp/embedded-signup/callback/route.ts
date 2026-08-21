@@ -26,20 +26,20 @@ export async function GET(req: Request) {
   const oauthError = url.searchParams.get("error_description") || url.searchParams.get("error");
 
   if (oauthError) {
-    redirect(`/dashboard/numbers?embedded_signup=error&message=${encodeURIComponent(oauthError)}`);
+    redirect(`/dashboard/channels?embedded_signup=error&message=${encodeURIComponent(oauthError)}`);
   }
   if (!code || !state) {
-    redirect(`/dashboard/numbers?embedded_signup=error&message=${encodeURIComponent("Meta didn't return the expected authorization code.")}`);
+    redirect(`/dashboard/channels?embedded_signup=error&message=${encodeURIComponent("Meta didn't return the expected authorization code.")}`);
   }
 
   const tenant = await db.tenant.findUnique({ where: { id: state } });
   if (!tenant) {
-    redirect(`/dashboard/numbers?embedded_signup=error&message=${encodeURIComponent("Couldn't match this signup back to an organization.")}`);
+    redirect(`/dashboard/channels?embedded_signup=error&message=${encodeURIComponent("Couldn't match this signup back to an organization.")}`);
   }
 
   const exchange = await exchangeCodeForToken(code);
   if (!exchange.ok) {
-    redirect(`/dashboard/numbers?embedded_signup=error&message=${encodeURIComponent(exchange.error)}`);
+    redirect(`/dashboard/channels?embedded_signup=error&message=${encodeURIComponent(exchange.error)}`);
   }
 
   // Handshake succeeded. Mark (or create) a pending number for this tenant so
@@ -51,5 +51,5 @@ export async function GET(req: Request) {
     await db.whatsAppNumber.update({ where: { id: existingPending.id }, data: { verificationStatus: "connecting" } });
   }
 
-  redirect("/dashboard/numbers?embedded_signup=success");
+  redirect("/dashboard/channels?embedded_signup=success");
 }

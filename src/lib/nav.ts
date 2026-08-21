@@ -8,8 +8,7 @@ export type NavIconName = "LayoutDashboard" | "Smartphone" | "Plug" | "MessagesS
 
 export const NAV: { href: string; label: string; icon: NavIconName }[] = [
   { href: "/dashboard", label: "Overview", icon: "LayoutDashboard" },
-  { href: "/dashboard/numbers", label: "WhatsApp Numbers", icon: "Smartphone" },
-  { href: "/dashboard/messenger", label: "Messenger", icon: "MessageCircle" },
+  { href: "/dashboard/channels", label: "Channels", icon: "Smartphone" },
   { href: "/dashboard/connectors", label: "Integrations", icon: "Plug" },
   { href: "/dashboard/conversations", label: "Conversations", icon: "MessagesSquare" },
   { href: "/dashboard/audit", label: "Audit log", icon: "ScrollText" },

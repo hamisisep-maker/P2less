@@ -22,23 +22,23 @@ export async function GET(req: Request) {
   const oauthError = url.searchParams.get("error_description") || url.searchParams.get("error");
 
   if (oauthError) {
-    redirect(`/dashboard/messenger?connect=error&message=${encodeURIComponent(oauthError)}`);
+    redirect(`/dashboard/channels?connect=error&message=${encodeURIComponent(oauthError)}`);
   }
   if (!code || !state) {
-    redirect(`/dashboard/messenger?connect=error&message=${encodeURIComponent("Meta didn't return the expected authorization code.")}`);
+    redirect(`/dashboard/channels?connect=error&message=${encodeURIComponent("Meta didn't return the expected authorization code.")}`);
   }
 
   const tenant = await db.tenant.findUnique({ where: { id: state } });
   if (!tenant) {
-    redirect(`/dashboard/messenger?connect=error&message=${encodeURIComponent("Couldn't match this connection back to an organization.")}`);
+    redirect(`/dashboard/channels?connect=error&message=${encodeURIComponent("Couldn't match this connection back to an organization.")}`);
   }
 
   const result = await exchangeCodeForPages(code);
   if (!result.ok) {
-    redirect(`/dashboard/messenger?connect=error&message=${encodeURIComponent(result.error)}`);
+    redirect(`/dashboard/channels?connect=error&message=${encodeURIComponent(result.error)}`);
   }
   if (result.pages.length === 0) {
-    redirect(`/dashboard/messenger?connect=error&message=${encodeURIComponent("No Facebook Pages found for that account — connect an account that manages at least one Page.")}`);
+    redirect(`/dashboard/channels?connect=error&message=${encodeURIComponent("No Facebook Pages found for that account — connect an account that manages at least one Page.")}`);
   }
 
   const page = result.pages[0];
@@ -51,8 +51,8 @@ export async function GET(req: Request) {
   // warning rather than pretending the whole thing failed.
   const sub = await subscribePageToWebhook(page.id, page.access_token);
   if (!sub.ok) {
-    redirect(`/dashboard/messenger?connect=partial&message=${encodeURIComponent("Page connected, but the webhook subscription failed: " + sub.error)}`);
+    redirect(`/dashboard/channels?connect=partial&message=${encodeURIComponent("Page connected, but the webhook subscription failed: " + sub.error)}`);
   }
 
-  redirect("/dashboard/messenger?connect=success");
+  redirect("/dashboard/channels?connect=success");
 }
