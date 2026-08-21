@@ -356,6 +356,27 @@ Deliberately NOT reusing `ApiKey` (which is hashed, secret, and scoped to the pr
 
 ---
 
+## Security — trial-abuse / multi-account hardening (flagged 2026-08-21, not started)
+
+User insight, 2026-08-21: while setting up multiple free-tier AI provider accounts to work around today's quota outage (see the multi-key AI rotation entry above), the user explicitly asked to flag the mirror-image risk — once P2Less has real customers, what stops someone doing the exact same thing to **us**: repeatedly creating fresh free-trial tenants to dodge plan limits, instead of paying? Same underlying pattern (cheap identity, no real-world verification, no friction), just pointed at `/onboard` instead of a provider's signup page. Investigated the real code, not guessed — `provisionOrganizationAction` (`src/lib/actions.ts:126`) is the actual self-service signup path, confirmed genuinely live and confirmed genuinely open today:
+
+- **Email uniqueness is a raw string match only** (`db.user.findUnique({ where: { email: d.adminEmail } })`) — no verification email, no OTP, no canonicalization. Gmail's own dot/plus-address tricks (`you@gmail.com` / `you+1@gmail.com` / `you+2@gmail.com` — all the same real inbox) trivially defeat this, exactly the trick the user just used legitimately against Gemini's own signup, now pointed the other way at us.
+- **No IP-based rate limiting or CAPTCHA on `/onboard` at all** — nothing stops one IP submitting the signup form an unlimited number of times back to back. Same class of gap the widget endpoint had before it shipped (closed there via the existing `rate-limit.ts`, Phase 8e) — never applied here.
+- **Phone-number uniqueness is checked but not verified as real** (`db.whatsAppNumber.findUnique({ where: { phoneNumber: d.phoneNumber } })`) — just a unique string today, since real Meta WABA verification is Phase 9 (still paused). Someone can type sequential fake-looking numbers and pass this exactly as easily as the email check.
+- **Zero payment info collected for the trial** — a deliberate low-friction growth choice, not a bug, but it also means there is currently no cost at all — not even a soft one (a $0-auth card hold, common in freemium SaaS) — to spinning up another tenant.
+- **No signup-pattern anomaly detection** — nothing flags "5 tenants created from the same IP within an hour" for a human to review. The Notification Engine (Priority 6) already exists and could carry this alert with no new delivery mechanism needed — it would just need a new trigger.
+
+**Recommended layered mitigations, in rough cost/impact order, none built yet**:
+1. Canonicalize email before the uniqueness check (strip Gmail dots, ignore `+tag` suffixes) — cheapest fix, closes the most common trick immediately, no new infrastructure.
+2. Apply the existing `rate-limit.ts` to `/onboard` the same way it's applied to the widget endpoint — closes the "burst signups from one IP" vector with code that already exists elsewhere in this codebase.
+3. Real phone verification (OTP sent before tenant creation completes) — a natural byproduct once Phase 9's Meta Embedded Signup ships, but could also be added standalone sooner if this becomes urgent before Phase 9 does.
+4. Admin-facing anomaly alert for signup clustering by IP/device, reusing the Notification Engine rather than building new delivery.
+5. Requiring a card-on-file (zero charge) even for the free trial — a real, meaningful deterrent, but a product/business decision as much as an engineering one; flagged as a decision point, not a default recommendation.
+
+**Deliberately not started** — this is a "don't forget it" flag for when P2Less has real trial-driven signups to protect, not an active risk yet (no clients today, per the user). Revisit before or shortly after the first real self-service signups start arriving.
+
+---
+
 ## Existing vs. Planned vs. Recommended vs. Future-Strategic
 
 | | Status |
@@ -377,6 +398,7 @@ Deliberately NOT reusing `ApiKey` (which is hashed, secret, and scoped to the pr
 | WhatsApp self-service onboarding (real Meta Embedded Signup) | **IN PROGRESS, PAUSED — Phase 9, started 2026-08-20, explicitly NOT done.** App ID + App Secret + Business Manager confirmed already in place; paused mid-way through Meta's "Become a Tech Provider" flow right after selecting "Independent Tech Provider," before reaching the actual Embedded Signup `config_id` screen. Full step-by-step resume point recorded above — do not re-discover from scratch, pick up exactly where noted |
 | Multi-Channel Engine — Mode 2, outbound to known contacts (Facebook/Instagram/TikTok/SMS channels, marketing/notifications/follow-ups, consent/policy engine) | **Future-strategic — Phase 8, vision documented 2026-08-20, not started.** Today P2Less is WhatsApp(+webchat)-only and 100% inbound-triggered — no other channel and no proactive/marketing outbound exists in any form |
 | Public Social Agent — Mode 3, replies to public posts/comments/mentions on Facebook/Instagram/TikTok/X (Grok-on-X style) | **Future-strategic — Phase 8b, vision documented 2026-08-20, not started.** Distinct from Phase 8: public-visibility blast radius, different per-platform APIs/compliance (X requires a paid API tier + automation disclosure; TikTok requires approved-partner access), needs a new social-listening layer and stronger brand-voice guardrails than exist today. Recommended to build assisted (human-approves-before-posting) first, after Phase 8, not before |
+| Trial-abuse / multi-account hardening on `/onboard` (email canonicalization, signup rate-limiting, real phone verification, anomaly alerts) | **Flagged 2026-08-21, not started.** `/onboard` is confirmed genuinely open today — raw-string email uniqueness (Gmail dot/plus tricks defeat it), zero rate limiting, unverified phone-number uniqueness only, no payment friction at all. Not an active risk yet (no real clients), revisit before/at first real self-service signups |
 
 ## Open questions only the user can answer before Phase 1 starts
 
