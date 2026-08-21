@@ -30,6 +30,11 @@ export type ProviderCardData = {
   // /admin/models could show two different numbers for the same provider.
   spendIsReal: boolean;
   topUpUrl: string;
+  // One entry per configured key (singular env var, or every key in the
+  // _API_KEYS pool) — coolingDown reflects the SAME in-memory state
+  // callLLM()'s rotation actually uses, not a separate guess. A key never
+  // yet attempted since the last deploy shows as live by default.
+  keys: { label: string; coolingDown: boolean; cooldownUntil: number | null }[];
 };
 
 export function ProviderCard({ data }: { data: ProviderCardData }) {
@@ -53,6 +58,23 @@ export function ProviderCard({ data }: { data: ProviderCardData }) {
 
       <div className="mt-2.5"><Badge tone={data.tone} dot>{data.statusLabel}</Badge></div>
       <div className="mt-2 text-xs text-muted">{data.configured ? `${data.calls} call${data.calls === 1 ? "" : "s"} today · ${data.successes} ok · ${data.failures} failed` : "No API key set in environment"}</div>
+
+      {data.keys.length > 1 && (
+        <div className="mt-2">
+          <div className="flex items-center gap-1">
+            {data.keys.map((k) => (
+              <span
+                key={k.label}
+                title={k.coolingDown ? `Key ${k.label} — resting off a recent failure${k.cooldownUntil ? `, resumes ~${Math.max(1, Math.round((k.cooldownUntil - Date.now()) / 60000))}m` : ""}` : `Key ${k.label} — live`}
+                className={`h-2 w-2 rounded-full ${k.coolingDown ? "bg-rose" : "bg-green"}`}
+              />
+            ))}
+          </div>
+          <div className="mt-1 text-[11px] text-faint">
+            {data.keys.filter((k) => !k.coolingDown).length}/{data.keys.length} keys live
+          </div>
+        </div>
+      )}
 
       {quotaPct != null && (
         <div className="mt-2">

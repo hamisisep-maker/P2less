@@ -22,7 +22,7 @@ import { randomToken } from "./crypto";
 // API key, so the platform always works offline.
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Provider = "anthropic" | "openai" | "google" | "xai" | "groq" | "cerebras" | "openrouter";
+export type Provider = "anthropic" | "openai" | "google" | "xai" | "groq" | "cerebras" | "openrouter";
 
 /** A prior turn in this conversation, oldest→newest, so the AI has memory. */
 export type ChatTurn = { role: "user" | "assistant"; text: string };
@@ -81,6 +81,23 @@ function markKeyOk(id: string): void {
 /** Which providers actually have at least one usable (not-in-cooldown) key. */
 function hasKey(p: Provider): boolean {
   return getProviderKeys(p).length > 0;
+}
+
+export type KeyHealth = { label: string; coolingDown: boolean; cooldownUntil: number | null };
+
+/** Read-only snapshot for the /admin/ai key-health panel — never the real
+ *  keys, just enough to see at a glance which of a provider's configured
+ *  keys are live vs. resting off a recent quota/billing failure. Reads the
+ *  same in-memory cooldown state callLLM()'s rotation actually uses, so this
+ *  reflects reality, not a guess. Resets on redeploy, same as the cooldowns
+ *  themselves — a freshly deployed instance shows every key as live until
+ *  it's actually tried and fails. */
+export function getKeyHealth(p: Provider): KeyHealth[] {
+  return getProviderKeys(p).map((k) => {
+    const label = keyLabel(k);
+    const until = keyCooldowns.get(`${p}:${label}`) ?? null;
+    return { label, coolingDown: until != null && until > Date.now(), cooldownUntil: until };
+  });
 }
 
 /** The ORDERED list of providers to try: the configured primary first, then any

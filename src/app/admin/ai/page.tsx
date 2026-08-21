@@ -3,10 +3,11 @@ import { Card, PageHeader } from "@/components/ui";
 import { InfoTip } from "@/components/dashboard-ui";
 import { getAiProviderCosts, AI_PROVIDER_TOPUP_URL, getSetting } from "@/lib/platform-settings";
 import { requireAdminPermission } from "@/lib/admin-authz";
+import { getKeyHealth, type Provider } from "@/lib/ai";
 import { ProviderCard, type ProviderCardData } from "./provider-card";
 import { ResetPrimaryButton } from "./reset-primary-button";
 
-const AI_PROVIDERS: { id: string; label: string; keyEnv: string }[] = [
+const AI_PROVIDERS: { id: Provider; label: string; keyEnv: string }[] = [
   { id: "google", label: "Gemini", keyEnv: "GEMINI_API_KEY" },
   { id: "groq", label: "Groq", keyEnv: "GROQ_API_KEY" },
   { id: "cerebras", label: "Cerebras", keyEnv: "CEREBRAS_API_KEY" },
@@ -35,15 +36,22 @@ export default async function AdminAiPage() {
   ]);
   const realCostMap = new Map(realCostByProvider.map((r) => [r.provider, { costKes: r._sum.costKes ?? 0, count: r._count._all }]));
 
+  // getKeyHealth() reads the SAME in-memory pool callLLM()'s rotation uses —
+  // "configured" now means "has at least one key" (singular env var OR the
+  // multi-key _API_KEYS pool), not just the original singular var, so a
+  // provider running purely on GEMINI_API_KEYS (no singular fallback set)
+  // still shows correctly here instead of reading as "not configured".
+  const keysByProvider = new Map(AI_PROVIDERS.map((p) => [p.id, getKeyHealth(p.id)]));
   const configuredPrimary = (dbPrimary || process.env.AI_PROVIDER || "").toLowerCase();
-  const primaryProvider = AI_PROVIDERS.find((p) => p.id === configuredPrimary && !!process.env[p.keyEnv])?.id
-    ?? AI_PROVIDERS.find((p) => !!process.env[p.keyEnv])?.id;
+  const primaryProvider = AI_PROVIDERS.find((p) => p.id === configuredPrimary && (keysByProvider.get(p.id)?.length ?? 0) > 0)?.id
+    ?? AI_PROVIDERS.find((p) => (keysByProvider.get(p.id)?.length ?? 0) > 0)?.id;
 
   const monthCallsByProvider = new Map<string, number>();
   for (const s of aiStatsMonth) monthCallsByProvider.set(s.provider, (monthCallsByProvider.get(s.provider) ?? 0) + s.successes);
 
   const cards: ProviderCardData[] = AI_PROVIDERS.map((p) => {
-    const configured = !!process.env[p.keyEnv];
+    const keys = keysByProvider.get(p.id) ?? [];
+    const configured = keys.length > 0;
     const stat = aiStatsToday.find((s) => s.provider === p.id);
     let tone: "green" | "amber" | "rose" | "neutral" = "neutral";
     let statusLabel = "not configured";
@@ -62,7 +70,7 @@ export default async function AdminAiPage() {
     const estimatedSpendMonthKes = spendIsReal ? Math.round(real!.costKes) : Math.round(monthCalls * costPerCallKes);
     return {
       id: p.id, label: p.label, configured, isPrimary: p.id === primaryProvider,
-      tone, statusLabel,
+      tone, statusLabel, keys,
       calls: stat?.calls ?? 0, successes: stat?.successes ?? 0, failures: stat?.failures ?? 0, lastError: stat?.lastError ?? null,
       quotaRemaining: stat?.rateLimitRemaining ?? null, quotaLimit: stat?.rateLimitLimit ?? null,
       costPerCallKes, estimatedSpendMonthKes, spendIsReal,
