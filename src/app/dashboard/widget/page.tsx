@@ -5,11 +5,35 @@ import { Card, PageHeader, Badge } from "@/components/ui";
 import { WidgetKeyForm } from "./widget-key-form";
 import { WidgetKeyRow } from "./widget-key-row";
 
+// Two letters so a visitor sees THIS org's mark, not a generic P2Less icon —
+// logoText lets an admin override it (e.g. a real short code), but most
+// orgs will never touch it, so a sensible default from the org's own name
+// matters more than the override itself.
+function deriveInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "P2";
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
+
+// The snippet is copy-pasted verbatim into someone else's raw HTML — an
+// unescaped quote in an org's name would silently break their page.
+function escapeAttr(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 export default async function WidgetPage() {
   const user = await requireTenantUser();
   const canManage = userPermissions(user).includes(PERMISSIONS.DEVELOPER_MANAGE);
-  const keys = await db.widgetKey.findMany({ where: { tenantId: user.tenantId! }, orderBy: { createdAt: "desc" } });
+  const [keys, tenant] = await Promise.all([
+    db.widgetKey.findMany({ where: { tenantId: user.tenantId! }, orderBy: { createdAt: "desc" } }),
+    db.tenant.findUnique({ where: { id: user.tenantId! }, select: { name: true, branding: true } }),
+  ]);
   const base = (process.env.PUBLIC_BASE_URL || "https://your-p2less-host").replace(/\/$/, "");
+  const branding = (tenant?.branding as { assistantName?: string; logoText?: string; primaryColor?: string } | null) ?? null;
+  const displayName = branding?.assistantName || tenant?.name || "us";
+  const initials = branding?.logoText || deriveInitials(tenant?.name || "P2Less");
+  const color = branding?.primaryColor || "";
 
   return (
     <div>
@@ -44,8 +68,9 @@ export default async function WidgetPage() {
       <Card className="p-5">
         <h2 className="mb-3 font-display font-semibold">Add it to your website</h2>
         <p className="mb-3 text-sm text-muted">Paste this before the closing <code>&lt;/body&gt;</code> tag of your site — or into your site builder&apos;s &quot;custom code&quot; / &quot;code injection&quot; field if you don&apos;t edit source files directly (WordPress, Squarespace, Wix, and Shopify all have one).</p>
+        <p className="mb-3 text-xs text-muted">The bubble shows <strong>{initials}</strong> and your own color below — every organization&apos;s widget looks like their own, not a generic P2Less icon. Set a custom two-letter mark or color under Branding if you don&apos;t want the auto-generated one.</p>
         <div className="overflow-x-auto rounded-xl bg-ink p-4">
-          <pre className="text-xs leading-relaxed text-white/90"><code>{`<script src="${base}/widget.js" data-key="${keys[0]?.key ?? "wk_your_widget_key"}"></script>`}</code></pre>
+          <pre className="text-xs leading-relaxed text-white/90"><code>{`<script src="${base}/widget.js" data-key="${keys[0]?.key ?? "wk_your_widget_key"}" data-name="${escapeAttr(displayName)}" data-initials="${escapeAttr(initials)}"${color ? ` data-color="${escapeAttr(color)}"` : ""}></script>`}</code></pre>
         </div>
       </Card>
     </div>
