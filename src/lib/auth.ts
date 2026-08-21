@@ -22,7 +22,7 @@ export async function verifyPassword(pw: string, hash: string) {
   return bcrypt.compare(pw, hash);
 }
 
-async function clientMeta(): Promise<{ ip: string | null; userAgent: string | null }> {
+export async function clientMeta(): Promise<{ ip: string | null; userAgent: string | null }> {
   try {
     const h = await headers();
     const fwd = h.get("x-forwarded-for");

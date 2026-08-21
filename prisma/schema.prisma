@@ -748,6 +748,15 @@ model User {
   tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name         String
   email        String
+  // Dot/plus-address-normalized form of email, populated only at self-service
+  // /onboard signup (src/lib/actions.ts) to close the classic free-trial-abuse
+  // trick where you+1@gmail.com / you+2@gmail.com all reach the same real
+  // inbox but pass a raw-string uniqueness check as "different" accounts.
+  // Nullable/unpopulated for every other user-creation path (invited staff,
+  // super admin) since that path doesn't need this defense — SQLite (and
+  // every other engine) allows multiple NULLs under a unique constraint, so
+  // this is safe to add without backfilling existing rows.
+  emailCanonical String? @unique
   passwordHash String
   // LEGACY bootstrap flag — kept in sync with adminRole.key == "super_admin"
   // so the very first seeded admin always works even before AdminRole rows

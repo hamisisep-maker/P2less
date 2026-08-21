@@ -5,8 +5,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { db } from "./db";
-import { verifyPassword, hashPassword, createSession, destroySession, requireTenantUser, userPermissions, recordLoginAttempt } from "./auth";
+import { verifyPassword, hashPassword, createSession, destroySession, requireTenantUser, userPermissions, recordLoginAttempt, clientMeta } from "./auth";
 import { encryptJSON, randomToken, sha256 } from "./crypto";
+import { rateLimit } from "./rate-limit";
 import { WEBHOOK_EVENTS } from "./webhooks";
 import { PERMISSIONS, DEFAULT_USER_ROLES, DEFAULT_CONTACT_ROLES } from "./permissions";
 import { computeBill } from "./billing";
@@ -123,13 +124,48 @@ const provisionSchema = z.object({
   adminEmail: z.string().email(),
 });
 
+// Closes the most common free-trial-abuse trick: Gmail ignores dots in the
+// local part and treats anything after "+" as a tag, so you@gmail.com /
+// you.x@gmail.com / you+1@gmail.com all reach the SAME real inbox but pass a
+// raw-string uniqueness check as "different" accounts. Dots are only
+// meaningless on Gmail specifically (most other providers treat them as
+// real characters) — but "+tag" stripping is a near-universal convention
+// supported by Outlook, Yahoo, and most custom-domain mail setups, so it's
+// safe to apply generally.
+function canonicalizeEmail(raw: string): string {
+  const trimmed = raw.toLowerCase().trim();
+  const at = trimmed.lastIndexOf("@");
+  if (at === -1) return trimmed;
+  const local = trimmed.slice(0, at);
+  const domain = trimmed.slice(at + 1);
+  const noPlus = local.split("+")[0];
+  if (domain === "gmail.com" || domain === "googlemail.com") {
+    return `${noPlus.replace(/\./g, "")}@gmail.com`;
+  }
+  return `${noPlus}@${domain}`;
+}
+
 export async function provisionOrganizationAction(_prev: unknown, formData: FormData) {
+  // Real IP-based rate limiting on self-service signup — the same "no
+  // general rate limiting anywhere" gap the widget endpoint closed for
+  // itself in Phase 8e, never applied here. 3/hour is generous for a
+  // genuine mistake+retry while still blocking a rapid-fire signup burst.
+  const { ip } = await clientMeta();
+  const limit = rateLimit(`onboard:${ip ?? "unknown"}`, { max: 3, windowMs: 60 * 60_000 });
+  if (!limit.ok) {
+    return { error: "Too many signup attempts from this connection. Please try again later, or contact us if you need help getting started." };
+  }
+
   const parsed = provisionSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   const d = parsed.data;
+  const emailCanonical = canonicalizeEmail(d.adminEmail);
 
   if (await db.user.findUnique({ where: { email: d.adminEmail } })) {
     return { error: "That email already has an account. Try signing in." };
+  }
+  if (await db.user.findUnique({ where: { emailCanonical } })) {
+    return { error: "That email already has an account (even if it looks slightly different — dots and +tags on the same inbox count as one account). Try signing in, or contact us if this isn't yours." };
   }
   if (await db.whatsAppNumber.findUnique({ where: { phoneNumber: d.phoneNumber } })) {
     return { error: "That phone number is already registered on P2Less. Use a different number, or contact us if this is yours." };
@@ -159,7 +195,7 @@ export async function provisionOrganizationAction(_prev: unknown, formData: Form
 
       // Owner login (one-time password shown to the user).
       const password = randomToken(6);
-      const owner = await tx.user.create({ data: { tenantId: tenant.id, name: d.adminName, email: d.adminEmail, passwordHash: await hashPassword(password) } });
+      const owner = await tx.user.create({ data: { tenantId: tenant.id, name: d.adminName, email: d.adminEmail, emailCanonical, passwordHash: await hashPassword(password) } });
       if (ownerRoleId) await tx.userRole.create({ data: { userId: owner.id, roleId: ownerRoleId } });
 
       // The organization's WhatsApp number. In production this arrives from Meta's
