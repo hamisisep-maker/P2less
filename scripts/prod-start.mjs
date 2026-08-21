@@ -14,12 +14,7 @@ function run(cmd) {
   execSync(cmd, { stdio: "inherit" });
 }
 
-// TEMPORARY: User.emailCanonical is a new nullable @unique column — Prisma's
-// generic "might be data loss" warning is a known-safe false positive here
-// (every existing row gets NULL, which SQL permits multiple of under a
-// unique constraint), but it still blocks a plain `db push` without this
-// flag. Revert to the plain form once this has run once in production.
-run("npx prisma db push --skip-generate --accept-data-loss");
+run("npx prisma db push --skip-generate");
 
 const db = new PrismaClient();
 const tenantCount = await db.tenant.count();
