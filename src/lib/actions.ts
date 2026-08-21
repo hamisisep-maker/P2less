@@ -20,6 +20,8 @@ import type { ParamSpec } from "./connector-engine";
 import { getSettingNumber } from "./platform-settings";
 import { crawlSite } from "./website-crawl";
 import { extractFaqDraft } from "./ai";
+import { issuePhoneOtp, verifyPhoneOtp } from "./otp";
+import { sendSms, smsEnabled } from "./sms";
 
 /** Real brute-force protection — LoginAttempt was already logged for every
  *  try but never actually consulted before this; a fixed number of recent
@@ -145,17 +147,17 @@ function canonicalizeEmail(raw: string): string {
   return `${noPlus}@${domain}`;
 }
 
-export async function provisionOrganizationAction(_prev: unknown, formData: FormData) {
-  // Real IP-based rate limiting on self-service signup — the same "no
-  // general rate limiting anywhere" gap the widget endpoint closed for
-  // itself in Phase 8e, never applied here. 3/hour is generous for a
-  // genuine mistake+retry while still blocking a rapid-fire signup burst.
+/** Shared validation for both steps: rate limit + field shape + the three
+ *  uniqueness checks. Step 1 uses this to decide whether to send an OTP at
+ *  all; step 2 re-runs it defensively right before actually creating the
+ *  tenant, since real time (and a real race with someone else signing up)
+ *  passes between the two form submissions. */
+async function validateOnboardFields(formData: FormData): Promise<{ error: string } | { data: z.infer<typeof provisionSchema>; emailCanonical: string }> {
   const { ip } = await clientMeta();
   const limit = rateLimit(`onboard:${ip ?? "unknown"}`, { max: 3, windowMs: 60 * 60_000 });
   if (!limit.ok) {
     return { error: "Too many signup attempts from this connection. Please try again later, or contact us if you need help getting started." };
   }
-
   const parsed = provisionSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   const d = parsed.data;
@@ -170,6 +172,77 @@ export async function provisionOrganizationAction(_prev: unknown, formData: Form
   if (await db.whatsAppNumber.findUnique({ where: { phoneNumber: d.phoneNumber } })) {
     return { error: "That phone number is already registered on P2Less. Use a different number, or contact us if this is yours." };
   }
+  return { data: d, emailCanonical };
+}
+
+/** Step 1: validate the signup form, then verify the org actually controls
+ *  the phone number before creating anything — closes the trial-abuse gap
+ *  where a fake/sequential number could pass the old plain uniqueness check.
+ *  Sends via sendSms() (Advanta primary, Africa's Talking fallback); if
+ *  neither is configured, echoes the code directly with an honest "Demo
+ *  only" label — same convention already used for webchat's own OTP flow
+ *  when there's no real out-of-band channel to prove against. */
+export type RequestOtpResult =
+  | ({ ok: true; step: "otp"; challengeId: string; demoCode?: string } & OtpStepFields)
+  | { error: string };
+
+export async function requestOnboardOtpAction(_prev: unknown, formData: FormData): Promise<RequestOtpResult> {
+  const validated = await validateOnboardFields(formData);
+  if ("error" in validated) return { error: validated.error };
+  const { data: d } = validated;
+
+  const phone = normalizePhone(d.phoneNumber);
+  const issued = await issuePhoneOtp(phone);
+  if ("error" in issued) return { error: issued.error };
+
+  const message = `Your P2Less verification code is ${issued.code}. It expires in 5 minutes.`;
+  let demoCode: string | undefined;
+  if (smsEnabled()) {
+    const sent = await sendSms(phone, message);
+    if (!sent.ok) {
+      console.error(`[onboard] SMS send failed for challenge ${issued.challengeId}: ${sent.error}`);
+      return { error: "We couldn't send a verification code to that number right now. Please check the number and try again, or contact us for help." };
+    }
+  } else {
+    // No real SMS credentials configured yet — same honesty convention as
+    // webchat's OTP flow: show the code directly rather than pretending it
+    // was texted, instead of silently failing.
+    demoCode = issued.code;
+  }
+
+  return {
+    ok: true, step: "otp" as const, challengeId: issued.challengeId, demoCode,
+    orgName: d.orgName, industry: d.industry, phoneNumber: d.phoneNumber, adminName: d.adminName, adminEmail: d.adminEmail,
+  };
+}
+
+const confirmOtpSchema = provisionSchema.extend({ challengeId: z.string().min(1), code: z.string().min(1) });
+
+type OtpStepFields = { orgName: string; industry: z.infer<typeof provisionSchema>["industry"]; phoneNumber: string; adminName: string; adminEmail: string };
+export type ConfirmOtpResult =
+  | { ok: true; email: string; password: string; slug: string }
+  | ({ error: string; step: "otp"; challengeId: string } & OtpStepFields)
+  | { error: string };
+
+/** Step 2: verify the code, re-validate (defensive — real time passed since
+ *  step 1), then create the tenant. Identical transaction to what this
+ *  action used to do in one step before OTP verification was inserted. */
+export async function confirmOnboardOtpAction(_prev: unknown, formData: FormData): Promise<ConfirmOtpResult> {
+  const parsed = confirmOtpSchema.safeParse(Object.fromEntries(formData.entries()));
+  // A malformed resubmission (missing/corrupt hidden fields) has no org data
+  // to hand back — can't stay on the OTP step honestly, so this falls back
+  // to the start rather than pretending. Shouldn't happen via the real UI.
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  const { challengeId, code, ...rest } = parsed.data;
+
+  const verified = await verifyPhoneOtp(challengeId, code);
+  if (!verified.ok) {
+    return { error: verified.message, step: "otp" as const, challengeId, ...rest };
+  }
+
+  const validated = await validateOnboardFields(formData);
+  if ("error" in validated) return { error: validated.error };
+  const { data: d, emailCanonical } = validated;
   const slug = d.orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) + "-" + randomToken(2).toLowerCase();
 
   // Everything below must succeed together — a partial failure (e.g. a phone
@@ -199,7 +272,9 @@ export async function provisionOrganizationAction(_prev: unknown, formData: Form
       if (ownerRoleId) await tx.userRole.create({ data: { userId: owner.id, roleId: ownerRoleId } });
 
       // The organization's WhatsApp number. In production this arrives from Meta's
-      // Embedded Signup (WABA id + phone_number_id + token); here it's pending.
+      // Embedded Signup (WABA id + phone_number_id + token); here it's pending —
+      // phone ownership was already proven above via the OTP, though, unlike
+      // before this phase.
       await tx.whatsAppNumber.create({
         data: { tenantId: tenant.id, phoneNumber: d.phoneNumber, displayName: d.orgName, department: "General", status: "active", verificationStatus: "pending" },
       });
@@ -211,7 +286,7 @@ export async function provisionOrganizationAction(_prev: unknown, formData: Form
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       return { error: "That phone number or email is already in use. Please try different details." };
     }
-    console.error("[provisionOrganizationAction] failed:", e);
+    console.error("[confirmOnboardOtpAction] failed:", e);
     return { error: "Something went wrong setting up your organization. Please try again." };
   }
 }

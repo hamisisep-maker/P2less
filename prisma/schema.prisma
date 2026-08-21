@@ -1215,11 +1215,16 @@ model Message {
 
 model OtpChallenge {
   id          String   @id @default(cuid())
-  tenantId    String
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  contactId   String
-  contact     Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  purpose     String   @default("step_up") // step_up | login
+  // Nullable: a step_up/login challenge always has both (existing behavior,
+  // unchanged). An onboard_signup challenge has NEITHER — the tenant/contact
+  // don't exist yet, that's the whole point of verifying the phone number
+  // BEFORE creating them — so it carries `phone` instead.
+  tenantId    String?
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contactId   String?
+  contact     Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  phone       String? // set instead of contactId for pre-tenant flows (e.g. /onboard signup)
+  purpose     String   @default("step_up") // step_up | login | onboard_signup
   codeHash    String // OTP is hashed at rest, never stored in plaintext
   attempts    Int      @default(0)
   maxAttempts Int      @default(3)
@@ -1229,6 +1234,7 @@ model OtpChallenge {
 
   @@index([contactId])
   @@index([tenantId])
+  @@index([phone])
 }
 
 /// A short-lived verified session granted after successful OTP, so a contact
