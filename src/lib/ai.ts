@@ -27,15 +27,60 @@ type Provider = "anthropic" | "openai" | "google" | "xai" | "groq" | "cerebras" 
 /** A prior turn in this conversation, oldest→newest, so the AI has memory. */
 export type ChatTurn = { role: "user" | "assistant"; text: string };
 
-/** Which providers actually have a key configured. */
+const PROVIDER_ENV_PREFIX: Record<Provider, string> = {
+  anthropic: "ANTHROPIC", openai: "OPENAI", xai: "XAI",
+  groq: "GROQ", cerebras: "CEREBRAS", openrouter: "OPENROUTER",
+  google: "GEMINI", // Google's SDK/env convention here is GEMINI_*, not GOOGLE_*
+};
+
+/** Every configured key for a provider, in order — supports multiple accounts
+ *  per provider (e.g. several free-tier Gemini keys) so one account hitting its
+ *  daily quota doesn't take the whole provider down. `{PREFIX}_API_KEYS` holds
+ *  a comma- or newline-separated list; `{PREFIX}_API_KEY` (singular, the
+ *  original convention) still works as a one-key fallback so nothing already
+ *  configured breaks. */
+function getProviderKeys(p: Provider): string[] {
+  const prefix = PROVIDER_ENV_PREFIX[p];
+  const list = process.env[`${prefix}_API_KEYS`];
+  if (list) {
+    const keys = list.split(/[,\n]/).map((k) => k.trim()).filter(Boolean);
+    if (keys.length > 0) return keys;
+  }
+  const single = process.env[`${prefix}_API_KEY`];
+  return single ? [single] : [];
+}
+
+/** Last-6-chars label for logs/cooldown tracking — enough to tell multiple
+ *  keys on the same provider apart without ever printing a real secret. */
+function keyLabel(key: string): string {
+  return key.length > 6 ? `…${key.slice(-6)}` : "…";
+}
+
+// A key that just failed (quota/billing/rate-limit) is skipped for a while
+// rather than retried on every single subsequent message — these failures are
+// typically daily-quota-scale, not transient, so hammering it again 2 seconds
+// later just wastes latency. In-memory only (matches rate-limit.ts's own
+// bucket pattern): resets on redeploy, which is fine, since a fresh key list
+// deserves a fresh chance anyway.
+const keyCooldowns = new Map<string, number>();
+const KEY_COOLDOWN_MS = 5 * 60_000;
+
+function isCoolingDown(id: string): boolean {
+  const until = keyCooldowns.get(id);
+  return until != null && until > Date.now();
+}
+
+function markKeyFailed(id: string): void {
+  keyCooldowns.set(id, Date.now() + KEY_COOLDOWN_MS);
+}
+
+function markKeyOk(id: string): void {
+  keyCooldowns.delete(id);
+}
+
+/** Which providers actually have at least one usable (not-in-cooldown) key. */
 function hasKey(p: Provider): boolean {
-  return p === "anthropic" ? !!process.env.ANTHROPIC_API_KEY
-    : p === "openai" ? !!process.env.OPENAI_API_KEY
-    : p === "xai" ? !!process.env.XAI_API_KEY
-    : p === "groq" ? !!process.env.GROQ_API_KEY
-    : p === "cerebras" ? !!process.env.CEREBRAS_API_KEY
-    : p === "openrouter" ? !!process.env.OPENROUTER_API_KEY
-    : !!process.env.GEMINI_API_KEY;
+  return getProviderKeys(p).length > 0;
 }
 
 /** The ORDERED list of providers to try: the configured primary first, then any
@@ -76,7 +121,7 @@ async function providerChain(): Promise<Provider[]> {
 }
 
 export function aiEnabled(): boolean {
-  return !!(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.XAI_API_KEY || process.env.GROQ_API_KEY || process.env.CEREBRAS_API_KEY || process.env.OPENROUTER_API_KEY);
+  return (Object.keys(PROVIDER_ENV_PREFIX) as Provider[]).some(hasKey);
 }
 
 /** General-purpose completion for super-app TOOLS (data analysis, doc summary,
@@ -92,32 +137,46 @@ export async function complete(system: string, user: string, maxTokens = 900, te
  *  users TALK to the assistant, not just type. Needs a Gemini key + audio-capable
  *  model (lite models may not accept audio, so use a full flash model for STT). */
 export async function transcribeAudio(base64: string, mimeType: string): Promise<string | null> {
-  if (!process.env.GEMINI_API_KEY) return null;
+  const keys = getProviderKeys("google");
+  if (keys.length === 0) return null;
   const model = process.env.GEMINI_STT_MODEL || "gemini-flash-latest";
-  try {
-    const res = await fetchT(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [
-            { text: "Transcribe this voice message verbatim into text, in the SAME language that is spoken. Output ONLY the transcription — no quotes, no commentary. If nothing intelligible is said, output nothing." },
-            { inlineData: { mimeType: mimeType || "audio/ogg", data: base64 } },
-          ] }],
-          generationConfig: { maxOutputTokens: 500, temperature: 0 },
-        }),
-      },
-      20_000, // audio can take longer than a text turn
-    );
-    if (!res || !res.ok) return null;
-    const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[]; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
-    recordAiCost("google", model, "transcribe_audio", j.usageMetadata ? { input: j.usageMetadata.promptTokenCount, output: j.usageMetadata.candidatesTokenCount } : null);
-    const text = j.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    return text && text.length > 0 ? text : null;
-  } catch {
-    return null;
+  // Same multi-key rotation as callOnce's google branch: skip keys already in
+  // cooldown from a recent failure, try the rest in order (bounded by however
+  // many keys are actually configured — no point trying more than that).
+  const ordered = [...keys].sort((a, b) => Number(isCoolingDown(`google:${keyLabel(a)}`)) - Number(isCoolingDown(`google:${keyLabel(b)}`)));
+  for (const key of ordered) {
+    const id = `google:${keyLabel(key)}`;
+    try {
+      const res = await fetchT(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [
+              { text: "Transcribe this voice message verbatim into text, in the SAME language that is spoken. Output ONLY the transcription — no quotes, no commentary. If nothing intelligible is said, output nothing." },
+              { inlineData: { mimeType: mimeType || "audio/ogg", data: base64 } },
+            ] }],
+            generationConfig: { maxOutputTokens: 500, temperature: 0 },
+          }),
+        },
+        20_000, // audio can take longer than a text turn
+      );
+      if (!res || !res.ok) {
+        if (res) console.error(`[ai:google:stt] key=${id} status=${res.status} body=${(await res.text()).slice(0, 300)}`);
+        markKeyFailed(id);
+        continue;
+      }
+      markKeyOk(id);
+      const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[]; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
+      recordAiCost("google", model, "transcribe_audio", j.usageMetadata ? { input: j.usageMetadata.promptTokenCount, output: j.usageMetadata.candidatesTokenCount } : null);
+      const text = j.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      return text && text.length > 0 ? text : null;
+    } catch {
+      markKeyFailed(id);
+    }
   }
+  return null;
 }
 
 type LLMOpts = { maxTokens?: number; temperature?: number; history?: ChatTurn[]; feature?: string };
@@ -257,8 +316,25 @@ async function callLLM(system: string, user: string, opts: LLMOpts = {}): Promis
   const tenantId = getAiTenantId() ?? null;
   for (let rank = 0; rank < chain.length; rank++) {
     const p = chain[rank];
-    for (let i = 0; i < perProvider; i++) {
-      const out = await callOnce(p, system, user, opts, { correlationId, providerRank: rank, attemptNumber: i, tenantId });
+    const keys = getProviderKeys(p);
+    if (keys.length === 0) continue;
+    // Multiple accounts/keys per provider rotate here: keys not currently in a
+    // cooldown (from a recent quota/billing failure — see markKeyFailed) go
+    // first, so a provider with e.g. 20 Gemini keys and 3 already-exhausted
+    // ones tries the 17 live ones before ever touching the dead 3 again.
+    const ordered = [...keys].sort((a, b) => Number(isCoolingDown(`${p}:${keyLabel(a)}`)) - Number(isCoolingDown(`${p}:${keyLabel(b)}`)));
+    // At least one attempt per configured key (so a big key pool actually
+    // gets exhausted before failing over to the next provider), but never
+    // fewer than AI_ATTEMPTS even with just one key — preserves the original
+    // same-key retry behavior when only a single key is configured.
+    const attempts = Math.max(perProvider, ordered.length);
+    for (let i = 0; i < attempts; i++) {
+      const key = ordered[i % ordered.length];
+      // Only pause between attempts when actually retrying the SAME key again
+      // (cycling back around a small pool) — different keys are different
+      // credentials/quota buckets, no reason to throttle switching to one.
+      if (i > 0 && key === ordered[(i - 1) % ordered.length]) await new Promise((r) => setTimeout(r, 300));
+      const out = await callOnce(p, key, system, user, opts, { correlationId, providerRank: rank, attemptNumber: i, tenantId });
       if (out) {
         // Succeeded, but NOT on the primary provider (rank 0) — this is a
         // real, audited failover, and the successful request's cost still
@@ -272,9 +348,8 @@ async function callLLM(system: string, user: string, opts: LLMOpts = {}): Promis
         }
         return out;
       }
-      if (i < perProvider - 1) await new Promise((r) => setTimeout(r, 300 * (i + 1))); // 300ms, 600ms…
     }
-    // This provider failed every attempt → fall over to the next configured one.
+    // Every configured key for this provider failed → fall over to the next configured provider.
   }
   if (chain.length > 0) {
     aiFailoverAudit(tenantId, { primaryProvider: chain[0], fallbackProvider: null, feature: opts.feature ?? "unknown", reason: "all configured providers failed", correlationId });
@@ -282,10 +357,13 @@ async function callLLM(system: string, user: string, opts: LLMOpts = {}): Promis
   return null;
 }
 
-/** Single completion attempt against ONE provider, with optional multi-turn history. */
-async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts = {}, track?: AttemptTrack): Promise<string | null> {
+/** Single completion attempt against ONE provider using ONE specific key (the
+ *  caller in callLLM already picked which key out of that provider's pool),
+ *  with optional multi-turn history. */
+async function callOnce(p: Provider, apiKey: string, system: string, user: string, opts: LLMOpts = {}, track?: AttemptTrack): Promise<string | null> {
   const { maxTokens = 300, temperature = 0.4 } = opts;
   const attemptStartedAt = Date.now();
+  const keyId = `${p}:${keyLabel(apiKey)}`;
   // Gemini and Anthropic REQUIRE the first turn to be a user turn. Our history is
   // a raw slice of recent messages, so it may start with an assistant reply —
   // passing that verbatim makes the whole call 400 and the AI silently falls back.
@@ -294,32 +372,29 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
   while (history.length && history[0].role === "assistant") history = history.slice(1);
   try {
     // OpenAI, xAI (Grok), Groq, Cerebras, and OpenRouter all share the same
-    // "OpenAI-compatible" Chat Completions request shape — only the base URL,
-    // key, and default model differ, so one lookup table covers all five
-    // instead of repeating the request logic per provider.
-    const OPENAI_COMPAT: Partial<Record<Provider, { url: string; key: string | undefined; model: string }>> = {
-      openai: { url: "https://api.openai.com/v1/chat/completions", key: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL || "gpt-4o-mini" },
-      xai: { url: "https://api.x.ai/v1/chat/completions", key: process.env.XAI_API_KEY, model: process.env.XAI_MODEL || "grok-4" },
+    // "OpenAI-compatible" Chat Completions request shape — only the base URL
+    // and default model differ, so one lookup table covers all five instead
+    // of repeating the request logic per provider. The key is whichever one
+    // callLLM picked for this attempt, not read from env here.
+    const OPENAI_COMPAT: Partial<Record<Provider, { url: string; model: string }>> = {
+      openai: { url: "https://api.openai.com/v1/chat/completions", model: process.env.OPENAI_MODEL || "gpt-4o-mini" },
+      xai: { url: "https://api.x.ai/v1/chat/completions", model: process.env.XAI_MODEL || "grok-4" },
       // Free tier, generous rate limits, fast inference. Verified working
       // 2026-08-19 — catalog changes over time; if this 404s, check
       // console.groq.com or GET /openai/v1/models with your key.
-      groq: { url: "https://api.groq.com/openai/v1/chat/completions", key: process.env.GROQ_API_KEY, model: process.env.GROQ_MODEL || "openai/gpt-oss-120b" },
-      // Cerebras — despite being marketed free-tier, this account got 402
-      // Payment Required on every model as of 2026-08-19; needs a payment
-      // method added in their billing tab before it'll actually work. Kept
-      // configured (harmless no-op in the chain until that's resolved).
-      cerebras: { url: "https://api.cerebras.ai/v1/chat/completions", key: process.env.CEREBRAS_API_KEY, model: process.env.CEREBRAS_MODEL || "gpt-oss-120b" },
+      groq: { url: "https://api.groq.com/openai/v1/chat/completions", model: process.env.GROQ_MODEL || "openai/gpt-oss-120b" },
+      cerebras: { url: "https://api.cerebras.ai/v1/chat/completions", model: process.env.CEREBRAS_MODEL || "gpt-oss-120b" },
       // Free-tier models carry a ":free" suffix and share upstream capacity
       // across ALL OpenRouter free users, so they're prone to 429s at busy
       // times (confirmed 2026-08-19) — treat as a bonus, not primary. Catalog
       // changes often; check openrouter.ai/models?max_price=0 if this 404s.
-      openrouter: { url: "https://openrouter.ai/api/v1/chat/completions", key: process.env.OPENROUTER_API_KEY, model: process.env.OPENROUTER_MODEL || "google/gemma-4-31b-it:free" },
+      openrouter: { url: "https://openrouter.ai/api/v1/chat/completions", model: process.env.OPENROUTER_MODEL || "google/gemma-4-31b-it:free" },
     };
     const compat = OPENAI_COMPAT[p];
-    if (compat?.key) {
+    if (compat) {
       const res = await fetchT(compat.url, {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${compat.key}` },
+        headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
           model: compat.model,
           max_tokens: maxTokens,
@@ -333,18 +408,20 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
       });
       if (!res || !res.ok) {
         const body = res ? (await res.text()).slice(0, 300) : "no response";
-        console.error(`[ai:${p}] status=${res?.status} body=${body}`);
+        console.error(`[ai:${p}] key=${keyId} status=${res?.status} body=${body}`);
+        markKeyFailed(keyId);
         recordAiStat(p, false, res?.status, body);
         if (track) recordAiCallEvent(track, p, compat.model, opts.feature ?? "unknown", false, { statusCode: res?.status, errorSnippet: body, latencyMs: Date.now() - attemptStartedAt });
         return null;
       }
+      markKeyOk(keyId);
       recordAiStat(p, true, res.status, undefined, extractRateLimit(res));
       const j = (await res.json()) as { id?: string; choices?: { message?: { content?: string } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number } };
       recordAiCost(p, compat.model, opts.feature ?? "unknown", j.usage ? { input: j.usage.prompt_tokens, output: j.usage.completion_tokens } : null, j.id);
       if (track) recordAiCallEvent(track, p, compat.model, opts.feature ?? "unknown", true, { statusCode: res.status, latencyMs: Date.now() - attemptStartedAt, requestId: j.id });
       return j.choices?.[0]?.message?.content?.trim() ?? null;
     }
-    if (p === "google" && process.env.GEMINI_API_KEY) {
+    if (p === "google") {
       const model = process.env.GEMINI_MODEL || "gemini-flash-lite-latest";
       // Full "thinking" flash models (e.g. gemini-3.x-flash) burn the output-token
       // budget on hidden reasoning and truncate the visible reply, so we turn it
@@ -352,7 +429,7 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
       // and don't need it — so only send it to non-lite models.
       const genCfg: Record<string, unknown> = { maxOutputTokens: maxTokens, temperature };
       if (!/lite/i.test(model)) genCfg.thinkingConfig = { thinkingBudget: 0 };
-      const res = await fetchT(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+      const res = await fetchT(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -366,21 +443,23 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
       });
       if (!res || !res.ok) {
         const body = res ? (await res.text()).slice(0, 300) : "no response";
-        console.error(`[ai:${p}] status=${res?.status} body=${body}`);
+        console.error(`[ai:${p}] key=${keyId} status=${res?.status} body=${body}`);
+        markKeyFailed(keyId);
         recordAiStat(p, false, res?.status, body);
         if (track) recordAiCallEvent(track, p, model, opts.feature ?? "unknown", false, { statusCode: res?.status, errorSnippet: body, latencyMs: Date.now() - attemptStartedAt });
         return null;
       }
+      markKeyOk(keyId);
       recordAiStat(p, true, res.status);
       const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[]; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
       recordAiCost(p, model, opts.feature ?? "unknown", j.usageMetadata ? { input: j.usageMetadata.promptTokenCount, output: j.usageMetadata.candidatesTokenCount } : null);
       if (track) recordAiCallEvent(track, p, model, opts.feature ?? "unknown", true, { statusCode: res.status, latencyMs: Date.now() - attemptStartedAt });
       return j.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
     }
-    if (p === "anthropic" && process.env.ANTHROPIC_API_KEY) {
+    if (p === "anthropic") {
       const res = await fetchT("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+        headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
         body: JSON.stringify({
           model: process.env.ANTHROPIC_MODEL || "claude-sonnet-5",
           max_tokens: maxTokens,
@@ -394,11 +473,13 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
       });
       if (!res || !res.ok) {
         const body = res ? (await res.text()).slice(0, 300) : "no response";
-        console.error(`[ai:${p}] status=${res?.status} body=${body}`);
+        console.error(`[ai:${p}] key=${keyId} status=${res?.status} body=${body}`);
+        markKeyFailed(keyId);
         recordAiStat(p, false, res?.status, body);
         if (track) recordAiCallEvent(track, p, process.env.ANTHROPIC_MODEL || "claude-sonnet-5", opts.feature ?? "unknown", false, { statusCode: res?.status, errorSnippet: body, latencyMs: Date.now() - attemptStartedAt });
         return null;
       }
+      markKeyOk(keyId);
       recordAiStat(p, true, res.status, undefined, extractRateLimit(res));
       const j = (await res.json()) as { id?: string; content?: { text?: string }[]; usage?: { input_tokens?: number; output_tokens?: number } };
       recordAiCost(p, process.env.ANTHROPIC_MODEL || "claude-sonnet-5", opts.feature ?? "unknown", j.usage ? { input: j.usage.input_tokens, output: j.usage.output_tokens } : null, j.id);
@@ -407,6 +488,7 @@ async function callOnce(p: Provider, system: string, user: string, opts: LLMOpts
     }
   } catch (e) {
     const errorSnippet = e instanceof Error ? e.message.slice(0, 200) : "unknown exception";
+    markKeyFailed(keyId);
     recordAiStat(p, false, undefined, errorSnippet);
     if (track) recordAiCallEvent(track, p, "unknown", opts.feature ?? "unknown", false, { errorSnippet, latencyMs: Date.now() - attemptStartedAt });
     return null;
