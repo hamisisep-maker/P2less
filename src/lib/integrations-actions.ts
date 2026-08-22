@@ -37,7 +37,7 @@ export async function checkIntegrationNowAction(key: string) {
 // specifically-permissioned actions (e.g. runBillingCycleNowAction requires
 // billing.manage_automation) — a read-level permission must never be able to
 // early-trigger a real billing cycle or dispatch sweep through a back door.
-const MANUALLY_TRIGGERABLE_JOBS = new Set(["db_health_sweep", "integration_health_sweep"]);
+const MANUALLY_TRIGGERABLE_JOBS = new Set(["db_health_sweep", "integration_health_sweep", "social_token_health_sweep"]);
 
 /** Manually triggers a safe observability job right now. */
 export async function runJobNowAction(jobKey: string) {

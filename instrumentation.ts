@@ -36,5 +36,9 @@ export async function register() {
     const { runNotificationDispatchSweep } = await import("./src/lib/notifications");
     registerJob({ key: "notification_dispatch_sweep", name: "Notification dispatch", category: "notifications", intervalMs: 2 * 60_000, run: runNotificationDispatchSweep });
     startJobPoller("notification_dispatch_sweep");
+
+    const { runSocialTokenHealthSweep } = await import("./src/lib/social-publish");
+    registerJob({ key: "social_token_health_sweep", name: "Facebook/Instagram token health", category: "health", intervalMs: 15 * 60_000, run: runSocialTokenHealthSweep });
+    startJobPoller("social_token_health_sweep");
   }
 }

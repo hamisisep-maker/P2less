@@ -39,7 +39,7 @@ export default async function ChannelsPage({
     db.channel.findFirst({ where: { tenantId: user.tenantId!, type: "telegram" } }),
     db.channel.findFirst({ where: { tenantId: user.tenantId!, type: "email" } }),
   ]);
-  const messengerCfg = messengerChannel?.config as { pageName?: string; instagramBusinessAccountId?: string | null; autoPublishEnabled?: boolean } | null;
+  const messengerCfg = messengerChannel?.config as { pageName?: string; instagramBusinessAccountId?: string | null; autoPublishEnabled?: boolean; tokenValid?: boolean; tokenHealthLastCheckedAt?: string } | null;
   const messengerPageName = messengerCfg?.pageName;
   const telegramUsername = (telegramChannel?.config as { botUsername?: string } | null)?.botUsername;
 
@@ -127,6 +127,9 @@ export default async function ChannelsPage({
               <div className="flex items-center gap-2">
                 <span className="font-semibold">{messengerPageName ?? "Connected Page"}</span>
                 <Badge tone={messengerChannel.status === "active" ? "green" : "neutral"}>{messengerChannel.status}</Badge>
+                {messengerCfg?.tokenHealthLastCheckedAt && (
+                  <Badge tone={messengerCfg.tokenValid ? "green" : "rose"}>{messengerCfg.tokenValid ? "connection healthy" : "connection needs reconnecting"}</Badge>
+                )}
               </div>
               <div className="mt-1 font-mono text-[11px] text-faint">page_id: {messengerChannel.address}</div>
             </div>

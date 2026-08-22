@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "./db";
 import { decryptJSON } from "./crypto";
+import { queueNotification } from "./notifications";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Universal Platform roadmap Phase 8c — auto-publish new products to the
@@ -23,6 +24,8 @@ type MessengerChannelConfig = {
   instagramBusinessAccountId?: string | null;
   autoPublishEnabled?: boolean;
   tokenEnc?: string;
+  tokenValid?: boolean;
+  tokenHealthLastCheckedAt?: string;
 };
 
 export type PublishResult = { facebook: { ok: boolean; error?: string } | null; instagram: { ok: boolean; error?: string; skippedReason?: string } | null };
@@ -110,4 +113,69 @@ export async function setAutoPublishEnabled(tenantId: string, enabled: boolean):
     ? "Enabled for your Facebook Page. Your connected Page has no linked Instagram Business account yet, so Instagram posts will be skipped until one is linked on Meta's side."
     : undefined;
   return { ok: true, warning };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Access-token health monitoring — the gap explicitly flagged (not an
+// afterthought) when Phase 8c's core build shipped: a Page/Instagram token
+// can be silently revoked (password change, app access removed) and posting
+// would just quietly stop with nobody noticing, defeating the whole "no
+// human ever needs to log back in and check" point of this feature.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Real Graph API debug_token endpoint, confirmed against Meta's own docs
+ *  before writing this: {app-id}|{app-secret} is the documented "app access
+ *  token" format, valid as the caller credential for inspecting ANY token
+ *  issued to this same app — no per-tenant admin credential needed to check. */
+async function checkPageTokenHealth(pageToken: string): Promise<{ valid: boolean; error?: string }> {
+  const appId = process.env.WHATSAPP_APP_ID;
+  const appSecret = process.env.WHATSAPP_APP_SECRET; // same shared Meta App as WhatsApp/Messenger
+  if (!appId || !appSecret) return { valid: true }; // can't check without app credentials — don't false-alarm every tenant for our own config gap
+  try {
+    const appToken = `${appId}|${appSecret}`;
+    const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/debug_token?input_token=${encodeURIComponent(pageToken)}&access_token=${encodeURIComponent(appToken)}`);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body?.data) return { valid: false, error: body?.error?.message || `debug_token failed (${res.status})` };
+    return { valid: !!body.data.is_valid, error: body.data.error?.message };
+  } catch (e) {
+    return { valid: true, error: e instanceof Error ? e.message : "network error" }; // a network hiccup isn't evidence the token is bad — don't false-alarm on our own connectivity issue
+  }
+}
+
+/** Registered as social_token_health_sweep in instrumentation.ts. Checks
+ *  every tenant's connected Facebook Page token (Messenger replies AND, if
+ *  enabled, product auto-publish both depend on the same token) and queues a
+ *  real per-TENANT notification the moment one goes bad — not a platform
+ *  Incident, deliberately: one client's Facebook password change is a
+ *  per-tenant configuration event, not evidence P2Less's own infrastructure
+ *  is broken, and conflating the two would misuse the Incident model (AI
+ *  provider outages, M-Pesa callback silence) for something structurally
+ *  different. queueNotification()'s own per-day dedupe key means a token
+ *  that STAYS invalid re-notifies at most once/day, not every sweep tick. */
+export async function runSocialTokenHealthSweep(): Promise<{ checked: number; invalid: number }> {
+  const channels = await db.channel.findMany({ where: { type: "messenger", status: "active" } });
+  let invalid = 0;
+  for (const channel of channels) {
+    const cfg = channel.config as MessengerChannelConfig;
+    const token = decryptJSON<{ accessToken?: string }>(cfg.tokenEnc)?.accessToken;
+    if (!token) continue;
+
+    const health = await checkPageTokenHealth(token);
+    await db.channel.update({
+      where: { id: channel.id },
+      data: { config: { ...cfg, tokenValid: health.valid, tokenHealthLastCheckedAt: new Date().toISOString() } },
+    });
+
+    if (!health.valid) {
+      invalid++;
+      const pageLabel = cfg.pageName ?? channel.address ?? "your Facebook Page";
+      const affected = cfg.autoPublishEnabled ? "Messenger replies and product auto-publishing" : "Messenger replies";
+      await queueNotification(
+        "social_token_invalid",
+        `${pageLabel}'s connection to P2Less has stopped working (${health.error ?? "the access token is no longer valid"}) — reconnect it on the Channels page to keep ${affected} working.`,
+        { tenantId: channel.tenantId },
+      ).catch(() => {});
+    }
+  }
+  return { checked: channels.length, invalid };
 }
