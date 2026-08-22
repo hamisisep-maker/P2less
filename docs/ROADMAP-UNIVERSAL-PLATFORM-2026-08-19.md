@@ -272,6 +272,13 @@ User asked directly whether P2Less could handle voice/calls. Split into two genu
 
 **The real ceiling, stated directly rather than glossed over**: this is menu-driven, not free-form. A caller presses numbers on a menu built in advance — they cannot ask an open-ended question the way a WhatsApp user types anything and the understanding engine figures out what they meant. Calling this "the same as WhatsApp" would be wrong; it's closer to "a smart phone menu that can occasionally speak a real fact and transfer you to a person."
 
+**The concrete end-to-end walkthrough, worth keeping verbatim since it's the clearest sellable explanation of the idea** (user reaction: "i love this truly p2less is going to sell"):
+- The org gets a real phone number provisioned through Africa's Talking (their infrastructure, not P2Less's) — a separate number from their WhatsApp number, not the same line, since WhatsApp's own registration process claims a number specifically for WhatsApp's protocol. The org advertises both — "WhatsApp or call us at..." — as two real, separate numbers, or leads with whichever channel matters more to them.
+- Someone dials that number. Africa's Talking receives the actual call on their telephony infrastructure and immediately sends a webhook to P2Less — "a call just came in."
+- P2Less answers with instructions (XML), same shape as every other channel's provider-callback pattern: play a greeting, then a menu — "Press 1 for fees, press 2 to speak to the office, press 3 for anything else."
+- Based on what they press: either P2Less speaks a real answer back to them (text-to-speech reading a grounded fact pulled from the org's actual connected system, same engine as a WhatsApp reply — "Your balance is 4,500 shillings"), or it transfers the call live to a real staff member's actual phone, ringing them directly.
+- The caller experiences the whole thing as an ordinary phone call — dial, hear a menu, either get their answer spoken back or get connected to a person. No app, no internet, no WhatsApp needed on their end — the real audience gap this closes.
+
 **What's genuinely new, not just a channel add-on**:
 - A real per-tenant admin surface to configure the menu (press 1 → connector X, press 2 → transfer to number Y) — no text channel needed this, since they all plug straight into `handleInbound()` with zero extra per-tenant setup.
 - A real identity-verification gap: a phone call's caller ID is more easily spoofed than owning a verified WhatsApp number — anything sensitive read back over a call needs a new DTMF-entered PIN step, a pattern no existing channel has.
