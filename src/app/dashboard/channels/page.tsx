@@ -9,6 +9,7 @@ import { ConnectMessengerButton } from "./connect-messenger-button";
 import { ConnectTelegramForm } from "./connect-telegram-form";
 import { ConnectEmailButton } from "./connect-email-button";
 import { emailInboundConfigured } from "@/lib/email-channel";
+import { AutoPublishToggle } from "./auto-publish-toggle";
 
 // Registration reframe, continued (roadmap doc "Registration reframe" —
 // Track A) — the data model already treats WhatsApp numbers and a
@@ -38,7 +39,8 @@ export default async function ChannelsPage({
     db.channel.findFirst({ where: { tenantId: user.tenantId!, type: "telegram" } }),
     db.channel.findFirst({ where: { tenantId: user.tenantId!, type: "email" } }),
   ]);
-  const messengerPageName = (messengerChannel?.config as { pageName?: string } | null)?.pageName;
+  const messengerCfg = messengerChannel?.config as { pageName?: string; instagramBusinessAccountId?: string | null; autoPublishEnabled?: boolean } | null;
+  const messengerPageName = messengerCfg?.pageName;
   const telegramUsername = (telegramChannel?.config as { botUsername?: string } | null)?.botUsername;
 
   return (
@@ -129,6 +131,7 @@ export default async function ChannelsPage({
               <div className="mt-1 font-mono text-[11px] text-faint">page_id: {messengerChannel.address}</div>
             </div>
           </div>
+          {canConnect && <AutoPublishToggle enabled={!!messengerCfg?.autoPublishEnabled} hasInstagram={!!messengerCfg?.instagramBusinessAccountId} />}
         </Card>
       ) : (
         <Card className="p-6 text-sm text-muted">No Facebook Page connected yet.</Card>

@@ -27,6 +27,7 @@ import { buildEmbeddedSignupLink } from "./whatsapp-embedded-signup";
 import { buildMessengerConnectLink } from "./messenger";
 import { connectTelegramBot } from "./telegram";
 import { activateEmailChannel } from "./email-channel";
+import { autoPublishProduct, setAutoPublishEnabled } from "./social-publish";
 import {
   isConfigured as stripeIsConfigured, publishableKey, createSetupIntent, verifySetupIntentSucceeded, createCustomerWithCard,
 } from "./stripe";
@@ -585,10 +586,28 @@ export async function saveProductAction(_prev: unknown, formData: FormData) {
   if (id) {
     await db.product.updateMany({ where: { id, tenantId: user.tenantId! }, data });
   } else {
-    await db.product.create({ data: { tenantId: user.tenantId!, ...data } });
+    const created = await db.product.create({ data: { tenantId: user.tenantId!, ...data } });
+    // Phase 8c — fire-and-forget, never blocks or fails the product creation
+    // itself on a social-publish problem, same discipline as dispatchWebhook().
+    // Only NEW products, matching the roadmap's own stated scope ("when a
+    // product is uploaded... automatically publish it"), not every edit.
+    void autoPublishProduct(user.tenantId!, created).catch(() => {});
   }
   revalidatePath("/dashboard/products");
   return { ok: true, editedId: id || undefined };
+}
+
+// ── Auto-publish toggle (Phase 8c) ────────────────────────────────────────────
+export async function setAutoPublishEnabledAction(_prev: unknown, formData: FormData) {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE)) {
+    return { error: "Only an organization owner can change this." };
+  }
+  const enabled = formData.get("enabled") === "true";
+  const result = await setAutoPublishEnabled(user.tenantId!, enabled);
+  if (!result.ok) return { error: result.error };
+  revalidatePath("/dashboard/channels");
+  return { ok: true as const, warning: result.warning };
 }
 
 // Toggle, not delete — past orders reference products, so we never hard-delete;
