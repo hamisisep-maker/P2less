@@ -41,6 +41,7 @@ const CHANNEL_OPTIONS: { value: string; label: string }[] = [
   { value: "web_chat", label: "Our website (chat widget)" },
   { value: "sms_interested", label: "SMS (coming soon — let us know you need it)" },
   { value: "instagram_interested", label: "Instagram (coming soon — let us know you need it)" },
+  { value: "email_interested", label: "Email (coming soon — let us know you need it)" },
 ];
 
 // Resume-on-refresh: see the "UX design — resuming an interrupted /onboard

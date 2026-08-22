@@ -6,6 +6,7 @@ import { decryptJSON } from "./crypto";
 import { dispatchWebhook } from "./webhooks";
 import { resolveMessengerToken } from "./messenger";
 import { resolveTelegramToken, sendTelegramText } from "./telegram";
+import { sendEmailReply } from "./email-channel";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Channel transport. The engine emits outbound messages through deliver(); each
@@ -204,6 +205,20 @@ export async function deliver(msg: OutboundMessage): Promise<{ delivered: boolea
         return { delivered: false, transport: "telegram", error: result.error };
       }
       return { delivered: true, transport: "telegram" };
+    }
+
+    case "email": {
+      // V1 scope, stated not silent: no real subject-line threading — the
+      // original inbound subject isn't threaded through handleInbound()'s
+      // shared InboundInput type, which every other channel also uses and
+      // has no concept of "subject". A fixed reply subject rather than
+      // touching that shared type for the lowest-priority channel.
+      const result = await sendEmailReply(msg.to, "Reply from your assistant", msg.body);
+      if (!result.ok) {
+        console.error(`[email:send-failed] ${result.error}`);
+        return { delivered: false, transport: "email", error: result.error };
+      }
+      return { delivered: true, transport: "email" };
     }
 
     case "sms":

@@ -7,6 +7,8 @@ import { messengerConnectConfigured } from "@/lib/messenger";
 import { ConnectWhatsAppButton } from "./connect-whatsapp-button";
 import { ConnectMessengerButton } from "./connect-messenger-button";
 import { ConnectTelegramForm } from "./connect-telegram-form";
+import { ConnectEmailButton } from "./connect-email-button";
+import { emailInboundConfigured } from "@/lib/email-channel";
 
 // Registration reframe, continued (roadmap doc "Registration reframe" —
 // Track A) — the data model already treats WhatsApp numbers and a
@@ -26,7 +28,7 @@ export default async function ChannelsPage({
   const { embedded_signup: waSignupResult, connect: messengerConnectResult, message } = await searchParams;
   const canConnect = userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE);
 
-  const [numbers, messengerChannel, telegramChannel] = await Promise.all([
+  const [numbers, messengerChannel, telegramChannel, emailChannel] = await Promise.all([
     db.whatsAppNumber.findMany({
       where: { tenantId: user.tenantId! },
       include: { _count: { select: { conversations: true } } },
@@ -34,6 +36,7 @@ export default async function ChannelsPage({
     }),
     db.channel.findFirst({ where: { tenantId: user.tenantId!, type: "messenger" } }),
     db.channel.findFirst({ where: { tenantId: user.tenantId!, type: "telegram" } }),
+    db.channel.findFirst({ where: { tenantId: user.tenantId!, type: "email" } }),
   ]);
   const messengerPageName = (messengerChannel?.config as { pageName?: string } | null)?.pageName;
   const telegramUsername = (telegramChannel?.config as { botUsername?: string } | null)?.botUsername;
@@ -163,6 +166,37 @@ export default async function ChannelsPage({
       <p className="mt-3 text-xs text-faint">
         Anyone who messages your bot on Telegram gets the same grounded answers as WhatsApp — no App Review, no
         Business Verification, no 24-hour reply window. Text only for now (no photos/files/inline buttons yet).
+      </p>
+
+      <h2 className="mt-8 font-display text-lg font-semibold">Email</h2>
+      {canConnect && (
+        <div className="mb-4 mt-2">
+          {emailInboundConfigured() ? (
+            <ConnectEmailButton />
+          ) : (
+            <p className="text-xs text-faint">Email isn&apos;t configured on this deployment yet.</p>
+          )}
+        </div>
+      )}
+      {emailChannel ? (
+        <Card className="p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-semibold">{emailChannel.address}</span>
+                <Badge tone={emailChannel.status === "active" ? "green" : "neutral"}>{emailChannel.status}</Badge>
+              </div>
+              <div className="mt-1 text-xs text-faint">Share this address with customers who&apos;d rather email than chat.</div>
+            </div>
+          </div>
+        </Card>
+      ) : (
+        <Card className="p-6 text-sm text-muted">No email address activated yet.</Card>
+      )}
+      <p className="mt-3 text-xs text-faint">
+        Slowest channel of the five, and the only one where a reply isn&apos;t instant — emails get the same
+        grounded answers, replied to as a normal email. Quoted-reply-chain stripping is a best-effort heuristic,
+        not perfect for every email client. Text only, no attachments yet.
       </p>
     </div>
   );

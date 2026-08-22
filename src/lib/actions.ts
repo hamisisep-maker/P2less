@@ -26,6 +26,7 @@ import { queueNotification } from "./notifications";
 import { buildEmbeddedSignupLink } from "./whatsapp-embedded-signup";
 import { buildMessengerConnectLink } from "./messenger";
 import { connectTelegramBot } from "./telegram";
+import { activateEmailChannel } from "./email-channel";
 import {
   isConfigured as stripeIsConfigured, publishableKey, createSetupIntent, verifySetupIntentSucceeded, createCustomerWithCard,
 } from "./stripe";
@@ -896,4 +897,19 @@ export async function connectTelegramBotAction(_prev: unknown, formData: FormDat
   if (!result.ok) return { error: result.error };
   revalidatePath("/dashboard/channels");
   return { ok: true as const, username: result.username };
+}
+
+// ── Email connection (Phase 8d) ───────────────────────────────────────────────
+// Owner-only. Simpler even than Telegram — no credential to paste at all,
+// since every tenant shares the platform's own Resend account; "connecting"
+// just derives and activates this org's own address on it.
+export async function activateEmailChannelAction(_prev: unknown, _formData: FormData) {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE)) {
+    return { error: "Only an organization owner can activate the email channel." };
+  }
+  const result = await activateEmailChannel(user.tenantId!);
+  if (!result.ok) return { error: result.error };
+  revalidatePath("/dashboard/channels");
+  return { ok: true as const, address: result.address };
 }

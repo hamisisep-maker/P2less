@@ -46,7 +46,7 @@ export type InboundInput = {
   // be set.
   tenantId?: string;
   fromNumber: string; // the sender's number — an identity signal, never sufficient alone
-  channelType: string; // whatsapp | webchat | widget | messenger | telegram | sms (transport only)
+  channelType: string; // whatsapp | webchat | widget | messenger | telegram | email | sms (transport only)
   text: string;
   displayName?: string;
   // Super-app: an attached file (document/spreadsheet/image) to run a tool on.
@@ -214,7 +214,10 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     tenant = t;
     branding = (tenant.branding as { assistantName?: string; welcome?: string; poweredBy?: string } | null) ?? {};
     assistant = branding.assistantName ?? tenant.name;
-    fromIdentity = { number: input.channelType === "messenger" ? "messenger" : input.channelType === "telegram" ? "telegram" : "widget", name: assistant };
+    fromIdentity = {
+      number: input.channelType === "messenger" ? "messenger" : input.channelType === "telegram" ? "telegram" : input.channelType === "email" ? "email" : "widget",
+      name: assistant,
+    };
     branchLookup = { branchId: null, tenantId: tenant.id };
     if (input.channelType === "messenger") {
       const channel = await db.channel.findFirst({ where: { tenantId: tenant.id, type: "messenger", status: "active" } });
