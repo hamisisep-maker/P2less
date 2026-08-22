@@ -112,6 +112,10 @@ export const LANDING_FAQS: Faq[] = [
     a: "Yes for conversations and usage: your dashboard shows message volume trends, conversation counts and status breakdown, connector activity, and contact counts, all real-time from your own data. Response-time metrics specifically aren't tracked yet — that's a real gap, not built today.",
   },
   {
+    q: "Can I customize the widget's bubble position or greeting message myself?",
+    a: "Not yet through a self-service settings screen — that doesn't exist today. Your name, mark/initials, and brand color are set once when your account is created and shown in your embed snippet, but there's no dashboard form to change them yourself, and the bubble's on-screen position is fixed (bottom-right). If you need any of that changed, reach out to us directly.",
+  },
+  {
     q: "Exactly how many team members/users, messages, and connectors do the paid plans include?",
     a: "Professional (4,900 KES/mo): 15 users, 10,000 messages/month, 10 connectors. Business (19,900 KES/mo): 60 users, 100,000 messages/month, 50 connectors. Enterprise: no fixed ceiling, negotiated case-by-case. (Free plan is 2 users, 200 messages/month, 1 connector — see the Free plan question.)",
   },
