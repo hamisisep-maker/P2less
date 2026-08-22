@@ -1449,9 +1449,15 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
 
   // ── Detect intent ───────────────────────────────────────────────────────
   const actions = await loadActions(tenant.id);
-  if (actions.length === 0) {
-    return emit([{ body: "This organization hasn't connected any systems yet." }], "open", ctx);
-  }
+  // Deliberately NOT an early bail-out when actions.length === 0 (real bug,
+  // found live-testing the landing page's own self-tenant, 2026-08-22): a
+  // tenant with zero connectors but real approved FAQs — e.g. a pure-FAQ/
+  // marketing tenant, or any org early in onboarding before connecting a
+  // system — was getting a hardcoded "hasn't connected any systems yet." for
+  // EVERY message, even ones its FAQs could answer. `understand()`/
+  // `matchIntent()`/`numberedMenu()` all handle an empty `actions` array
+  // safely (map/slice over nothing), so this now falls through to the same
+  // FAQ-grounded `smallTalk()` path every other tenant already gets below.
   // AI-request quota — only actually blocks anything when AI would be used at
   // all (aiEnabled()); the deterministic fallback path records "api_call",
   // never limited by this. Declared in Plan.limits and metered for a long
@@ -1501,7 +1507,9 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     const fallback = identityFallbackAnswer(lower, assistant)
       ?? (isSocialChit(lower)
         ? warmAck(text)
-        : `I want to make sure I get you the right thing${first ? `, ${first}` : ""} 😊 Could you tell me a little more about what you need? For example, checking attendance, exam results, a fee balance, booking an appointment, or sending me a spreadsheet to analyze — or reply with a number:\n${menu.text}`);
+        : actions.length > 0
+          ? `I want to make sure I get you the right thing${first ? `, ${first}` : ""} 😊 Could you tell me a little more about what you need? For example, checking attendance, exam results, a fee balance, booking an appointment, or sending me a spreadsheet to analyze — or reply with a number:\n${menu.text}`
+          : `I want to make sure I get you the right thing${first ? `, ${first}` : ""} 😊 Could you tell me a little more about what you're looking for?`);
     return emit([{ body: st ?? fallback }], "open", { lastResource: ctx.lastResource, menu: menu.ids });
   }
 
