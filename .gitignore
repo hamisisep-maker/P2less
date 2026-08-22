@@ -10,3 +10,7 @@ next-env.d.ts
 /prisma/dev.db-journal
 /prisma/generated
 .DS_Store
+/test-results
+/playwright-report
+/blob-report
+/playwright/.cache
