@@ -79,6 +79,14 @@ export const LANDING_FAQS: Faq[] = [
     q: "Are you VC-funded? Who are your investors?",
     a: "We haven't published details about funding or ownership — if that's relevant to evaluating us, reach out directly and we'll talk through it honestly.",
   },
+  {
+    q: "Is there a contract, or can I cancel anytime?",
+    a: "The Free, Professional, and Business plans are all month-to-month — no annual contract, cancel anytime. Enterprise is priced and negotiated case-by-case, so its specific terms are worked out directly with you.",
+  },
+  {
+    q: "What are your API rate limits?",
+    a: "120 requests per minute per API key — a flat limit, the same for every plan. If a real integration needs more than that, reach out and we can talk it through.",
+  },
 ];
 
 export type AudienceKey = "business" | "institutions" | "sacco" | "government" | "developers";
