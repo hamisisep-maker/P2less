@@ -1350,6 +1350,17 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       ? await smallTalk(assistant, text, [...actionsNow0.map((a) => a.name), ...toolCapabilityLines()], history, knownFacts, orgFaqs)
       : null;
     const intro = st0 ? `${st0}\n\n${hello}` : hello;
+    // A tenant with ZERO configured capabilities (e.g. a pure-FAQ/marketing
+    // tenant with no connectors at all — found live-testing the landing
+    // page's own self-referential widget, 2026-08-22) has no "account" to
+    // connect and nothing to list — the "I can help X with things like:
+    // [blank]" + identify/connect-your-account language below is written for
+    // tenants with real per-user records, and reads broken with an empty
+    // capability list. The grounded answer (or a plain welcome) is the
+    // honest, complete reply when there's genuinely nothing else to offer.
+    if (actionsNow0.length === 0) {
+      return emit([{ body: intro }], "open", {});
+    }
     // Website widget (Phase 8e, 2026-08-21 — real bug, not just copy): the
     // "reply with your admission number" invitation is a dead end on this
     // channel, not just currently blocked. The identify check requires the

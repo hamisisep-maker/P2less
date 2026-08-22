@@ -81,6 +81,14 @@
 .pulse-dot::before { content: ""; position: absolute; inset: 0; border-radius: 9999px; background: currentColor; animation: ping 1.8s cubic-bezier(0,0,.2,1) infinite; opacity: .5; }
 @keyframes ping { 75%, 100% { transform: scale(2.2); opacity: 0; } }
 
+/* Landing page audience orbit — the ring spins slowly while each badge
+   counter-spins at the same speed the opposite direction, so labels stay
+   upright while their position orbits. See src/app/audience-orbit.tsx. */
+@keyframes orbit-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes orbit-spin-reverse { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+.orbit-ring { animation: orbit-spin 42s linear infinite; }
+.orbit-counter { animation: orbit-spin-reverse 42s linear infinite; }
+
 @media (prefers-reduced-motion: reduce) {
-  .animate-in, .animate-shimmer, .pulse-dot::before { animation: none !important; }
+  .animate-in, .animate-shimmer, .pulse-dot::before, .orbit-ring, .orbit-counter { animation: none !important; }
 }
