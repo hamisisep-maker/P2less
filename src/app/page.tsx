@@ -227,7 +227,7 @@ export default async function Landing() {
         {/* PRICING */}
         <section id="pricing" className="py-12">
           <h2 className="text-center font-display text-2xl font-bold tracking-tight sm:text-3xl">Simple, honest pricing</h2>
-          <p className="mx-auto mt-2 max-w-xl text-center text-muted">A flat monthly fee, plus a small cost for what you actually use. Free to start, no card required.</p>
+          <p className="mx-auto mt-2 max-w-xl text-center text-muted">A flat monthly fee, plus a small cost for what you actually use. Free to start — we verify a card with a $0 authorization, never charged.</p>
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {PLANS.map((p) => (
               <div key={p.name} className="rounded-2xl border border-line bg-surface p-5">

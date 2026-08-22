@@ -29,7 +29,7 @@ export const LANDING_FAQS: Faq[] = [
   },
   {
     q: "How is pricing calculated?",
-    a: "A flat monthly plan fee, plus a small per-use cost for messages, AI requests, and documents generated — so you always know your floor, and it scales fairly with how much you actually use it. Free to start, no card required.",
+    a: "A flat monthly plan fee, plus a small per-use cost for messages, AI requests, and documents generated — so you always know your floor, and it scales fairly with how much you actually use it. Free to start — we verify a real card with a $0 authorization as part of signup, but you're never charged unless you upgrade.",
   },
   {
     q: "Can government or regulated institutions use P2Less?",
@@ -45,7 +45,7 @@ export const LANDING_FAQS: Faq[] = [
   },
   {
     q: "How do I sign up?",
-    a: "Click the 'Start free' button at the top of this page (or the one in this chat's footer) — it takes a couple of minutes, there's no card required, and it's free to start.",
+    a: "Click the 'Start free' button at the top of this page (or the one in this chat's footer) — it takes a couple of minutes. Part of signing up verifies a real card via a $0 authorization (never charged), then you're in, free to start.",
   },
   {
     q: "Where can I find more details, FAQs, or your pricing?",

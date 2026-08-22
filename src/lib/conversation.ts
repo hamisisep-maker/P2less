@@ -544,7 +544,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     const m = numberedMenu(await loadActions(tenant.id));
     const body = contact.contactRoles.length === 0
       ? `No problem, let's start over. 👋`
-      : `Okay, starting fresh. 👋 Reply with a number or just tell me what you need:\n${m.text}`;
+      : `Okay, starting fresh. 👋${menuPrompt(m, "Reply with a number or just tell me what you need:")}`;
     return emit([{ body }], "open", { menu: contact.contactRoles.length === 0 ? undefined : m.ids });
   }
 
@@ -558,7 +558,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     const hi = first
       ? `Good ${partOfDay()}, ${first}! 👋 Welcome back to ${assistant}.`
       : `Good ${partOfDay()}! 👋 ${branding.welcome ?? `Welcome to ${assistant}.`}`;
-    return emit([{ body: `${hi}\n\nReply with a number, or just tell me what you need:\n${menu.text}` }], "open", { lastResource: ctx.lastResource, menu: menu.ids });
+    return emit([{ body: `${hi}${menuPrompt(menu)}` }], "open", { lastResource: ctx.lastResource, menu: menu.ids });
   }
 
   // ── Resume: awaiting OTP ────────────────────────────────────────────────
@@ -598,7 +598,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
         await linkContact(tenant.id, contact.id, { idLabel: "", grantKey: pl.grantKey, roleKey: pl.roleKey, office: "", audience: "" }, pl.personId, pl.name);
         await audit({ tenantId: tenant.id, requestId: reqId, actorType: "contact", actorId: contact.id, action: "contact.link", target: pl.personId, success: true });
         const caps = numberedMenu(await loadActions(tenant.id));
-        return emit([{ body: `✅ Verified — welcome, ${pl.name.split(" ")[0]}! Your number is now linked to ${assistant}.\n\nReply with a number, or just ask:\n${caps.text}` }], "open", { menu: caps.ids });
+        return emit([{ body: `✅ Verified — welcome, ${pl.name.split(" ")[0]}! Your number is now linked to ${assistant}.${menuPrompt(caps, "Reply with a number, or just ask:")}` }], "open", { menu: caps.ids });
       }
       // Case 2: OTP gated a sensitive action → resume it now.
       const resumed = await runAction({
@@ -1410,7 +1410,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
         )
       : null;
     const hi = aiHi?.trim() || (first ? `Good ${partOfDay()}, ${first}! 👋 Welcome back to ${assistant}.` : `Good ${partOfDay()}! 👋 ${branding.welcome ?? `Welcome to ${assistant}.`}`);
-    return emit([{ body: `${hi}\n\nReply with a number, or just tell me what you need:\n${menu.text}` }], "open", { lastResource: ctx.lastResource, menu: menu.ids });
+    return emit([{ body: `${hi}${menuPrompt(menu)}` }], "open", { lastResource: ctx.lastResource, menu: menu.ids });
   }
   if (/(speak|talk).*(human|someone|agent|person)|human agent|customer care/.test(lower)) {
     const ticket = await db.supportTicket.create({
@@ -2105,6 +2105,21 @@ function humanize(k: string): string {
 function numberedMenu(actions: IntentAction[]): { text: string; ids: string[] } {
   const top = actions.slice(0, 8);
   return { text: top.map((a, i) => `${i + 1}. ${a.name}`).join("\n"), ids: top.map((a) => a.id) };
+}
+
+/** The "reply with a number, or just tell me what you need" suffix appended
+ *  after a greeting/reset/link — omitted entirely for a tenant with zero
+ *  configured actions (e.g. a pure-FAQ tenant), since there's no real menu
+ *  to reply to a number FOR. Real bug found live 2026-08-22: 4 separate
+ *  call sites each hand-rolled this same template unconditionally, so a
+ *  zero-capability tenant got "Reply with a number..." followed by a blank
+ *  menu on every greeting after the first — same "never hint at a menu
+ *  that doesn't exist" discipline as smallTalk()'s equivalent fix
+ *  (ai.ts), just missed here since these paths don't go through
+ *  smallTalk() at all. One shared helper instead of 4 hand-rolled copies
+ *  so a 5th call site can't reintroduce the same gap. */
+function menuPrompt(menu: { text: string; ids: string[] }, lead = "Reply with a number, or just tell me what you need:"): string {
+  return menu.ids.length > 0 ? `\n\n${lead}\n${menu.text}` : "";
 }
 
 /** Build OTP challenge messages. On real channels (WhatsApp/SMS) the code is
