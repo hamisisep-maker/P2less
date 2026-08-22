@@ -104,6 +104,14 @@ export const LANDING_FAQS: Faq[] = [
     a: "Honestly, not a formal one yet — no automated backup schedule is running today. We're a newly-launched platform (see the downtime/security-breach question above) and this is a real gap we're upfront about rather than claiming otherwise. If data safety at that level is critical for you right now, raise it directly before signing up so we can talk through it.",
   },
   {
+    q: "Which AI model or company powers the assistant — is it OpenAI's GPT-4?",
+    a: "It's not tied to any single AI vendor or model. P2Less automatically fails over across several major AI providers for reliability, so one provider having a slow day never takes the whole assistant down. We don't publicly commit to one specific model/company as \"the\" engine, since that mix is chosen for reliability and can change.",
+  },
+  {
+    q: "Do I get an analytics dashboard — conversations, response times, usage?",
+    a: "Yes for conversations and usage: your dashboard shows message volume trends, conversation counts and status breakdown, connector activity, and contact counts, all real-time from your own data. Response-time metrics specifically aren't tracked yet — that's a real gap, not built today.",
+  },
+  {
     q: "Exactly how many team members/users, messages, and connectors do the paid plans include?",
     a: "Professional (4,900 KES/mo): 15 users, 10,000 messages/month, 10 connectors. Business (19,900 KES/mo): 60 users, 100,000 messages/month, 50 connectors. Enterprise: no fixed ceiling, negotiated case-by-case. (Free plan is 2 users, 200 messages/month, 1 connector — see the Free plan question.)",
   },

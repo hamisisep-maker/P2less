@@ -70,7 +70,7 @@ export default async function WidgetPage() {
         <p className="mb-3 text-sm text-muted">Paste this before the closing <code>&lt;/body&gt;</code> tag of your site — or into your site builder&apos;s &quot;custom code&quot; / &quot;code injection&quot; field if you don&apos;t edit source files directly (WordPress, Squarespace, Wix, and Shopify all have one).</p>
         <p className="mb-3 text-xs text-muted">The bubble shows <strong>{initials}</strong> and your own color below — every organization&apos;s widget looks like their own, not a generic P2Less icon. Set a custom two-letter mark or color under Branding if you don&apos;t want the auto-generated one.</p>
         <div className="overflow-x-auto rounded-xl bg-ink p-4">
-          <pre className="text-xs leading-relaxed text-white/90"><code>{`<script src="${base}/widget.js" data-key="${keys[0]?.key ?? "wk_your_widget_key"}" data-name="${escapeAttr(displayName)}" data-initials="${escapeAttr(initials)}"${color ? ` data-color="${escapeAttr(color)}"` : ""}></script>`}</code></pre>
+          <pre className="text-xs leading-relaxed text-white/90"><code>{`<script src="${base}/widget.js" async data-key="${keys[0]?.key ?? "wk_your_widget_key"}" data-name="${escapeAttr(displayName)}" data-initials="${escapeAttr(initials)}"${color ? ` data-color="${escapeAttr(color)}"` : ""}></script>`}</code></pre>
         </div>
       </Card>
     </div>
