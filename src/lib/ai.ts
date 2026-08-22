@@ -821,5 +821,11 @@ WHAT YOU MUST NOT DO — THIS IS THE MOST IMPORTANT RULE, NEVER BREAK IT:
 - Never invent whether something DID or DIDN'T happen (an order, a payment, a message you supposedly sent). If "WHAT YOU ALREADY KNOW" below states something real happened, treat it as fact and never contradict it, deny it, or call it a "test"/"mistake" — that is real user-facing history, not a hypothetical. If nothing there covers what's being asked, say you don't have that on record rather than guessing either way.${known}${faqBlock}
 
 Keep it to 1–3 short, natural sentences. Reply with ONLY the message text.`;
-  return callLLM(system, userText, { maxTokens: 200, temperature: 0.6, history, feature: "small_talk" });
+  // 200 was too tight — found live 2026-08-22: a compound question ("what's
+  // your name AND what platform are you built on") genuinely needing several
+  // distinct facts got cut off mid-sentence at the token cap, a much worse
+  // outcome than a slightly longer but COMPLETE reply. Still short (the
+  // system prompt still asks for 1-3 sentences), just enough headroom that
+  // a real compound question doesn't truncate mid-word.
+  return callLLM(system, userText, { maxTokens: 300, temperature: 0.6, history, feature: "small_talk" });
 }
