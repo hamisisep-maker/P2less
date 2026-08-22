@@ -19,7 +19,7 @@ import { pickTool, allTools } from "./tools";
 import { startTopup, creditRateKes, creditsForAmount } from "./wallet";
 import { isConfigured as mpesaConfigured } from "./mpesa";
 import { setAiTenantContext } from "./ai-context";
-import { enterTenantContext, currentChannelSupportsFiles } from "./tenant-context";
+import { enterTenantContext, currentChannelSupportsFiles, getCurrentChannelLabel } from "./tenant-context";
 import { nextTicketNumber } from "./ticket-numbering";
 import { queueNotification } from "./notifications";
 import { resolveNumberBranch } from "./branches";
@@ -1403,7 +1403,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     // actual factual capability list) stays fixed; the opening line doesn't.
     const aiHi = aiEnabled()
       ? await complete(
-          `You're a warm, genuinely friendly human staff member on ${assistant}'s WhatsApp, greeting someone RIGHT NOW (${nowStr()}). ${first ? `Their name is ${first} — greet them by name.` : `You don't know their name — don't invent one.`} Match their energy/language from what they just said (casual, formal, Swahili, Sheng, etc.). Vary your wording every single time — never a template, never robotic, sound like a real person who's glad to hear from them. ONE short sentence only, no menu or list (that's added separately). Reply with ONLY that sentence.`,
+          `You're a warm, genuinely friendly human staff member on ${assistant}'s ${getCurrentChannelLabel()}, greeting someone RIGHT NOW (${nowStr()}). ${first ? `Their name is ${first} — greet them by name.` : `You don't know their name — don't invent one.`} Match their energy/language from what they just said (casual, formal, Swahili, Sheng, etc.). Vary your wording every single time — never a template, never robotic, sound like a real person who's glad to hear from them. ONE short sentence only, no menu or list (that's added separately). Reply with ONLY that sentence.`,
           text,
           60,
           0.9,
@@ -1425,7 +1425,11 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     await audit({ tenantId: tenant.id, requestId: reqId, actorType: "contact", actorId: contact.id, action: "escalate", success: true, detail: { ticketNumber: ticket.number } });
     // The reply below promises "notified the team" — this is what actually
     // makes that true, instead of the promise being backed by nothing.
-    await queueNotification("ticket_created", `New WhatsApp escalation ${ticket.number ?? ticket.id} from ${tenant.name}: ${ticket.subject}`).catch(() => {});
+    // Real bug found in a code-review pass, 2026-08-22: this hardcoded
+    // "WhatsApp" regardless of the actual channel — staff reading this
+    // notification could be misdirected to reply on the wrong channel for a
+    // Telegram/Messenger/email escalation.
+    await queueNotification("ticket_created", `New ${getCurrentChannelLabel()} escalation ${ticket.number ?? ticket.id} from ${tenant.name}: ${ticket.subject}`).catch(() => {});
     return emit([{ body: "I've created a support request and notified the team. Someone will get back to you shortly." }], "escalated", { lastResource: ctx.lastResource });
   }
 
@@ -1729,14 +1733,25 @@ function warmAck(text: string): string {
  *  (AI down/unavailable) so at least these bedrock questions never go
  *  unanswered or get a generic "tell me more" non-reply. */
 function identityFallbackAnswer(lower: string, assistant: string): string | null {
+  // Real bug found in a Telegram/email code-review pass, 2026-08-22: both
+  // messages below hardcoded "WhatsApp" regardless of the real channel — this
+  // fallback fires on EVERY channel (no channelType gate above it), and
+  // specifically whenever the AI is unavailable, so a Telegram/Messenger/
+  // email user hitting an AI outage got a confidently wrong "I'm the
+  // WhatsApp assistant" / "it's the WhatsApp technology... on WhatsApp".
+  // Same bug class already fixed once in smallTalk()'s own prompt (see
+  // tenant-context.ts) — this deterministic fallback was a separate,
+  // missed call site. getCurrentChannelLabel() is safe to call directly
+  // here: handleInbound() already set the channel context before this runs.
+  const channel = getCurrentChannelLabel();
   if (/\b(your name|who are you|what('?s| is) your name)\b/.test(lower)) {
-    return `I'm the WhatsApp assistant for ${assistant}, running on P2Less. Happy to help — what do you need?`;
+    return `I'm ${assistant}'s assistant, running on P2Less. Happy to help — what do you need?`;
   }
   if (/\b(who (made|built|owns|runs) you|whose are you|to whom do you belong|who do you belong to|who is hamisi|who is onesmus|who is kilumo)\b/.test(lower)) {
     return `I run on P2Less, built by Hamisi Onesmus Kilumo — a software engineer and founder/CEO of Hamzone Technologies. What can I help you with?`;
   }
   if (/\bwhat (is|does) p2less( mean| stand for)?\b|\bp2less inamaana gani\b/.test(lower)) {
-    return `P2Less means "paperless" — it's the WhatsApp technology (built by Hamisi Onesmus Kilumo of Hamzone Technologies) that lets you handle things like this right here on WhatsApp, no separate app or login needed. What can I help you with?`;
+    return `P2Less means "paperless" — it's the technology (built by Hamisi Onesmus Kilumo of Hamzone Technologies) that lets you handle things like this right here on ${channel}, no separate app or login needed. What can I help you with?`;
   }
   return null;
 }
