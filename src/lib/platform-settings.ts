@@ -87,6 +87,20 @@ export async function setSetting(key: SettingKey, value: string): Promise<void> 
   await db.platformSetting.upsert({ where: { key }, create: { key, value }, update: { value } });
 }
 
+// null updatedAt = still on the built-in default, never explicitly set by an
+// admin — distinct from "set a while ago," since a never-touched estimate is
+// the one most likely to be stale/wrong.
+export async function getSettingsWithMeta(keys: SettingKey[]): Promise<Record<SettingKey, { value: string; updatedAt: Date | null }>> {
+  const rows = await db.platformSetting.findMany({ where: { key: { in: keys } } });
+  const map = new Map(rows.map((r) => [r.key, r]));
+  const out = {} as Record<SettingKey, { value: string; updatedAt: Date | null }>;
+  for (const key of keys) {
+    const row = map.get(key);
+    out[key] = row ? { value: row.value, updatedAt: row.updatedAt } : { value: String(SETTING_DEFAULTS[key]), updatedAt: null };
+  }
+  return out;
+}
+
 // ── AI provider cost assumptions (separate model — one row per provider) ────
 export async function getAiProviderCosts(): Promise<Record<string, number>> {
   const rows = await db.aiProviderConfig.findMany();
@@ -100,6 +114,18 @@ export async function setAiProviderCost(provider: string, costPerCallKes: number
     update: { costPerCallKes },
   });
 }
+
+// Where each external cost assumption comes from, and where to go re-verify
+// it — feeds the "Pricing & cost references" card on /admin/billing. None of
+// these have a live billing-reconciliation API (confirmed per-provider, not
+// assumed), so every one of them is a number a human has to periodically
+// re-check by hand; this exists so they know WHERE to check, not just that
+// they should.
+export const COST_SOURCE: Partial<Record<SettingKey, { source: string; url?: string }>> = {
+  cost_conversation_kes: { source: "Meta has no public real-time WhatsApp Business Platform billing API — verify against your actual Meta invoice.", url: "https://business.facebook.com/billing_hub" },
+  cost_document_kes: { source: "Internal estimate of PDF-generation compute cost — no external provider to check against; re-estimate if hosting costs change." },
+  usd_to_kes_rate: { source: "FX rate used to convert provider USD pricing to KES billing — re-check against a real exchange-rate source periodically, not left to drift." },
+};
 
 // Real, stable console/billing URLs — where the admin actually goes to add
 // credit for each provider. Not fabricated; these are each provider's real
