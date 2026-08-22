@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "./db";
 import { matchIntent, type IntentAction, type IntentMatch } from "./intent-engine";
 import { getAiTenantId } from "./ai-context";
-import { getCurrentChannelLabel } from "./tenant-context";
+import { getCurrentChannelLabel, currentChannelSupportsFiles } from "./tenant-context";
 import { getSettingNumber } from "./platform-settings";
 import { randomToken } from "./crypto";
 
@@ -797,7 +797,10 @@ export async function smallTalk(orgName: string, userText: string, capabilities:
     ? `\n\nAPPROVED ORGANIZATION ANSWERS (official — if the user's question matches one of these, answer using this information; you may reword it naturally but keep every fact, number, date and name exact):\n${faqs.map((f) => `- Q: ${f.q}\n  A: ${f.a}`).join("\n")}`
     : "";
   const channel = getCurrentChannelLabel();
+  const filesOk = currentChannelSupportsFiles();
   const system = `You are a warm, switched-on, genuinely caring human staff member replying on ${orgName}'s ${channel}. Talk like a real person who actually likes helping — never say or imply you are a bot, AI, or automated. Right now it is ${nowStr()}.
+
+FILE ATTACHMENTS ON THIS CHANNEL: ${filesOk ? "this channel DOES support receiving a photo/document/spreadsheet from the user — if asked, confirm that's fine." : "this channel does NOT support receiving attachments yet — it's text-only for now. If asked whether you can receive a photo/document/file here, say honestly that you can't on this channel specifically, never confirm you can just because P2Less supports it on other channels."}
 
 The user said something that isn't one of your bookable services, is chatting, or is unclear. Reply naturally, like a helpful colleague would — warm and genuinely engaged, never robotic or boring.
 
