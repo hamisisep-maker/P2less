@@ -6,13 +6,20 @@ import {
   flexRender, type ColumnDef, type SortingState,
 } from "@tanstack/react-table";
 import { ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight } from "lucide-react";
-import { Badge, timeAgo } from "@/components/ui";
+import { Badge } from "@/components/ui";
 import { ReasonAction } from "@/components/admin/reason-action";
 import { refundPaymentAction } from "@/lib/admin-actions";
 
 export type PaymentRow = {
   id: string; reference: string; tenantName: string; amount: number; currency: string;
-  method: string; purpose: string; status: string; provider: string | null; createdAt: Date;
+  method: string; purpose: string; status: string; provider: string | null;
+  createdAt: Date; // kept for real chronological sorting
+  createdAtLabel: string; // "timeAgo" text, computed ONCE server-side (see page.tsx) — never
+  // recomputed here. This is a client component, so a Date rendered via timeAgo() directly in
+  // this file's own render would get computed twice (once during SSR, once at client hydration
+  // moments later) — if that gap straddles a minute boundary ("57m ago" -> "58m ago"), the two
+  // renders disagree and React throws a hydration-mismatch error. A pre-formatted string can't
+  // drift between the two renders because it's the exact same value both times.
 };
 
 const statusTone: Record<string, "green" | "amber" | "rose" | "neutral"> = { paid: "green", pending: "amber", failed: "rose", refunded: "neutral" };
@@ -24,7 +31,7 @@ const columns: ColumnDef<PaymentRow, unknown>[] = [
   { accessorKey: "purpose", header: "Purpose", cell: ({ getValue }) => <span className="capitalize text-muted">{getValue() as string}</span> },
   { accessorKey: "method", header: "Method", cell: ({ getValue }) => <span className="uppercase text-muted">{getValue() as string}</span> },
   { accessorKey: "status", header: "Status", cell: ({ getValue }) => { const s = getValue() as string; return <Badge tone={statusTone[s] ?? "neutral"} dot>{s}</Badge>; } },
-  { accessorKey: "createdAt", header: "Date", cell: ({ getValue }) => <span className="text-muted">{timeAgo(getValue() as Date)}</span> },
+  { accessorKey: "createdAt", header: "Date", cell: ({ row }) => <span className="text-muted">{row.original.createdAtLabel}</span> },
   {
     id: "refund",
     header: "",

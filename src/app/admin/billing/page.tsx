@@ -2,7 +2,7 @@ import { Wallet, TrendingDown, TrendingUp, PiggyBank } from "lucide-react";
 import { db } from "@/lib/db";
 import Link from "next/link";
 import { Zap } from "lucide-react";
-import { Card, PageHeader } from "@/components/ui";
+import { Card, PageHeader, timeAgo } from "@/components/ui";
 import { IconStat, InfoTip } from "@/components/dashboard-ui";
 import { computePlatformPnL, computePlanMargin, loadPricing } from "@/lib/billing";
 import { getAllSettings, getSettingsWithMeta, COST_SOURCE, AI_PROVIDER_TOPUP_URL } from "@/lib/platform-settings";
@@ -69,7 +69,8 @@ export default async function AdminBillingPage() {
 
   const paymentRows: PaymentRow[] = payments.map((p) => ({
     id: p.id, reference: p.reference, tenantName: p.tenant.name, amount: p.amount, currency: p.currency,
-    method: p.method, purpose: p.purpose, status: p.status, provider: p.provider, createdAt: p.createdAt,
+    method: p.method, purpose: p.purpose, status: p.status, provider: p.provider,
+    createdAt: p.createdAt, createdAtLabel: timeAgo(p.createdAt),
   }));
 
   return (
