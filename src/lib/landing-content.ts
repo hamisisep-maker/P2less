@@ -43,6 +43,14 @@ export const LANDING_FAQS: Faq[] = [
     q: "Can I try it before connecting my own number?",
     a: "Yes — you're already talking to a real, live P2Less assistant right on this page. You can also open our sandbox to message demo organizations across different industries and see the WhatsApp side of the experience too.",
   },
+  {
+    q: "How do I sign up?",
+    a: "Click the 'Start free' button at the top of this page (or the one in this chat's footer) — it takes a couple of minutes, there's no card required, and it's free to start.",
+  },
+  {
+    q: "Where can I find more details, FAQs, or your pricing?",
+    a: "Right here — this page itself has the full pricing breakdown, a security section, and more FAQs further down. There's no separate site to visit; everything about P2Less is on this one page.",
+  },
 ];
 
 export type AudienceKey = "business" | "institutions" | "sacco" | "government" | "developers";
