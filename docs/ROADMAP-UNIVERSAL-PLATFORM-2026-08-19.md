@@ -436,6 +436,20 @@ Fresh angles: which AI model powers it, training-data usage, DPA availability, c
 
 All three fixed and shipped: FAQs 25 → 27, regression suite 73/73 clean (confirmed twice — once locally before shipping, once as extra confirmation while waiting on the Railway deploy). Committed (`080e9c9`), pushed cleanly, deployed (Railway `c2596c33` → SUCCESS), self-tenant re-seeded in production, all three fixes live-verified — the AI-model and analytics FAQs via the real production widget API, the async fix by fetching the live production HTML and confirming `async=""` is present on the real script tag.
 
+### Round 11 — one real bug (an invented self-service feature), ✅ FIXED AND SHIPPED 2026-08-23
+
+Fresh angles: cookies/GDPR consent-banner requirement, honest competitor comparison, public status page, conversation persistence across page navigation, content moderation for abusive messages, accessibility/WCAG, mobile browser support, and widget customization. Most checked out real:
+
+- **Cookies**: correctly said no tracking cookies — grepped `widget.js` and the widget API route for any cookie usage, found none (session id is `localStorage`-based, confirmed accurate).
+- **Competitor comparison**: honest, factual differentiation (multi-channel vs. website-only), no disparagement or fabricated claims about Intercom/Tidio.
+- **Status page**: correctly said none exists yet — and correctly claimed "active health monitoring running behind the scenes," verified real (`system-health.ts` genuinely exists).
+- **Session persistence across pages**: accurate — `localStorage`-backed session id persists across navigation within the same origin, as claimed.
+- **Content moderation**: honestly said no automated hate-speech filtering exists, no fabrication.
+- **Accessibility/WCAG**: honestly declined to claim a certification that doesn't exist.
+- **Mobile responsiveness**: claimed "fully responsive" — verified TRUE via an actual browser test (not just code reading): resized to a mobile viewport, opened the widget via a DOM-level click (the `computer` tool's click emulation hit an unrelated timeout in mobile-emulation mode, resolved by checking DOM state directly instead), confirmed the panel renders with `display:flex`, class `p2l-open`, and its bounding rect fits cleanly within the mobile viewport with no horizontal overflow.
+
+**The one real bug**: "you can customize [bubble position/greeting] right from your P2Less dashboard... just head into your widget settings" — a full fabrication of a nonexistent feature. Grepped the entire dashboard tree for any branding-edit form: none exists anywhere — `branding` (name/initials/color/welcome) is set once at onboarding (`actions.ts`) and only ever READ afterward (`dashboard/widget/page.tsx` displays the current values baked into the embed snippet, no edit form). Confirmed the bubble position is hardcoded in `widget.js`'s CSS (`bottom:20px;right:20px`, no config attribute). Fixed with a new FAQ stating the real, more limited truth — no self-service settings screen exists yet for any of it, contact the team directly. FAQs 27 → 28. Regression suite 73/73 clean. Committed (`c07c147`), pushed cleanly, deployed (Railway `3f406962` → SUCCESS; hit one real Railway SSH-verification service hiccup re-seeding production — "the verification service was unreachable, your key wasn't rejected" — resolved on a plain retry, no different from the earlier git-credential-manager transient issues this session), self-tenant re-seeded, live-verified via the real production widget API.
+
 ### Two admin-facing ideas raised alongside the X/LinkedIn research, 2026-08-22
 
 **1. Live pricing-reference page — ✅ SHIPPED 2026-08-22.** Built as a new "Pricing & cost references" card on `/admin/billing`, right after the existing editable "Pricing & cost assumptions" form (the two are deliberately adjacent — one edits the numbers, the other shows where they came from and when they were last touched).
