@@ -3,6 +3,7 @@ import { db } from "./db";
 import { getSettingNumber } from "./platform-settings";
 import { classifyOutcome } from "./classify-outcome";
 import { syncReconciliationFlag } from "./payment-channels";
+import { runWithTenant } from "./tenant-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Extends the "unknown, not failed" safety net billing-lifecycle.ts already
@@ -26,8 +27,16 @@ export async function runReconciliationSweep(): Promise<{ flaggedUnknown: number
     const ageMs = now.getTime() - payment.createdAt.getTime();
     const outcome = classifyOutcome({ definitiveResponseReceived: false, ageMs, reconciliationWindowMs: windowMs });
     if (outcome.kind !== "unknown") continue;
-    await db.payment.update({ where: { id: payment.id }, data: { status: "unknown" } });
-    if (payment.purpose === "subscription") await syncReconciliationFlag(payment.tenantId);
+    // Tenant-isolation hardening — isolates this payment's tenant context to
+    // just this iteration (unlike enterTenantContext, this correctly pops
+    // back to "no tenant" afterward rather than bleeding into the next
+    // payment or any post-loop code). Payment itself isn't in the extension's
+    // scoped-model set yet, but wiring the pattern now means it's ready the
+    // moment it joins Phase 2.
+    await runWithTenant(payment.tenantId, async () => {
+      await db.payment.update({ where: { id: payment.id }, data: { status: "unknown" } });
+      if (payment.purpose === "subscription") await syncReconciliationFlag(payment.tenantId);
+    });
     flaggedUnknown++;
   }
 

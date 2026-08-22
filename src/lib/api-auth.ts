@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "./db";
 import { sha256 } from "./crypto";
 import { rateLimit } from "./rate-limit";
+import { enterTenantContext } from "./tenant-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Developer API authentication. Requests present a tenant API key as
@@ -55,5 +56,8 @@ export async function withApiKey(
       { status: 429, headers: { "Retry-After": String(Math.ceil((limit.retryAfterMs ?? 60_000) / 1000)) } },
     );
   }
+  // Tenant-isolation hardening — everything the handler does now runs under
+  // the tenant-scoping Prisma extension (db.ts), scoped to this key's tenant.
+  enterTenantContext(actor.tenantId);
   return handler(actor);
 }

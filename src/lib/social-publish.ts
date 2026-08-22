@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "./db";
 import { decryptJSON } from "./crypto";
 import { queueNotification } from "./notifications";
+import { runWithTenant } from "./tenant-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Universal Platform roadmap Phase 8c — auto-publish new products to the
@@ -160,22 +161,29 @@ export async function runSocialTokenHealthSweep(): Promise<{ checked: number; in
     const token = decryptJSON<{ accessToken?: string }>(cfg.tokenEnc)?.accessToken;
     if (!token) continue;
 
-    const health = await checkPageTokenHealth(token);
-    await db.channel.update({
-      where: { id: channel.id },
-      data: { config: { ...cfg, tokenValid: health.valid, tokenHealthLastCheckedAt: new Date().toISOString() } },
+    // Tenant-isolation hardening — isolates this channel's tenant context to
+    // just this iteration. Channel is a Phase-1 model for the tenant-scoping
+    // extension (not yet enabled in the current pilot, Contact-only) — wired
+    // now so it's ready the moment Channel joins the scoped-model set.
+    const invalidHere = await runWithTenant(channel.tenantId, async () => {
+      const health = await checkPageTokenHealth(token);
+      await db.channel.update({
+        where: { id: channel.id },
+        data: { config: { ...cfg, tokenValid: health.valid, tokenHealthLastCheckedAt: new Date().toISOString() } },
+      });
+      if (!health.valid) {
+        const pageLabel = cfg.pageName ?? channel.address ?? "your Facebook Page";
+        const affected = cfg.autoPublishEnabled ? "Messenger replies and product auto-publishing" : "Messenger replies";
+        await queueNotification(
+          "social_token_invalid",
+          `${pageLabel}'s connection to P2Less has stopped working (${health.error ?? "the access token is no longer valid"}) — reconnect it on the Channels page to keep ${affected} working.`,
+          { tenantId: channel.tenantId },
+        ).catch(() => {});
+        return true;
+      }
+      return false;
     });
-
-    if (!health.valid) {
-      invalid++;
-      const pageLabel = cfg.pageName ?? channel.address ?? "your Facebook Page";
-      const affected = cfg.autoPublishEnabled ? "Messenger replies and product auto-publishing" : "Messenger replies";
-      await queueNotification(
-        "social_token_invalid",
-        `${pageLabel}'s connection to P2Less has stopped working (${health.error ?? "the access token is no longer valid"}) — reconnect it on the Channels page to keep ${affected} working.`,
-        { tenantId: channel.tenantId },
-      ).catch(() => {});
-    }
+    if (invalidHere) invalid++;
   }
   return { checked: channels.length, invalid };
 }

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
+import { enterTenantContext } from "./tenant-context";
 
 const secret = new TextEncoder().encode(process.env.AUTH_SECRET || "p2less-dev-secret");
 const COOKIE = "p2less_session";
@@ -122,6 +123,11 @@ export async function requireUser(): Promise<CurrentUser> {
 export async function requireTenantUser(): Promise<CurrentUser> {
   const user = await requireUser();
   if (!user.tenantId) redirect("/admin");
+  // Tenant-isolation hardening — every dashboard page/server action that
+  // calls this now runs with the tenant-scoping Prisma extension (db.ts)
+  // active, so a query that forgets `where: { tenantId }` comes back
+  // correctly scoped anyway instead of leaking cross-tenant.
+  enterTenantContext(user.tenantId);
   return user;
 }
 

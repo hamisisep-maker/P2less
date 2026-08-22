@@ -19,6 +19,7 @@ import { pickTool, allTools } from "./tools";
 import { startTopup, creditRateKes, creditsForAmount } from "./wallet";
 import { isConfigured as mpesaConfigured } from "./mpesa";
 import { setAiTenantContext } from "./ai-context";
+import { enterTenantContext } from "./tenant-context";
 import { nextTicketNumber } from "./ticket-numbering";
 import { queueNotification } from "./notifications";
 import { resolveNumberBranch } from "./branches";
@@ -251,6 +252,12 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // see ai-context.ts for why this is enterWith() rather than a param threaded
   // through ~20 call sites.
   setAiTenantContext(tenant.id);
+  // Tenant-isolation hardening — same reasoning, same enterWith() pattern:
+  // every query from here on (deep inside this function, across every
+  // channel that funnels through handleInbound — WhatsApp/Messenger/
+  // Telegram/Email/widget/webchat) runs under the tenant-scoping Prisma
+  // extension (db.ts), scoped to this tenant.
+  enterTenantContext(tenant.id);
 
   // Identity: resolve/create the contact (scoped to THIS tenant) by sender number.
   // Normalize to canonical E.164 so a WhatsApp sender ("254739536255") and a
