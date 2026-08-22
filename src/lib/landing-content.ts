@@ -63,6 +63,22 @@ export const LANDING_FAQS: Faq[] = [
     q: "Are you GDPR compliant?",
     a: "We haven't done GDPR-specific compliance work — that's the EU's framework, and it's a different, separate thing from what we've actually built and verified. P2Less's real compliance work so far is around Kenya's Data Protection Act: Hamzone Technologies (the company behind P2Less) is a registered Kenyan company, and our formal registration with Kenya's data protection regulator (the ODPC) is in progress. If GDPR compliance is a hard requirement for your organization, get in touch directly so we can talk through your specific needs honestly.",
   },
+  {
+    q: "Exactly what do I get on the Free plan, and what happens if I go over?",
+    a: "The Free plan includes 2 users, 200 messages/month, 1 connector, 100 AI requests/month, and 20 documents/month — real hard limits, not a soft 'included then billed' allowance. Once you hit a limit, that specific thing stops until next month or you upgrade — no surprise overage bill. Paid plans (Professional, Business) raise every one of these ceilings substantially.",
+  },
+  {
+    q: "Have you ever had downtime or a security breach?",
+    a: "We're a newly-launched platform, so honestly, we don't have a long operating history or a formal public track record to point to yet. What we can tell you concretely is what's actually built: isolated tenant data, encrypted credentials, a real audit trail, and active health monitoring — the real mechanisms, not a track-record claim we can't back up yet.",
+  },
+  {
+    q: "How big is your team / how many employees do you have?",
+    a: "P2Less is built and run by its founder, Hamisi Onesmus Kilumo, through Hamzone Technologies — a lean, founder-led operation right now, not a large company. That means direct access to the person who actually built the platform, not a support queue.",
+  },
+  {
+    q: "Are you VC-funded? Who are your investors?",
+    a: "We haven't published details about funding or ownership — if that's relevant to evaluating us, reach out directly and we'll talk through it honestly.",
+  },
 ];
 
 export type AudienceKey = "business" | "institutions" | "sacco" | "government" | "developers";
