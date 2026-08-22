@@ -1,0 +1,31 @@
+# Future ideas backlog
+
+A single place to scan every idea raised but not built, so good ideas aren't lost and don't derail current work either. Per the user's own process rule (2026-08-22): **an idea goes here unless it directly affects something already designed/implemented, and leaving it unresolved would make current work incomplete, incorrect, or inconsistent** — in which case it gets resolved now, not backlogged. Nothing below meets that bar as of the date it was added; each entry says why.
+
+Each row links to where the full reasoning lives — this doc is an index, not the detail.
+
+| Idea | Status | Why it's backlogged, not built | Detail |
+|---|---|---|---|
+| **Channel-based pricing tiers** (e.g. Messenger/widget as a paid-tier feature, or per-channel cost lines) | Raised 2026-08-22 | Only one real metered channel (WhatsApp) exists today — designing per-channel pricing now would be solving a problem that doesn't exist yet. Revisit once a second metered channel (X, most likely) actually ships. | [PRICING-STRATEGY-2026-08-22.md](PRICING-STRATEGY-2026-08-22.md) |
+| **X (Twitter) as a channel** | Researched 2026-08-22 | Technically viable, real cost confirmed ($0.025/round-trip against X's own docs), but no demand signal from the current GTM vertical (schools/hospitals/SACCOs/retail are WhatsApp-first audiences). | [ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md](ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md) — "Candidate channels" |
+| **LinkedIn as a channel** | Researched 2026-08-22 | Not just deprioritized — genuinely incompatible with P2Less's auto-reply model. LinkedIn's own policy requires a human to edit every message before it sends. | [ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md](ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md) — "Candidate channels" |
+| **Live pricing-reference page** | ✅ Shipped 2026-08-22 | Done — not backlogged anymore, listed here for continuity with the other ideas from the same conversation. | [ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md](ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md) — "Two admin-facing ideas" |
+| **Admin news/intelligence feed** (watches provider/market news, advises admins) | Vision only, 2026-08-22 | A fundamentally different kind of system — continuous external monitoring, not reacting to a tenant's own data. Real ongoing cost of its own. Needs a concrete first use case before it's worth scoping. | [ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md](ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md) — "Two admin-facing ideas" |
+| **Client-facing news + investment guidance product** | Vision only, 2026-08-22 | A genuinely separate product, not an extension of P2Less's engine — its whole design is "never invent," which is the opposite of what investment guidance needs. Real regulatory question (Kenya's Capital Markets Authority) unresolved. | [ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md](ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md) — "Two admin-facing ideas", item 3 |
+| **YouTube live-chat curation for broadcasters** | Vision only, 2026-08-22 | Real, technically-open API (unlike LinkedIn), but a structurally different feature (curate/rank a public stream for a human, not 1:1 auto-reply) for a different audience than the current GTM vertical. | [ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md](ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md) — "Two admin-facing ideas", item 4 |
+| **P2Less → E2Less rebrand** | Under consideration, 2026-08-22 | Sound logic (reserve P2Less for a future paper-specific product), but needs a real domain/trademark check the user hasn't done yet. Zero clients today means this is the cheapest possible time to do it, if it happens at all. | [FUTURE-INFRA-AND-BRAND-2026-08-22.md](FUTURE-INFRA-AND-BRAND-2026-08-22.md) |
+| **Infrastructure migration** (new GitHub org, server, domain) | Not started | Pending the user actually purchasing the new domain/hosting — nothing to build until then. Real gotchas already documented for when it happens (env vars, Meta OAuth redirect URIs). | [FUTURE-INFRA-AND-BRAND-2026-08-22.md](FUTURE-INFRA-AND-BRAND-2026-08-22.md) |
+| **Registration Reframe Track B follow-ups** — none currently open | ✅ Both tracks shipped | Track A + Track B both complete as of 2026-08-22. | [ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md](ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md) — "Registration reframe" |
+
+## Also genuinely open, but these are scoped roadmap work, not backlog ideas
+
+Distinct from the table above — these already have real scoping/design done and are waiting on a real trigger (usually the user's own action), not a strategic "should we build this" question:
+
+- **Phase 9 (WhatsApp Embedded Signup)** — paused before the real phone-number registration step, pending the user picking a genuine spare/test number.
+- **Phase 8a Messenger** — fully built and connected; the one remaining step (adding a real test account as a Meta App Tester) is the user's own action on Meta's side, not engineering work.
+- **SMS delivery (Advanta/Africa's Talking)** — built to each provider's documented contract, never tested against a real account/credentials.
+- **Phase 8c (auto-publish products to Facebook/Instagram)** and **Phase 8d (Telegram + Email channels)** — scoped, ready to build, not started.
+
+## How to use this doc
+
+When a new idea comes up mid-conversation: add a row here with the reasoning for why it's not being built now, link to wherever the fuller discussion lives, and get back to whatever was actually in progress. When picking up backlog work later, start here rather than re-deriving from scratch.
