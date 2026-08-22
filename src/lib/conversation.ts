@@ -19,7 +19,7 @@ import { pickTool, allTools } from "./tools";
 import { startTopup, creditRateKes, creditsForAmount } from "./wallet";
 import { isConfigured as mpesaConfigured } from "./mpesa";
 import { setAiTenantContext } from "./ai-context";
-import { enterTenantContext } from "./tenant-context";
+import { enterTenantContext, currentChannelSupportsFiles } from "./tenant-context";
 import { nextTicketNumber } from "./ticket-numbering";
 import { queueNotification } from "./notifications";
 import { resolveNumberBranch } from "./branches";
@@ -256,8 +256,10 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // every query from here on (deep inside this function, across every
   // channel that funnels through handleInbound — WhatsApp/Messenger/
   // Telegram/Email/widget/webchat) runs under the tenant-scoping Prisma
-  // extension (db.ts), scoped to this tenant.
-  enterTenantContext(tenant.id);
+  // extension (db.ts), scoped to this tenant. Also carries the real channel
+  // type so smallTalk() (ai.ts) can describe itself correctly instead of
+  // assuming WhatsApp.
+  enterTenantContext(tenant.id, input.channelType);
 
   // Identity: resolve/create the contact (scoped to THIS tenant) by sender number.
   // Normalize to canonical E.164 so a WhatsApp sender ("254739536255") and a
@@ -1631,6 +1633,14 @@ async function dispatchAction(
  *  small-talk prompt so it never denies a capability that actually exists —
  *  these work for ANY sender, independent of the org's connector actions. */
 function toolCapabilityLines(): string[] {
+  // Real bug found live 2026-08-22: this always listed file-based tools
+  // (document/spreadsheet analysis), so the AI confidently invited a
+  // website-widget visitor to "drop a file right here" — a real P2Less
+  // capability, but not one this channel can actually receive (the widget,
+  // like Messenger/Telegram/Email, is text-only today; only WhatsApp
+  // supports attachments). Never advertise a capability the current channel
+  // can't deliver on.
+  if (!currentChannelSupportsFiles()) return [];
   return allTools().map((t) => `${t.name} — ${t.description} (the user just needs to SEND the file, no need to ask first)`);
 }
 

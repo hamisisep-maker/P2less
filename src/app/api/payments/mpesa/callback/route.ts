@@ -7,6 +7,7 @@ import { tryAssignTrip } from "@/lib/dispatch";
 import { handleSubscriptionPaymentConfirmed, handleSubscriptionPaymentFailed } from "@/lib/billing-lifecycle";
 import { recordInboundEvent, finishInboundEvent } from "@/lib/inbound-events";
 import { recordChannelOutcome, recordChannelCallback, syncReconciliationFlag } from "@/lib/payment-channels";
+import { enterTenantContext } from "@/lib/tenant-context";
 
 // Safaricom Daraja posts the final STK-push result here. We match it to the
 // pending Payment by CheckoutRequestID and mark it paid or failed. Every
@@ -45,6 +46,10 @@ export async function POST(req: Request) {
       matched = true;
       relatedPaymentId = payment.id;
       relatedTenantId = payment.tenantId;
+      // Tenant-isolation hardening — same pattern as every channel webhook:
+      // the payment lookup above resolves which tenant this callback belongs
+      // to, everything downstream runs scoped to it.
+      enterTenantContext(payment.tenantId);
       const wasUnknown = payment.status === "unknown";
       await recordChannelOutcome("mpesa_stk", parsed.success);
       await db.payment.update({

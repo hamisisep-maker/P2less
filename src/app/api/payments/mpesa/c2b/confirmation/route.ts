@@ -4,6 +4,7 @@ import { randomToken } from "@/lib/crypto";
 import { recordInboundEvent, finishInboundEvent } from "@/lib/inbound-events";
 import { recordChannelOutcome, recordChannelCallback } from "@/lib/payment-channels";
 import { handleSubscriptionPaymentConfirmed } from "@/lib/billing-lifecycle";
+import { enterTenantContext } from "@/lib/tenant-context";
 
 // Daraja C2B "Confirmation" — fires AFTER Safaricom has ALREADY moved the
 // customer's money into the PayBill/Till. Unlike STK Push, P2Less never
@@ -59,6 +60,10 @@ export async function POST(req: Request) {
     : null;
 
   if (subscription) {
+    // Tenant-isolation hardening — same pattern as every channel webhook: the
+    // subscription lookup above resolves which tenant this confirmation
+    // belongs to, everything downstream runs scoped to it.
+    enterTenantContext(subscription.tenantId);
     const reference = "C2B-" + randomToken(4).toUpperCase();
     const payment = await db.payment.create({
       data: {

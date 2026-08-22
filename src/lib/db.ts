@@ -14,17 +14,38 @@ import { getCurrentTenantId } from "./tenant-context";
 // cross-tenant findUnique correctly returned null, cross-tenant update
 // correctly threw P2025 without modifying the row, and — the actual point of
 // this feature — a findMany with NO where clause at all still came back
-// correctly scoped to only the current tenant's rows. Now expanded to the
-// full Phase 1 list. Deliberately NOT touching Notification/AiRequestLog/
-// AiCallEvent/UsageEvent/AuditLog/Payment/Subscription (heavily queried
-// cross-tenant by /admin/** and system-health.ts) or User/Role/Branch
-// (already RBAC-gated) — Phase 2, if ever.
+// correctly scoped to only the current tenant's rows. Expanded to the full
+// Phase 1 list same day, then to Phase 2 (the rest) after verifying each
+// model's real call sites first, not blindly:
+// - Notification.tenantId is intentionally nullable (platform-wide alerts
+//   have none) — safe: queueNotification() (notifications.ts) always sets
+//   `tenantId: opts.tenantId ?? null` explicitly, never omits the key, so
+//   the create-auto-stamp below (which only fires on `undefined`) never
+//   overrides a deliberate platform-wide `null`.
+// - AuditLog is unambiguously always tenant-scoped — PlatformAuditLog is a
+//   genuinely separate model (no tenantId field at all) for admin actions.
+// - Role/Branch have a required (non-nullable) tenantId — no platform-wide
+//   shared row exists for either.
+// - User is safe because getCurrentUser() (auth.ts) — the lookup that
+//   resolves who's logged in — always runs BEFORE any tenant context is
+//   ever set (it's what establishes whether to set one), on every request
+//   type (dashboard, admin, API).
+// - Payment: the two M-Pesa webhook routes now call enterTenantContext()
+//   right after resolving which tenant a callback belongs to, same pattern
+//   as every channel webhook.
+// - DeliveryZone/Driver/DeliveryTrip were simply not in the original
+//   hand-picked Phase-1 list, not deliberately excluded — same low risk as
+//   the rest of Phase 1, already exercised inside handleInbound()'s tenant
+//   context (driver routing) and the payment webhooks above.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TENANT_SCOPED_MODELS = new Set([
   "Contact", "Conversation", "Message", "Document", "AuthSession",
   "Product", "Order", "SupportTicket", "ApiKey", "Webhook",
   "WhatsAppNumber", "Channel", "WidgetKey", "Connector",
+  "Notification", "AiRequestLog", "AiCallEvent", "UsageEvent", "AuditLog",
+  "Payment", "Subscription", "DeliveryZone", "Driver", "DeliveryTrip",
+  "User", "Role", "Branch",
 ]);
 
 const READ_MANY_OPS = new Set(["findMany", "findFirst", "findFirstOrThrow", "count", "aggregate", "groupBy"]);
@@ -69,10 +90,24 @@ function buildClient() {
             // all, so no error shape ever leaks "that id exists, just not
             // yours." Queried against the BASE (unextended) client to avoid
             // any recursion subtlety.
+            //
+            // Real bug caught by the regression suite before shipping: a
+            // model with a COMPOUND unique constraint (e.g. Role's
+            // @@unique([tenantId, key])) gets a synthetic wrapper key in its
+            // findUnique `where` (e.g. { tenantId_key: { tenantId, key } }) —
+            // that shape is NOT valid as a findFirst/findMany filter (Prisma
+            // throws "Unknown argument tenantId_key"). Using findUnique
+            // itself for the check instead of findFirst sidesteps this
+            // entirely — a.where is BY DEFINITION already a valid findUnique
+            // where (it's literally what the caller passed for one), so it
+            // works for both simple (`{id}`) and compound-key shapes
+            // uniformly. The tenant check happens as a plain JS comparison
+            // afterward instead of inside the query.
             const modelKey = model.charAt(0).toLowerCase() + model.slice(1);
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const modelClient = (base as any)[modelKey];
-            const owned = await modelClient.findFirst({ where: { AND: [{ tenantId }, a.where] }, select: { id: true } });
+            const row = await modelClient.findUnique({ where: a.where, select: { id: true, tenantId: true } });
+            const owned = row && row.tenantId === tenantId;
             if (!owned) {
               if (operation === "findUnique") return null;
               throw new Prisma.PrismaClientKnownRequestError(
