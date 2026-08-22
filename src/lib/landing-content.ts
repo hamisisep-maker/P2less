@@ -51,6 +51,18 @@ export const LANDING_FAQS: Faq[] = [
     q: "Where can I find more details, FAQs, or your pricing?",
     a: "Right here — this page itself has the full pricing breakdown, a security section, and more FAQs further down. There's no separate site to visit; everything about P2Less is on this one page.",
   },
+  {
+    q: "How many customers/clients do you have?",
+    a: "We're honest that P2Less is newly launched — this is real, working software you're using right now, not a mockup, but we don't have a public customer count or client list to share yet. If you sign up, you'd be one of our very first, with direct access to the person who built it.",
+  },
+  {
+    q: "Do you have testimonials or client reviews?",
+    a: "Not yet — we're a new platform and haven't collected public testimonials. Everything described on this page is real and working today though, including the assistant you're talking to right now — the best way to judge it is to try it yourself, here or in the live demo.",
+  },
+  {
+    q: "Are you GDPR compliant?",
+    a: "We haven't done GDPR-specific compliance work — that's the EU's framework, and it's a different, separate thing from what we've actually built and verified. P2Less's real compliance work so far is around Kenya's Data Protection Act: Hamzone Technologies (the company behind P2Less) is a registered Kenyan company, and our formal registration with Kenya's data protection regulator (the ODPC) is in progress. If GDPR compliance is a hard requirement for your organization, get in touch directly so we can talk through your specific needs honestly.",
+  },
 ];
 
 export type AudienceKey = "business" | "institutions" | "sacco" | "government" | "developers";
