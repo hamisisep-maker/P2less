@@ -64,14 +64,14 @@ export function IncidentRow({ data }: { data: IncidentRowData }) {
         </div>
       </div>
       <div className="mt-1.5 text-xs text-muted">
-        {data.source} · first detected {timeAgo(data.firstDetectedAt)} · last seen {timeAgo(data.lastDetectedAt)} · {data.occurrenceCount} occurrence{data.occurrenceCount === 1 ? "" : "s"}
+        {data.source} · first detected <span suppressHydrationWarning>{timeAgo(data.firstDetectedAt)}</span> · last seen <span suppressHydrationWarning>{timeAgo(data.lastDetectedAt)}</span> · {data.occurrenceCount} occurrence{data.occurrenceCount === 1 ? "" : "s"}
       </div>
       <EvidencePanel detail={data.detail} />
       {data.status === "resolved" && (
         <div className="mt-2 rounded-lg bg-surface-2 px-3 py-2 text-xs">
           <div><b>Cause:</b> {data.cause}</div>
           <div><b>Resolution:</b> {data.resolutionNote}</div>
-          {data.resolvedAt && <div className="mt-0.5 text-faint">Resolved {timeAgo(data.resolvedAt)}</div>}
+          {data.resolvedAt && <div className="mt-0.5 text-faint" suppressHydrationWarning>Resolved {timeAgo(data.resolvedAt)}</div>}
         </div>
       )}
     </div>

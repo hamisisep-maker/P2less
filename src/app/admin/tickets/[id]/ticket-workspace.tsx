@@ -79,7 +79,7 @@ export function TicketWorkspace({ ticket, events, admins, relatedIncident, relat
         <Badge tone="neutral">{ticket.category}</Badge>
         {ticket.slaBreached && <Badge tone="rose">SLA breached</Badge>}
         {!ticket.slaBreached && ticket.slaDeadlineAt && <Badge tone="neutral">{dueIn(ticket.slaDeadlineAt)}</Badge>}
-        <span className="text-xs text-muted">created {timeAgo(ticket.createdAt)} · {ticket.assignedAdminName ? `assigned to ${ticket.assignedAdminName}` : "unassigned"}</span>
+        <span className="text-xs text-muted">created <span suppressHydrationWarning>{timeAgo(ticket.createdAt)}</span> · {ticket.assignedAdminName ? `assigned to ${ticket.assignedAdminName}` : "unassigned"}</span>
       </div>
 
       {ticket.description && <p className="text-sm text-muted">{ticket.description}</p>}
@@ -135,7 +135,7 @@ export function TicketWorkspace({ ticket, events, admins, relatedIncident, relat
         <div className="rounded-xl border border-line-soft px-3.5 py-3">
           <div className="text-sm"><b>Resolution:</b> {ticket.resolution}</div>
           <div className="text-sm"><b>Reason:</b> {ticket.resolutionReason}</div>
-          {ticket.resolvedAt && <div className="mt-0.5 text-xs text-faint">Resolved {timeAgo(ticket.resolvedAt)}</div>}
+          {ticket.resolvedAt && <div className="mt-0.5 text-xs text-faint" suppressHydrationWarning>Resolved {timeAgo(ticket.resolvedAt)}</div>}
           {!showReopen ? (
             <button onClick={() => setShowReopen(true)} className="mt-2 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium hover:bg-surface-2">Reopen</button>
           ) : (
@@ -188,7 +188,7 @@ export function TicketWorkspace({ ticket, events, admins, relatedIncident, relat
         <div className="space-y-1">
           {attachments.map((a) => (
             <a key={a.id} href={`/d/${a.token}`} target="_blank" rel="noreferrer" className="block text-xs text-accent underline">
-              {a.filename} <span className="text-faint">({timeAgo(a.createdAt)})</span>
+              {a.filename} <span className="text-faint" suppressHydrationWarning>({timeAgo(a.createdAt)})</span>
             </a>
           ))}
         </div>
@@ -208,7 +208,7 @@ export function TicketWorkspace({ ticket, events, admins, relatedIncident, relat
                   ) : null}
                   <span className="text-xs text-faint">— {e.actorName}</span>
                 </div>
-                <span className="text-xs text-faint">{timeAgo(e.createdAt)}</span>
+                <span className="text-xs text-faint" suppressHydrationWarning>{timeAgo(e.createdAt)}</span>
               </div>
               {e.body && <p className="mt-1 text-muted">{e.body}</p>}
               <EvidencePanel detail={e.detail} />

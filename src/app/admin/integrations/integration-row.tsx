@@ -45,7 +45,7 @@ export function IntegrationRow({ data }: { data: IntegrationRowData }) {
         </div>
         <div className="mt-1 text-xs text-muted">
           {data.lastCheckDetail ?? "Not checked yet"}
-          {data.lastCheckedAt && <span className="text-faint"> · checked {timeAgo(data.lastCheckedAt)}</span>}
+          {data.lastCheckedAt && <span className="text-faint" suppressHydrationWarning> · checked {timeAgo(data.lastCheckedAt)}</span>}
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-1.5">

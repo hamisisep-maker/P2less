@@ -17,7 +17,7 @@ export function SuggestedTicketsPanel({ incidentIdentifier, tickets, canLink }: 
         <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line-soft px-3 py-2 text-sm">
           <div>
             <span className="font-mono text-xs">{t.number ?? t.id.slice(0, 8)}</span> · <Badge tone="neutral">{t.category}</Badge> {t.tenantName} — {t.subject}
-            <span className="ml-2 text-xs text-faint">{timeAgo(t.createdAt)}</span>
+            <span className="ml-2 text-xs text-faint" suppressHydrationWarning>{timeAgo(t.createdAt)}</span>
           </div>
           {canLink && (
             <button

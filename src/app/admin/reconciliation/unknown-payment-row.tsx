@@ -19,7 +19,7 @@ export function UnknownPaymentRow({ data }: { data: UnknownPaymentRowData }) {
           <span className="font-medium">{data.currency} {data.amount.toLocaleString("en-US")}</span>
         </div>
         <div className="mt-1 text-xs text-muted">
-          {data.tenantName} · {data.purpose} · {data.channelKey ?? "mpesa_stk"} · sent {timeAgo(data.createdAt)} — no confirmation received, may still have succeeded
+          {data.tenantName} · {data.purpose} · {data.channelKey ?? "mpesa_stk"} · sent <span suppressHydrationWarning>{timeAgo(data.createdAt)}</span> — no confirmation received, may still have succeeded
         </div>
       </div>
       <div className="flex items-center gap-2">

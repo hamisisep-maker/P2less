@@ -22,7 +22,7 @@ export function UnmatchedRow({ data, tenants }: { data: UnmatchedRowData; tenant
           <span className="font-medium">{data.currency} {data.amount.toLocaleString("en-US")}</span>
         </div>
         <div className="mt-1 text-xs text-muted">
-          {data.senderName ?? "Unknown sender"} {data.senderMsisdn && `· ${data.senderMsisdn}`} {data.reference && `· ref "${data.reference}"`} · {timeAgo(data.occurredAt)}
+          {data.senderName ?? "Unknown sender"} {data.senderMsisdn && `· ${data.senderMsisdn}`} {data.reference && `· ref "${data.reference}"`} · <span suppressHydrationWarning>{timeAgo(data.occurredAt)}</span>
         </div>
       </div>
       <div className="flex items-center gap-2">

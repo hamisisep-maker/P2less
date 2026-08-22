@@ -404,7 +404,7 @@ const convoColumns: ColumnDef<ConvoRow, unknown>[] = [
       return <Badge tone={s === "escalated" ? "rose" : s === "closed" ? "neutral" : "accent"}>{s}</Badge>;
     },
   },
-  { accessorKey: "updated", header: "Updated", cell: ({ getValue }) => <span className="text-muted">{timeAgo(getValue() as Date)}</span> },
+  { accessorKey: "updated", header: "Updated", cell: ({ getValue }) => <span className="text-muted" suppressHydrationWarning>{timeAgo(getValue() as Date)}</span> },
 ];
 
 export function ConversationsTable({ data, pageSize = 8 }: { data: ConvoRow[]; pageSize?: number }) {
@@ -467,7 +467,7 @@ const orderColumns: ColumnDef<OrderRow, unknown>[] = [
   { accessorKey: "items", header: "Items", cell: ({ getValue }) => <span className="text-muted">{getValue() as string}</span> },
   { accessorKey: "amount", header: "Amount", cell: ({ getValue }) => <span className="font-medium">{getValue() as string}</span> },
   { accessorKey: "status", header: "Status", cell: ({ getValue }) => { const s = getValue() as string; return <Badge tone={orderStatusTone[s] ?? "neutral"} dot>{s}</Badge>; } },
-  { accessorKey: "created", header: "Placed", cell: ({ getValue }) => <span className="text-muted">{timeAgo(getValue() as Date)}</span> },
+  { accessorKey: "created", header: "Placed", cell: ({ getValue }) => <span className="text-muted" suppressHydrationWarning>{timeAgo(getValue() as Date)}</span> },
 ];
 
 export function OrdersTable({ data, pageSize = 8 }: { data: OrderRow[]; pageSize?: number }) {
