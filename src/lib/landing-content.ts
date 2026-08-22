@@ -87,6 +87,10 @@ export const LANDING_FAQS: Faq[] = [
     q: "What are your API rate limits?",
     a: "120 requests per minute per API key — a flat limit, the same for every plan. If a real integration needs more than that, reach out and we can talk it through.",
   },
+  {
+    q: "What currency do you bill in — USD or KES?",
+    a: "Kenyan Shillings (KES) — every price shown on this page (Free, Professional at 4,900 KES/mo, Business at 19,900 KES/mo) is in KES. Enterprise is negotiated case-by-case, and currency there can be discussed directly.",
+  },
 ];
 
 export type AudienceKey = "business" | "institutions" | "sacco" | "government" | "developers";
