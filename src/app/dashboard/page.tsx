@@ -25,7 +25,7 @@ export default async function Overview() {
     msgIn, msgOut, apiCalls, docs,
     msgInPrev, msgOutPrev,
     conversations, connectors, contacts, sub,
-    recentEvents, statusGroups,
+    recentEvents, statusGroups, tenantFaqs,
   ] = await Promise.all([
     monthlyUsage(tenantId, "message_in"),
     monthlyUsage(tenantId, "message_out"),
@@ -39,7 +39,9 @@ export default async function Overview() {
     db.subscription.findUnique({ where: { tenantId }, include: { plan: true } }),
     db.usageEvent.findMany({ where: { tenantId, type: { in: ["message_in", "message_out"] }, createdAt: { gte: since14 } }, select: { type: true, quantity: true, createdAt: true } }),
     db.conversation.groupBy({ by: ["status"], where: { tenantId }, _count: true }),
+    db.tenant.findUnique({ where: { id: tenantId }, select: { faqs: true } }),
   ]);
+  const faqCount = Array.isArray(tenantFaqs?.faqs) ? (tenantFaqs.faqs as { q: string; a: string }[]).filter((f) => f?.q && f?.a).length : 0;
 
   const recent = await db.conversation.findMany({
     where: { tenantId },
@@ -91,6 +93,15 @@ export default async function Overview() {
         subtitle={`${user.tenant?.name} · ${sub?.plan.name ?? "No plan"} plan`}
         action={<Link href="/dashboard/connectors/new" className="flex items-center gap-1.5 rounded-xl bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-4 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-accent-glow)] transition-transform hover:-translate-y-0.5"><Plus size={15} /> Add integration</Link>}
       />
+
+      {faqCount === 0 && (
+        <Card className="mb-4 border-amber/30 bg-amber-soft p-4 text-sm">
+          <p className="mb-1 font-medium text-amber">No FAQs added yet</p>
+          <p className="text-muted">
+            Right now your assistant can only handle bookable actions and general conversation — for anything else it honestly says it doesn&apos;t have the answer rather than guessing. Add a few common questions, or scan your website to draft some automatically. <Link href="/dashboard/faqs" className="text-accent hover:underline">Add FAQs →</Link>
+          </p>
+        </Card>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <IconStat icon={<MessageSquareText size={17} />} label="Messages in" value={msgIn} tip="Inbound messages this calendar month." trend={<Trend current={msgIn} previous={msgInPrev._sum.quantity ?? 0} />} tone="accent" />

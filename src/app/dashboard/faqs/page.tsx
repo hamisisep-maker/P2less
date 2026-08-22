@@ -24,6 +24,13 @@ export default async function FaqsPage() {
         <p>Sensitive, per-person data (fees, grades, appointments) is never answered from here — that always goes through a verified lookup.</p>
       </Card>
 
+      {faqs.length === 0 && (
+        <Card className="mb-4 border-amber/30 bg-amber-soft p-4 text-sm">
+          <p className="mb-1 font-medium text-amber">You haven&apos;t added any yet</p>
+          <p className="text-muted">Without any approved answers, general questions get an honest &quot;I&apos;m not sure&quot; instead of a real one. Add a few below — even 3-5 common questions makes a real difference — or use &quot;Import from your website&quot; to draft some automatically from your site&apos;s own content.</p>
+        </Card>
+      )}
+
       {!canManage && <Card className="mb-4 p-4 text-sm text-muted">You can view the FAQs, but need the <code>tenant.manage</code> permission to edit them.</Card>}
 
       <FaqsEditor initial={faqs} canManage={canManage} />
