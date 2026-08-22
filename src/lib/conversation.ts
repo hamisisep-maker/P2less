@@ -46,7 +46,7 @@ export type InboundInput = {
   // be set.
   tenantId?: string;
   fromNumber: string; // the sender's number — an identity signal, never sufficient alone
-  channelType: string; // whatsapp | webchat | widget | messenger | sms (transport only)
+  channelType: string; // whatsapp | webchat | widget | messenger | telegram | sms (transport only)
   text: string;
   displayName?: string;
   // Super-app: an attached file (document/spreadsheet/image) to run a tool on.
@@ -203,6 +203,8 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // same role as WhatsAppNumber.phoneNumberId, resolved via the tenantId
   // direct-routing path below since Messenger has no phone number.
   let fromPageId: string | null = null;
+  // Same role again, for Telegram — the org's connected bot's own id.
+  let fromTelegramBotId: string | null = null;
 
   if (input.tenantId) {
     const t = await db.tenant.findUnique({ where: { id: input.tenantId }, include: { subscription: true } });
@@ -212,11 +214,15 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     tenant = t;
     branding = (tenant.branding as { assistantName?: string; welcome?: string; poweredBy?: string } | null) ?? {};
     assistant = branding.assistantName ?? tenant.name;
-    fromIdentity = { number: input.channelType === "messenger" ? "messenger" : "widget", name: assistant };
+    fromIdentity = { number: input.channelType === "messenger" ? "messenger" : input.channelType === "telegram" ? "telegram" : "widget", name: assistant };
     branchLookup = { branchId: null, tenantId: tenant.id };
     if (input.channelType === "messenger") {
       const channel = await db.channel.findFirst({ where: { tenantId: tenant.id, type: "messenger", status: "active" } });
       fromPageId = channel?.address ?? null;
+    }
+    if (input.channelType === "telegram") {
+      const channel = await db.channel.findFirst({ where: { tenantId: tenant.id, type: "telegram", status: "active" } });
+      fromTelegramBotId = channel?.address ?? null;
     }
   } else {
     const num = await db.whatsAppNumber.findUnique({
@@ -301,7 +307,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   void dispatchWebhook(tenant.id, "message.received", { conversationId: conversation.id, from: input.fromNumber, to: input.toNumber, text: input.text }).catch(() => {});
   if (!limit.ok) {
     const reply: Reply = { body: "This service has reached its monthly message limit. Please contact the organization." };
-    await deliver({ tenantId: tenant.id, conversationId: conversation.id, channelType: input.channelType, to: input.fromNumber, body: reply.body, fromNumberId: number?.phoneNumberId, fromPageId });
+    await deliver({ tenantId: tenant.id, conversationId: conversation.id, channelType: input.channelType, to: input.fromNumber, body: reply.body, fromNumberId: number?.phoneNumberId, fromPageId, fromTelegramBotId });
     return { ok: true, replies: [reply], conversationId: conversation.id, from: fromIdentity };
   }
 
@@ -337,7 +343,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     for (const r of replies) {
       // otp_hint / system notes are demo aids and are not re-metered as separate sends
       if (r.kind === "otp_hint" || r.kind === "system") continue;
-      await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body: r.body, meta: r.meta, fromNumberId: number?.phoneNumberId, fromPageId, document: r.document, image: r.image });
+      await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body: r.body, meta: r.meta, fromNumberId: number?.phoneNumberId, fromPageId, fromTelegramBotId, document: r.document, image: r.image });
     }
     return { ok: true, replies, conversationId: conversation!.id, from: fromIdentity } satisfies HandleResult;
   };
@@ -347,7 +353,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // followed by typing dots. Does NOT touch conversation status/context; the
   // final emit() at the end of this turn still owns that.
   const announceNow = async (body: string) => {
-    await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body, fromNumberId: number?.phoneNumberId, fromPageId });
+    await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body, fromNumberId: number?.phoneNumberId, fromPageId, fromTelegramBotId });
   };
 
   // The REAL amount to charge — product total plus a matched delivery fee, if

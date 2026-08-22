@@ -5,6 +5,7 @@ import { meter } from "./usage";
 import { decryptJSON } from "./crypto";
 import { dispatchWebhook } from "./webhooks";
 import { resolveMessengerToken } from "./messenger";
+import { resolveTelegramToken, sendTelegramText } from "./telegram";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Channel transport. The engine emits outbound messages through deliver(); each
@@ -27,6 +28,9 @@ export type OutboundMessage = {
   // Same routing role as fromNumberId, for Messenger — the org's connected
   // Facebook Page id.
   fromPageId?: string | null;
+  // Same routing role again, for Telegram — the org's connected bot's own
+  // numeric Telegram id (Channel.address), used to look up the bot token.
+  fromTelegramBotId?: string | null;
   // When set, deliver this as a document (PDF) attachment, not just text.
   document?: { url: string; filename: string };
   // When set, deliver this as an image attachment (e.g. a product photo).
@@ -183,6 +187,23 @@ export async function deliver(msg: OutboundMessage): Promise<{ delivered: boolea
         console.error("[messenger:send-error]", e);
         return { delivered: false, transport: "messenger", error: "network error" };
       }
+    }
+
+    case "telegram": {
+      if (!msg.fromTelegramBotId) {
+        return { delivered: false, transport: "telegram:not-configured", error: "No connected Telegram bot for this organization" };
+      }
+      const token = await resolveTelegramToken(msg.fromTelegramBotId);
+      if (!token) {
+        if (process.env.NODE_ENV !== "production") console.log(`[telegram:not-configured →${msg.to}] ${msg.body}`);
+        return { delivered: false, transport: "telegram:not-configured", error: "Telegram bot token not configured" };
+      }
+      const result = await sendTelegramText(token, msg.to, msg.body);
+      if (!result.ok) {
+        console.error(`[telegram:send-failed] ${result.error}`);
+        return { delivered: false, transport: "telegram", error: result.error };
+      }
+      return { delivered: true, transport: "telegram" };
     }
 
     case "sms":

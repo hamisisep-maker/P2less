@@ -29,13 +29,15 @@ const USE_CASE_OPTIONS: { value: string; label: string }[] = [
 ];
 
 // Registration reframe, continued: a DISTINCT question from use cases above
-// — which channels the org's own customers actually use. WhatsApp and
-// Messenger are genuinely live (Phase 8a shipped 2026-08-21); the rest are
-// real demand signal for what to build next, labeled honestly as not yet
-// available rather than implied to already work.
+// — which channels the org's own customers actually use. WhatsApp, Messenger,
+// and Telegram are genuinely live (Phase 8a shipped 2026-08-21, Telegram
+// Phase 8d shipped 2026-08-22); the rest are real demand signal for what to
+// build next, labeled honestly as not yet available rather than implied to
+// already work.
 const CHANNEL_OPTIONS: { value: string; label: string }[] = [
   { value: "whatsapp", label: "WhatsApp" },
   { value: "messenger", label: "Facebook Messenger" },
+  { value: "telegram", label: "Telegram" },
   { value: "web_chat", label: "Our website (chat widget)" },
   { value: "sms_interested", label: "SMS (coming soon — let us know you need it)" },
   { value: "instagram_interested", label: "Instagram (coming soon — let us know you need it)" },

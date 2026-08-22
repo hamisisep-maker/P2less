@@ -25,6 +25,7 @@ import { sendSms, smsEnabled } from "./sms";
 import { queueNotification } from "./notifications";
 import { buildEmbeddedSignupLink } from "./whatsapp-embedded-signup";
 import { buildMessengerConnectLink } from "./messenger";
+import { connectTelegramBot } from "./telegram";
 import {
   isConfigured as stripeIsConfigured, publishableKey, createSetupIntent, verifySetupIntentSucceeded, createCustomerWithCard,
 } from "./stripe";
@@ -878,4 +879,21 @@ export async function startMessengerConnectAction(_prev: unknown, _formData: For
   const link = buildMessengerConnectLink(user.tenantId!);
   if (!link.ok) return { error: link.error };
   redirect(link.url);
+}
+
+// ── Telegram connection (Phase 8d) ────────────────────────────────────────────
+// Owner-only, but a fundamentally simpler shape than WhatsApp/Messenger above —
+// no OAuth redirect, since there's no platform-wide Telegram app to authorize
+// against. The tenant creates their own bot via @BotFather and pastes the
+// token directly; connectTelegramBot() validates it and registers our webhook.
+export async function connectTelegramBotAction(_prev: unknown, formData: FormData) {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE)) {
+    return { error: "Only an organization owner can connect a Telegram bot." };
+  }
+  const botToken = String(formData.get("botToken") ?? "");
+  const result = await connectTelegramBot(user.tenantId!, botToken);
+  if (!result.ok) return { error: result.error };
+  revalidatePath("/dashboard/channels");
+  return { ok: true as const, username: result.username };
 }

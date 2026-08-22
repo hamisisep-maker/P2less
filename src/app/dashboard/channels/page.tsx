@@ -6,6 +6,7 @@ import { embeddedSignupConfigured } from "@/lib/whatsapp-embedded-signup";
 import { messengerConnectConfigured } from "@/lib/messenger";
 import { ConnectWhatsAppButton } from "./connect-whatsapp-button";
 import { ConnectMessengerButton } from "./connect-messenger-button";
+import { ConnectTelegramForm } from "./connect-telegram-form";
 
 // Registration reframe, continued (roadmap doc "Registration reframe" —
 // Track A) — the data model already treats WhatsApp numbers and a
@@ -25,15 +26,17 @@ export default async function ChannelsPage({
   const { embedded_signup: waSignupResult, connect: messengerConnectResult, message } = await searchParams;
   const canConnect = userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE);
 
-  const [numbers, messengerChannel] = await Promise.all([
+  const [numbers, messengerChannel, telegramChannel] = await Promise.all([
     db.whatsAppNumber.findMany({
       where: { tenantId: user.tenantId! },
       include: { _count: { select: { conversations: true } } },
       orderBy: { createdAt: "asc" },
     }),
     db.channel.findFirst({ where: { tenantId: user.tenantId!, type: "messenger" } }),
+    db.channel.findFirst({ where: { tenantId: user.tenantId!, type: "telegram" } }),
   ]);
   const messengerPageName = (messengerChannel?.config as { pageName?: string } | null)?.pageName;
+  const telegramUsername = (telegramChannel?.config as { botUsername?: string } | null)?.botUsername;
 
   return (
     <div>
@@ -130,6 +133,36 @@ export default async function ChannelsPage({
       <p className="mt-3 text-xs text-faint">
         Text messages sent to your Page are answered the same way as WhatsApp — grounded in your own FAQs and
         connected systems, never invented. Media/postback-button handling isn&apos;t built yet (text only for now).
+      </p>
+
+      <h2 className="mt-8 font-display text-lg font-semibold">Telegram</h2>
+      {canConnect && (
+        <div className="mb-4 mt-2">
+          <ConnectTelegramForm />
+          <p className="mt-2 text-xs text-faint">
+            Create a bot with <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-accent underline">@BotFather</a> on
+            Telegram (free, instant, no approval needed), then paste the token it gives you above.
+          </p>
+        </div>
+      )}
+      {telegramChannel ? (
+        <Card className="p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold">{telegramUsername ? `@${telegramUsername}` : "Connected bot"}</span>
+                <Badge tone={telegramChannel.status === "active" ? "green" : "amber"}>{telegramChannel.status === "active" ? "active" : "needs reconnecting"}</Badge>
+              </div>
+              <div className="mt-1 font-mono text-[11px] text-faint">bot_id: {telegramChannel.address}</div>
+            </div>
+          </div>
+        </Card>
+      ) : (
+        <Card className="p-6 text-sm text-muted">No Telegram bot connected yet.</Card>
+      )}
+      <p className="mt-3 text-xs text-faint">
+        Anyone who messages your bot on Telegram gets the same grounded answers as WhatsApp — no App Review, no
+        Business Verification, no 24-hour reply window. Text only for now (no photos/files/inline buttons yet).
       </p>
     </div>
   );
