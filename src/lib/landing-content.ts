@@ -91,6 +91,22 @@ export const LANDING_FAQS: Faq[] = [
     q: "What currency do you bill in — USD or KES?",
     a: "Kenyan Shillings (KES) — every price shown on this page (Free, Professional at 4,900 KES/mo, Business at 19,900 KES/mo) is in KES. Enterprise is negotiated case-by-case, and currency there can be discussed directly.",
   },
+  {
+    q: "Can I export my data if I ever want to leave?",
+    a: "There's no self-service export button today — it's a request-based process, not automated. To access or export your data, contact the organization you communicated with, or reach out to us directly and we'll action it. There's no lock-in contract stopping you either way (see the cancellation question above).",
+  },
+  {
+    q: "What languages does the assistant support — English only?",
+    a: "It's not limited to English — it matches whatever language you write in, including Swahili and Sheng, and replies in kind. No language setting to configure, just type naturally.",
+  },
+  {
+    q: "Do you have backups or a disaster-recovery plan if your servers crash?",
+    a: "Honestly, not a formal one yet — no automated backup schedule is running today. We're a newly-launched platform (see the downtime/security-breach question above) and this is a real gap we're upfront about rather than claiming otherwise. If data safety at that level is critical for you right now, raise it directly before signing up so we can talk through it.",
+  },
+  {
+    q: "Exactly how many team members/users, messages, and connectors do the paid plans include?",
+    a: "Professional (4,900 KES/mo): 15 users, 10,000 messages/month, 10 connectors. Business (19,900 KES/mo): 60 users, 100,000 messages/month, 50 connectors. Enterprise: no fixed ceiling, negotiated case-by-case. (Free plan is 2 users, 200 messages/month, 1 connector — see the Free plan question.)",
+  },
 ];
 
 export type AudienceKey = "business" | "institutions" | "sacco" | "government" | "developers";
