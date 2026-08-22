@@ -264,6 +264,25 @@ User asked to consider these as future channels. Researched real 2026 API access
 
 Neither scoped to implementation depth — noted as real, research-backed candidates for whenever channel expansion picks back up, not next in line ahead of Telegram/Email (8d) without a specific reason to reorder.
 
+### Candidate channel — Voice (IVR + call routing), researched 2026-08-22, not scoped/not started
+
+User asked directly whether P2Less could handle voice/calls. Split into two genuinely different ideas rather than treated as one, since conflating them overstates what the cheaper one actually does:
+
+**1. IVR + call routing — real, buildable now, but menu-driven, not conversational.** Confirmed against Africa's Talking's own Voice API docs (the same vendor already under consideration for SMS, so a real relationship, not a new vendor decision if it gets set up): an inbound call triggers a webhook, P2Less answers with XML call-control instructions (`Say`, `GetDigits`, `Dial`, `Record` — the same "provider asks, we answer with directives" shape as every other channel, just XML instead of JSON). Real finding that changes the picture for the better: `Say` uses a **free, dynamic** text-to-speech engine — not just static pre-recorded menus — so a menu option CAN read back a real grounded fact pulled from a connector ("your balance is 4,500 shillings"), reusing the exact same connector/capability-gate pipeline every text channel already uses. `Dial` transfers a call live to a real staff phone number for "press 2 to speak to the office."
+
+**The real ceiling, stated directly rather than glossed over**: this is menu-driven, not free-form. A caller presses numbers on a menu built in advance — they cannot ask an open-ended question the way a WhatsApp user types anything and the understanding engine figures out what they meant. Calling this "the same as WhatsApp" would be wrong; it's closer to "a smart phone menu that can occasionally speak a real fact and transfer you to a person."
+
+**What's genuinely new, not just a channel add-on**:
+- A real per-tenant admin surface to configure the menu (press 1 → connector X, press 2 → transfer to number Y) — no text channel needed this, since they all plug straight into `handleInbound()` with zero extra per-tenant setup.
+- A real identity-verification gap: a phone call's caller ID is more easily spoofed than owning a verified WhatsApp number — anything sensitive read back over a call needs a new DTMF-entered PIN step, a pattern no existing channel has.
+- A genuinely different cost shape: per-minute and open-ended (a 1-minute call and a 45-minute call cost very differently), unlike every existing channel's bounded per-message/per-conversation cost. Fits the *existing* hybrid pricing architecture structurally (a new `PRICE`/`COST` metered line, same pattern as WhatsApp/AI/documents) but would likely want to be a separate opt-in add-on with its own uncapped-but-monitored rate rather than bundled into Professional/Business's included limits the way messages are.
+- **Real audience signal worth naming**: likely stronger fit for hospitals (still genuinely call-heavy, especially older/urgent callers) than the schools/SACCOs the current GTM vertical leads with — reaches people without WhatsApp or data, a real gap none of the shipped channels close.
+- **Exact current pricing not available** — Africa's Talking's pricing page blocks automated access; the real KES-per-minute rate needs a direct check (dashboard or their sales team) before any real margin math like the ~65% figure already verified for WhatsApp.
+
+**2. Full conversational voice AI (caller speaks freely, real-time speech-to-text into the same understanding engine, spoken answer back) — vision only, explicitly NOT the same as IVR+routing above.** This is what would actually make voice "act the same as WhatsApp" — but it's a materially bigger, harder build, not a small step further: real-time STT/TTS under live latency pressure, and "never invent" (the discipline that makes P2Less trustworthy in text) is much harder to guarantee in a live spoken exchange where there's no time to double-check a fact before replying, unlike async text.
+
+**Not scoped to implementation depth, either idea — vision/candidate only**, per the same discipline as every other backlog item this session.
+
 ### Two admin-facing ideas raised alongside the X/LinkedIn research, 2026-08-22
 
 **1. Live pricing-reference page — ✅ SHIPPED 2026-08-22.** Built as a new "Pricing & cost references" card on `/admin/billing`, right after the existing editable "Pricing & cost assumptions" form (the two are deliberately adjacent — one edits the numbers, the other shows where they came from and when they were last touched).
