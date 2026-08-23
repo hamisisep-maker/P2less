@@ -1,6 +1,50 @@
-# P2Less — Public Bug-Hunting & AI Quality Feedback Programme
+# P2Less — Controlled Production-Learning Loop (Public Feedback → Quality Centre)
 
-Vision document, proposed by the user 2026-08-23, refined against the actual current state of the codebase before being treated as a build plan. **Not started — vision + phased plan only**, same discipline as every other future-strategic item in this project (see the main roadmap doc's Phase 8b/candidate-channels sections for precedent).
+Vision document, proposed by the user 2026-08-23, refined against the actual current state of the codebase, then refined a second time against a detailed follow-up review — before being treated as a build plan. **Not started — vision + phased plan only**, same discipline as every other future-strategic item in this project (see the main roadmap doc's Phase 8b/candidate-channels sections for precedent).
+
+**Framing, deliberately not "a bug-hunting campaign":** this is P2Less's controlled production-learning loop — a structured, engineering-discipline pipeline from real conversations to verified corrections, not a community bug-bounty event. The public channels are only the input layer; the actual product is the review, evidence, attribution, correction, and regression-testing system behind them.
+
+```
+              PUBLIC FEEDBACK (input layer only)
+                        │
+          ┌─────────────┴──────────────┐
+          │                            │
+       WhatsApp                     Widget
+     (V1, proven)                (V1, proven)
+          │                            │
+          └─────────────┬──────────────┘
+                         ↓
+              Existing Ticket System
+           (SupportTicket + TicketEvent)
+                         ↓
+                Quality Classification
+                         ↓
+     ┌───────────────────┼───────────────────┐
+     ↓                   ↓                   ↓
+Technical Bug     AI Quality Issue       User Error /
+                         │              Correct Response
+        ┌────────────────┼────────────────┐
+        ↓                ↓                ↓
+  Hallucination    Knowledge Gap    Intent/Context/
+  (AI changed a                     Connector/Auth
+  correct fact)                        Error
+                         ↓
+                  Human Review
+             (the investigation waterfall)
+                         ↓
+                 Verified Finding
+                         ↓
+                Corrective Action
+          (prompt fix / FAQ / code / config —
+           never a raw "add this fact" write)
+                         ↓
+                 Regression Test
+            (the same scripts/test.ts suite
+             this whole session has run after
+             every single fix)
+                         ↓
+                  Close / Monitor
+```
 
 ## The core idea, and why it's right
 
@@ -37,36 +81,88 @@ The proposal names 8 channels. Their actual state today is uneven — publishing
 P2Less already has a real ticket/incident workflow: `SupportTicket`, `TicketEvent`, an admin tickets/incidents workspace with status tracking, assignment, SLA deadlines, and audit logging. The "Quality & Feedback Centre" described in the proposal is structurally the same thing, scoped to AI-quality issues specifically. Building a second, disconnected reporting system would duplicate real, working infrastructure for no benefit.
 
 **Recommended shape**, additive to what exists rather than replacing it:
-- `SupportTicket` gains a `source` field (`"customer" | "public_bug_report"`) and a `category` field, nullable until triaged (`"ai_hallucination" | "knowledge_gap" | "bug" | "security" | "integration" | "user_misunderstanding" | null`).
+- `SupportTicket` gains a `source` field — **three values, not two**: `"internal"` (P2Less's own team found it), `"tenant"` (a tenant's own staff reported it — this already happens informally today), `"public_report"` (a member of the public reported it through this programme). Distinguishing all three matters later: a pattern that only shows up in public reports vs. one tenants themselves keep hitting are different signals.
+- A `category` field, nullable until triaged (see the refined taxonomy below) — starts as `unknown_investigating` on intake, never left to default to a guess.
 - A new optional link from a ticket to the `Conversation`/`Message` it's actually about — **set by the reviewer manually** during triage (picking from that conversation's recent messages), not auto-detected. Automated fingerprint-matching (guessing which message a screenshot refers to) is a real inference problem of its own and risks mis-linking reports to the wrong exchange — not worth building until manual linking proves the workflow is valuable.
 - The existing `AiRequestLog` (provider, model, cost, latency) is already keyed to a conversation/tenant — once a ticket is linked to the right message, the AI-execution trace (which provider/model answered, what FAQ or connector it drew from) is already sitting right there, no new logging needed.
 
 This reuses real, already-audited infrastructure instead of inventing a parallel one, and keeps a public bug report inside the same review/assignment/SLA machinery your team already uses for everything else.
 
-## Triage taxonomy — kept, it's genuinely good
+## The investigation waterfall — what a reviewer actually checks, in order
 
-The proposed categories map cleanly onto the distinctions this session's bug-hunting has drawn by hand all along:
+Every report resolves through this sequence before anything gets corrected. Each step maps to a real, already-existing piece of this codebase, not a new system:
 
-| Category | What it means | What "fixed" actually looks like in this codebase |
+1. **What did the user ask?** — the raw inbound `Message`.
+2. **What did P2Less understand?** — the matched intent/action from `understand()`/`matchIntent()` in `conversation.ts`.
+3. **Which tenant, which contact?** — `Tenant`/`Contact`, already tenant-isolated.
+4. **What authorization happened?** — the permission/step-up check that ran (or should have) before anything sensitive was released.
+5. **Which resource was resolved, which connector was called?** — the `ConnectorAction` invoked and its real parameters.
+6. **What did the connector actually return?** — the raw upstream data, before the AI touched it.
+7. **Which AI provider/model was involved?** — pulled straight from `AiRequestLog`.
+8. **What response was generated, and does it match what the connector returned?** — the pivotal check (see below).
+9. **What should have happened?** — the reviewer's verified conclusion, which drives the category and the fix.
+
+**Step 8 is the single most important check, and it's why the taxonomy needs to split "wrong data" from "AI changed correct data."** If the connector returned KES 40,000 and the reply said 50,000, that's a real, serious problem: `humanizeReply()` in `ai.ts` has an explicit existing rule — *"Keep every number, amount, currency, date, time, reference and name EXACTLY as given in the ANSWER"* — so a genuine violation of it is rare and high-priority, not "the AI is a bit off today." If the connector itself returned 50,000, the AI faithfully repeating it is not an AI defect at all — the fix is upstream, in the connector or the source system.
+
+## Triage taxonomy — refined to 11 categories, each mapped to a real fix path
+
+The original 6-category version conflated a few genuinely different failure modes. This is the corrected version — it prevents the team from blaming the AI for problems that actually originate elsewhere:
+
+| Category | What it means | Real example / fix path in this codebase |
 |---|---|---|
-| 🐛 Bug | A real code defect | A code fix (e.g. this session's `menuPrompt()` structural fix, the crawler's silent-failure fix) |
-| 🤖 AI error / hallucination | The AI invented or misstated something | A prompt/instruction fix in `ai.ts` (e.g. the zero-capability topic-guessing fix), never a raw "add this fact and move on" |
-| 📚 Knowledge gap | Correct info wasn't available to ground an answer | A new/corrected FAQ entry in `landing-content.ts` or the tenant's own FAQs |
-| 🔐 Security issue | An authorization/access problem | A permissions/RBAC fix, always logged via the existing audit trail |
-| 🔄 Integration issue | A connector returned wrong/stale data | A connector-config or external-system fix, not an AI-layer change at all |
-| ❓ User misunderstanding | The system behaved correctly | No system change — documented and closed, same as this session's "investigated, not a bug" findings |
+| 🐛 Technical Bug | A real code defect, nothing to do with the AI | A code fix (e.g. this session's `menuPrompt()` structural fix, the crawler's silent-failure-mislabeled-as-content-problem fix) |
+| 🤖 AI Hallucination | The AI generated something not present in its grounded inputs — including corrupting a correct number/fact during rephrasing | A prompt/instruction fix in `ai.ts` (e.g. the zero-capability topic-guessing fix) — reserved specifically for cases like step 8 above, not a catch-all |
+| 📚 Knowledge Gap | Correct info wasn't available to ground an answer at all | A new/corrected FAQ entry in `landing-content.ts` or the tenant's own FAQs |
+| 🗄️ Incorrect Source Data | The connector returned exactly what the external system has, and that system's own data is wrong | Not a P2Less fix — flag back to the tenant's own system/data owner |
+| 🔄 Incorrect Connector Result | The external system's data was fine, but P2Less's connector fetched/transformed it wrong | A connector-config fix, not an AI-layer change at all |
+| 🎯 Intent/Classification Error | The AI picked the wrong action entirely (e.g. matched "leave balance" when asked about "payslip") — a routing failure, not a fabrication | A fix to `understand()`/`matchIntent()`'s matching logic or prompt |
+| 🔐 Authorization Error | A permission/step-up check let something through it shouldn't have, or blocked something it shouldn't have | An RBAC/permission fix, always logged via the existing audit trail |
+| 🔌 Integration Failure | The connector call itself failed (timeout, malformed request, external system down) | Matches this codebase's existing "honest failure when payroll is down" pattern — already tested in the regression suite today |
+| 💬 Conversation/Context Failure | A fact given earlier in the conversation got lost or misapplied | Real precedent already shipped: round 9's fix for facts falling out of the retained history window, causing a false "you never told me that" |
+| ❓ Correct Response — User Misunderstanding | The system behaved correctly | No system change — documented and closed, same as this session's "investigated, not a bug" findings |
+| 🔎 Unknown / Requires Investigation | Intake default — never guess a category before the waterfall above has actually run | Starting state for every new report, not a real resolution |
 
-**Worth being precise about, since the phrase "help the AI learn" can be misread**: nothing in this system means retraining or fine-tuning a model. Every "AI error" fix this entire session has been either a system-prompt instruction change or a new grounded fact (FAQ) — that's what "fixed" means here, and the Quality Centre should make that explicit to reviewers rather than implying something more exotic is happening.
+**Worth being precise about, since the phrase "help the AI learn" can be misread**: nothing in this system means retraining or fine-tuning a model. Every AI-layer fix this entire session has been either a system-prompt instruction change or a new grounded fact (FAQ) — that's what "fixed" means here, and the Quality Centre should make that explicit to reviewers rather than implying something more exotic is happening.
 
 ## Phased rollout
 
-**Phase A — prove the workflow small, not public.** Extend `SupportTicket` with `source`/`category`. Build the triage dashboard view (grouped by category, same visual language as the existing incidents/tickets workspace). Pilot with a small trusted group (not a public blast) reporting through WhatsApp and the widget only — the two channels that are actually solid. Confirm the manual-linking and categorization workflow is fast enough to be worth using day-to-day before it's advertised anywhere.
+**Phase A — prove the workflow small, not public.** Extend `SupportTicket` with `source`/`category`. Build the triage dashboard view (grouped by category, same visual language as the existing incidents/tickets workspace). Pilot with a small, deliberately-recruited group — not a public blast — reporting through WhatsApp and the widget only, the two channels that are actually solid. A sample recruiting message, since "try to break it" framing gets better reports than a generic feedback request:
+
+> *Try to break it. If P2Less gives you something wrong, confusing, unexpected, or suspicious, report it here.*
+
+Confirm the manual-linking and categorization workflow is fast enough to be worth using day-to-day before it's advertised anywhere.
 
 **Phase B — public invitation, still just the two ready channels.** Publish "found a bug? tell us" on WhatsApp and the widget once Phase A proves out. This is the point where the public sees it for the first time.
 
-**Phase C — expand per-channel as each one becomes real**, in this order, each gated on its own real milestone from the main roadmap: Messenger (once the Tester-invite/round-trip is proven), Telegram (once a real bot is connected), Email (once Resend inbound is configured). Each channel gets added to the public invitation only after it's independently verified working — not in a batch.
+**Phase C — expand per-channel as each one becomes real, evidence-driven, not scheduled:**
+
+```
+WhatsApp → Proven → Widget → Proven → Telegram → real-world tested → Proven
+   → Email → Proven → Messenger → ...
+```
+
+Each arrow is a real, independent milestone from the main roadmap, not a calendar date — Messenger once the Tester-invite/round-trip is proven, Telegram once a real bot is connected and tested, Email once Resend inbound is configured. A channel gets added to the public invitation only after its own operational test passes, matching the standard this whole session has actually applied everywhere else: **don't claim a capability because the code exists — claim it once the complete user journey has been proven.**
 
 **Not planned, explicitly**: Instagram, TikTok, X/Twitter, SMS-as-a-conversational-channel. Revisit only if one of those channels gets built for its own real product reason first — a public bug-bounty invitation is never itself the reason to build a new channel.
+
+**Phase D — long-term, aspirational only, not scoped.** Once enough verified reports accumulate, the Quality Centre stops being just a ticket queue and starts answering operational questions directly — a real dashboard view, something like:
+
+```
+P2LESS QUALITY
+
+Total conversations       48,291
+Quality reports               382
+AI quality rate              99.2%
+
+Most common issue:        Knowledge gaps (41%)
+Most affected intent:     Loan inquiries
+Most affected provider:   Provider X
+Recurring issue:          "Loan balance responses" — 17 occurrences across 6 tenants
+Regression failures:      3
+Unresolved critical:      1
+```
+
+This only becomes real once real volume exists to compute it from — explicitly not part of Phase A-C, and not worth designing in detail until there's actual data to shape it around.
 
 ## Open questions only the user can answer
 
