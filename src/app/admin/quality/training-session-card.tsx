@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Card, Badge } from "@/components/ui";
 import { createTrainingSessionAction, endTrainingSessionAction, addTrainingParticipantAction } from "@/lib/training-actions";
 
-type ActiveSession = { id: string; tenantId: string; tenantName: string; name: string; questionsPerParticipant: number; participantCount: number; questionsUsed: number; createdAt: Date; participants: { address: string; questionCount: number }[] };
+type ActiveSession = { id: string; tenantId: string; tenantName: string; name: string; questionsPerParticipant: number; maxParticipants: number | null; participantCount: number; questionsUsed: number; createdAt: Date; participants: { address: string; questionCount: number }[] };
 type TenantOption = { id: string; name: string };
 
 function AddParticipant({ sessionId }: { sessionId: string }) {
@@ -35,16 +35,18 @@ function AddParticipant({ sessionId }: { sessionId: string }) {
   );
 }
 
-/** Minimal v1 — a named session, a per-participant question counter, a
+/** Minimal v1 — a named session, a per-participant question counter, an
+ *  optional participant cap (both enforced atomically, server-side), and a
  *  near-limit prompt. See docs/PUBLIC-FEEDBACK-QUALITY-CENTRE-2026-08-23.md
- *  for what's deliberately NOT here yet (participant caps, objectives,
- *  the full session lifecycle) — real, documented, deferred until this
- *  minimal version proves the workflow is worth the rest. */
+ *  for what's deliberately NOT here yet (target vs. max as separate numbers,
+ *  objectives, the full session lifecycle) — real, documented, deferred
+ *  until this minimal version proves the workflow is worth the rest. */
 export function TrainingSessionCard({ tenants, activeSessions }: { tenants: TenantOption[]; activeSessions: ActiveSession[] }) {
   const [pending, startTransition] = useTransition();
   const [tenantId, setTenantId] = useState(tenants[0]?.id ?? "");
   const [name, setName] = useState("");
   const [questionsPerParticipant, setQuestionsPerParticipant] = useState(20);
+  const [maxParticipants, setMaxParticipants] = useState("");
 
   return (
     <Card className="mb-4 p-5">
@@ -74,7 +76,7 @@ export function TrainingSessionCard({ tenants, activeSessions }: { tenants: Tena
                 </button>
               </div>
               <div className="mt-1.5 text-xs text-muted">
-                <span className="tabular-nums font-medium">{s.participantCount}</span> participant{s.participantCount === 1 ? "" : "s"} · <span className="tabular-nums font-medium">{s.questionsUsed}</span> questions used · {s.questionsPerParticipant} allowed per participant
+                <span className="tabular-nums font-medium">{s.participantCount}</span>{s.maxParticipants !== null && <span className="tabular-nums"> / {s.maxParticipants}</span>} participant{s.participantCount === 1 ? "" : "s"} · <span className="tabular-nums font-medium">{s.questionsUsed}</span> questions used · {s.questionsPerParticipant} allowed per participant
               </div>
               {s.participants.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
@@ -106,13 +108,19 @@ export function TrainingSessionCard({ tenants, activeSessions }: { tenants: Tena
           <span className="text-xs font-medium text-muted">Questions/participant</span>
           <input type="number" min={1} value={questionsPerParticipant} onChange={(e) => setQuestionsPerParticipant(Number(e.target.value))} className="mt-1 w-20 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs outline-none focus:border-accent" />
         </label>
+        <label className="block">
+          <span className="text-xs font-medium text-muted">Max participants</span>
+          <input type="number" min={1} value={maxParticipants} onChange={(e) => setMaxParticipants(e.target.value)} placeholder="no cap" className="mt-1 w-24 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs outline-none focus:border-accent" />
+        </label>
         <button
           disabled={pending || !name.trim() || !tenantId}
           onClick={() => startTransition(async () => {
-            const res = await createTrainingSessionAction(tenantId, name, questionsPerParticipant);
+            const cap = maxParticipants.trim() ? Number(maxParticipants) : null;
+            const res = await createTrainingSessionAction(tenantId, name, questionsPerParticipant, cap);
             if (res.error) { toast.error(res.error); return; }
             toast.success("Training session started");
             setName("");
+            setMaxParticipants("");
           })}
           className="rounded-lg bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-3.5 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
         >

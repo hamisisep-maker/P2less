@@ -1473,6 +1473,7 @@ model TrainingSession {
   tenant                 Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name                   String
   questionsPerParticipant Int     @default(20)
+  maxParticipants        Int? // null = no cap; enforced atomically at enrollment (addTrainingParticipantAction)
   status                 String   @default("active") // active | completed
   createdAt              DateTime @default(now())
   endedAt                DateTime?
