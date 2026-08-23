@@ -62,3 +62,29 @@ export async function disableMaintenanceModeAction(reason: string) {
   revalidatePath("/", "layout");
   return { ok: true };
 }
+
+/** The /onboard off switch — much lower blast radius than whole-platform
+ *  maintenance (blocks new signups only, existing tenants unaffected), so
+ *  no typed confirmation, just a required reason for the audit trail.
+ *  Reuses maintenance.manage rather than a new permission — same "platform-
+ *  wide risk control, highest-trust roles only" category. Enforced in two
+ *  places: the /onboard page hides the form when off, and
+ *  requestOnboardOtpAction checks it independently so a direct call is
+ *  blocked too, not just the UI. */
+export async function setPublicRegistrationEnabledAction(enabled: boolean, reason: string) {
+  if (!reason?.trim()) return { error: "A reason is required." };
+  let admin;
+  try {
+    admin = await assertAdminPermission("maintenance.manage");
+  } catch (e) {
+    if (isForbidden(e)) return { error: e.message };
+    throw e;
+  }
+  await setSetting("public_registration_enabled", enabled ? "1" : "0");
+  await logPrivilegedAction({
+    admin, permission: "maintenance.manage", action: enabled ? "admin.public_registration_enabled" : "admin.public_registration_disabled", reason,
+  });
+  revalidatePath("/onboard");
+  revalidatePath("/admin/system-health");
+  return { ok: true };
+}

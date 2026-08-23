@@ -58,6 +58,13 @@ export const SETTING_DEFAULTS = {
   maintenance_started_at: "",
   maintenance_expected_duration_minutes: 30,
   maintenance_message: "P2Less is undergoing scheduled maintenance. We'll be back shortly.",
+
+  // ── Public self-serve tenant registration (src/app/onboard, src/lib/maintenance-actions.ts) ──
+  // Default ON — same "nothing changes until an admin actually edits it"
+  // rule as every other setting here. /onboard is a live public route with
+  // no other off switch; this is it, checked both in the page (hides the
+  // form) and in the server action itself (blocks a direct call too).
+  public_registration_enabled: 1,
 } as const;
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;

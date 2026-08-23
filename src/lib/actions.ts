@@ -17,7 +17,7 @@ import { normalizePhone } from "./conversation";
 import { handleSubscriptionPaymentConfirmed } from "./billing-lifecycle";
 import { assertChannelEnabled } from "./payment-channels";
 import type { ParamSpec } from "./connector-engine";
-import { getSettingNumber } from "./platform-settings";
+import { getSetting, getSettingNumber } from "./platform-settings";
 import { crawlSite } from "./website-crawl";
 import { extractFaqDraft } from "./ai";
 import { issuePhoneOtp, verifyPhoneOtp, countRecentCompletedSignupsFromIp } from "./otp";
@@ -220,6 +220,14 @@ export type RequestOtpResult =
   | { error: string };
 
 export async function requestOnboardOtpAction(_prev: unknown, formData: FormData): Promise<RequestOtpResult> {
+  // The actual off switch (src/lib/maintenance-actions.ts's
+  // setPublicRegistrationEnabledAction) — checked first, before any OTP is
+  // issued or SMS sent, so a direct call to this action is blocked exactly
+  // like the UI, not just visually hidden.
+  const registrationEnabled = await getSetting("public_registration_enabled");
+  if (registrationEnabled !== "1") {
+    return { error: "New signups are currently paused. If you were invited, contact whoever sent you the link — otherwise check back soon." };
+  }
   const validated = await validateOnboardFields(formData);
   if ("error" in validated) return { error: validated.error };
   const { data: d } = validated;

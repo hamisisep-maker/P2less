@@ -1,8 +1,10 @@
 import Link from "next/link";
-import { Logo } from "@/components/ui";
+import { Logo, Card } from "@/components/ui";
+import { getSetting } from "@/lib/platform-settings";
 import { OnboardForm } from "./onboard-form";
 
-export default function OnboardPage() {
+export default async function OnboardPage() {
+  const registrationEnabled = (await getSetting("public_registration_enabled")) === "1";
   return (
     <div className="min-h-screen">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
@@ -37,7 +39,15 @@ export default function OnboardPage() {
             that plugs in here.)
           </div>
         </div>
-        <OnboardForm />
+        {registrationEnabled ? (
+          <OnboardForm />
+        ) : (
+          <Card className="p-6">
+            <h2 className="text-lg font-semibold">New signups are currently paused</h2>
+            <p className="mt-2 text-sm text-muted">P2Less isn&apos;t accepting new self-serve signups right now. If you were invited, contact whoever sent you the link. Otherwise, check back soon.</p>
+            <Link href="/login" className="mt-4 inline-block text-sm text-accent hover:underline">Already have an account? Sign in →</Link>
+          </Card>
+        )}
       </main>
     </div>
   );
