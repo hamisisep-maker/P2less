@@ -1,8 +1,10 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { saveProductAction, toggleProductActiveAction } from "@/lib/actions";
 import { Card, Badge } from "@/components/ui";
+import { ToggleActiveButton } from "@/components/toggle-active-button";
 
 type Product = {
   id: string;
@@ -27,6 +29,7 @@ export function ProductsEditor({ initial, canManage }: { initial: Product[]; can
 
   useEffect(() => {
     if (state?.ok) {
+      toast.success(state.editedId ? "Product updated" : "Product added");
       setEditing(null);
       setFormKey((k) => k + 1);
     }
@@ -130,10 +133,7 @@ export function ProductsEditor({ initial, canManage }: { initial: Product[]; can
               {canManage && (
                 <div className="flex shrink-0 items-center gap-2">
                   <button onClick={() => { setEditing(p); setFormKey((k) => k + 1); }} className="text-xs text-accent hover:underline">Edit</button>
-                  <form action={toggleProductActiveAction}>
-                    <input type="hidden" name="id" value={p.id} />
-                    <button className="text-xs text-muted hover:underline">{p.active ? "Deactivate" : "Reactivate"}</button>
-                  </form>
+                  <ToggleActiveButton id={p.id} active={p.active} itemLabel="Product" action={toggleProductActiveAction} />
                 </div>
               )}
             </div>

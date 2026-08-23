@@ -1,8 +1,10 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { saveDriverAction, toggleDriverActiveAction } from "@/lib/actions";
 import { Card, Badge } from "@/components/ui";
+import { ToggleActiveButton } from "@/components/toggle-active-button";
 
 type Driver = {
   id: string;
@@ -38,6 +40,7 @@ export function DriversEditor({ initial, canManage }: { initial: Driver[]; canMa
 
   useEffect(() => {
     if (state?.ok) {
+      toast.success(state.editedId ? "Driver updated" : "Driver added");
       setEditing(null);
       setFormKey((k) => k + 1);
     }
@@ -93,10 +96,7 @@ export function DriversEditor({ initial, canManage }: { initial: Driver[]; canMa
                 {canManage && (
                   <div className="flex shrink-0 items-center gap-2">
                     <button onClick={() => { setEditing(d); setFormKey((k) => k + 1); }} className="text-xs text-accent hover:underline">Edit</button>
-                    <form action={toggleDriverActiveAction}>
-                      <input type="hidden" name="id" value={d.id} />
-                      <button className="text-xs text-muted hover:underline">{d.active ? "Deactivate" : "Reactivate"}</button>
-                    </form>
+                    <ToggleActiveButton id={d.id} active={d.active} itemLabel="Driver" action={toggleDriverActiveAction} />
                   </div>
                 )}
               </div>

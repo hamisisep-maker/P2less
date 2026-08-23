@@ -41,7 +41,15 @@ export function PricingForm({ initial }: { initial: Record<string, string> }) {
         </button>
         <button
           type="button"
-          onClick={() => { resetPricingDefaultsAction().then(() => { toast.success("Reset to defaults"); }); }}
+          onClick={async () => {
+            try {
+              const res = await resetPricingDefaultsAction();
+              if (res && "error" in res) toast.error(res.error);
+              else toast.success("Reset to defaults");
+            } catch {
+              toast.error("Something went wrong resetting pricing — please try again.");
+            }
+          }}
           className="flex items-center gap-1.5 rounded-xl border border-line px-4 py-2.5 text-sm text-muted hover:bg-surface-2"
         >
           <RotateCcw size={13} /> Reset defaults

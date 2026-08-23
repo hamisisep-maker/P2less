@@ -1,8 +1,10 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { saveDeliveryZoneAction, toggleDeliveryZoneActiveAction } from "@/lib/actions";
 import { Card, Badge } from "@/components/ui";
+import { ToggleActiveButton } from "@/components/toggle-active-button";
 
 type Zone = { id: string; name: string; description: string | null; fee: number; active: boolean };
 type State = { ok?: boolean; error?: string; editedId?: string } | null;
@@ -14,6 +16,7 @@ export function DeliveryZonesEditor({ initial, canManage }: { initial: Zone[]; c
 
   useEffect(() => {
     if (state?.ok) {
+      toast.success(state.editedId ? "Delivery zone updated" : "Delivery zone added");
       setEditing(null);
       setFormKey((k) => k + 1);
     }
@@ -72,10 +75,7 @@ export function DeliveryZonesEditor({ initial, canManage }: { initial: Zone[]; c
               {canManage && (
                 <div className="flex shrink-0 items-center gap-2">
                   <button onClick={() => { setEditing(z); setFormKey((k) => k + 1); }} className="text-xs text-accent hover:underline">Edit</button>
-                  <form action={toggleDeliveryZoneActiveAction}>
-                    <input type="hidden" name="id" value={z.id} />
-                    <button className="text-xs text-muted hover:underline">{z.active ? "Deactivate" : "Reactivate"}</button>
-                  </form>
+                  <ToggleActiveButton id={z.id} active={z.active} itemLabel="Delivery zone" action={toggleDeliveryZoneActiveAction} />
                 </div>
               )}
             </div>

@@ -13,8 +13,9 @@ function ToggleCell({ rule }: { rule: RuleRow }) {
     <button
       disabled={pending}
       onClick={() => startTransition(async () => {
-        await toggleNotificationRuleAction(rule.id, !rule.enabled);
-        toast.success(`${rule.event.replace(/_/g, " ")} via ${rule.channel} ${!rule.enabled ? "enabled" : "disabled"}`);
+        const res = await toggleNotificationRuleAction(rule.id, !rule.enabled);
+        if (res && "error" in res) toast.error(res.error);
+        else toast.success(`${rule.event.replace(/_/g, " ")} via ${rule.channel} ${!rule.enabled ? "enabled" : "disabled"}`);
       })}
       className="disabled:opacity-50"
     >

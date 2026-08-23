@@ -97,7 +97,14 @@ export function ProviderCard({ data }: { data: ProviderCardData }) {
                 onBlur={() => {
                   const n = Number(cost);
                   if (!Number.isFinite(n) || n < 0) { toast.error("Enter a valid cost"); return; }
-                  startTransition(async () => { await updateAiProviderCostAction(null, (() => { const fd = new FormData(); fd.set("provider", data.id); fd.set("costPerCallKes", String(n)); return fd; })()); toast.success(`${data.label} cost updated`); });
+                  startTransition(async () => {
+                    const fd = new FormData();
+                    fd.set("provider", data.id);
+                    fd.set("costPerCallKes", String(n));
+                    const res = await updateAiProviderCostAction(null, fd);
+                    if (res && "error" in res) toast.error(res.error);
+                    else toast.success(`${data.label} cost updated`);
+                  });
                 }}
                 type="number" step="0.01" min="0"
                 className="w-16 rounded-lg border border-line bg-surface px-2 py-1 text-xs outline-none focus:border-accent"

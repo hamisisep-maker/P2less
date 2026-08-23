@@ -622,12 +622,13 @@ export async function setAutoPublishEnabledAction(_prev: unknown, formData: Form
 // disabling just hides it from the WhatsApp catalog and blocks new orders.
 export async function toggleProductActiveAction(formData: FormData) {
   const user = await requireTenantUser();
-  if (!userPermissions(user).includes(PERMISSIONS.PRODUCTS_MANAGE)) return;
+  if (!userPermissions(user).includes(PERMISSIONS.PRODUCTS_MANAGE)) return { error: "You don't have permission to manage products." };
   const id = String(formData.get("id") ?? "");
   const product = await db.product.findFirst({ where: { id, tenantId: user.tenantId! } });
-  if (!product) return;
-  await db.product.update({ where: { id }, data: { active: !product.active } });
+  if (!product) return { error: "Product not found." };
+  const updated = await db.product.update({ where: { id }, data: { active: !product.active } });
   revalidatePath("/dashboard/products");
+  return { ok: true as const, active: updated.active };
 }
 
 // ── Delivery zones — manual pricing tiers the assistant matches a customer's
@@ -658,12 +659,13 @@ export async function saveDeliveryZoneAction(_prev: unknown, formData: FormData)
 
 export async function toggleDeliveryZoneActiveAction(formData: FormData) {
   const user = await requireTenantUser();
-  if (!userPermissions(user).includes(PERMISSIONS.DELIVERY_MANAGE)) return;
+  if (!userPermissions(user).includes(PERMISSIONS.DELIVERY_MANAGE)) return { error: "You don't have permission to manage delivery zones." };
   const id = String(formData.get("id") ?? "");
   const zone = await db.deliveryZone.findFirst({ where: { id, tenantId: user.tenantId! } });
-  if (!zone) return;
-  await db.deliveryZone.update({ where: { id }, data: { active: !zone.active } });
+  if (!zone) return { error: "Delivery zone not found." };
+  const updated = await db.deliveryZone.update({ where: { id }, data: { active: !zone.active } });
   revalidatePath("/dashboard/delivery");
+  return { ok: true as const, active: updated.active };
 }
 
 // ── Drivers — the business's own delivery roster. Availability is set by the
@@ -696,12 +698,13 @@ export async function saveDriverAction(_prev: unknown, formData: FormData) {
 
 export async function toggleDriverActiveAction(formData: FormData) {
   const user = await requireTenantUser();
-  if (!userPermissions(user).includes(PERMISSIONS.DRIVERS_MANAGE)) return;
+  if (!userPermissions(user).includes(PERMISSIONS.DRIVERS_MANAGE)) return { error: "You don't have permission to manage drivers." };
   const id = String(formData.get("id") ?? "");
   const driver = await db.driver.findFirst({ where: { id, tenantId: user.tenantId! } });
-  if (!driver) return;
-  await db.driver.update({ where: { id }, data: { active: !driver.active } });
+  if (!driver) return { error: "Driver not found." };
+  const updated = await db.driver.update({ where: { id }, data: { active: !driver.active } });
   revalidatePath("/dashboard/drivers");
+  return { ok: true as const, active: updated.active };
 }
 
 // ── Connector Builder ─────────────────────────────────────────────────────────
