@@ -1,33 +1,70 @@
-import { requireTenantUser } from "@/lib/auth";
+import { requireTenantUser, userPermissions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Card, PageHeader, Badge } from "@/components/ui";
 import { Avatar } from "@/components/dashboard-ui";
+import { PERMISSIONS, DEFAULT_USER_ROLES } from "@/lib/permissions";
+import { InviteUserForm } from "./invite-user-form";
+
+// "Active" mirrors the exact query the admin overview's "Right now" stat
+// uses (src/app/admin/page.tsx) — a real session touched in the last 15
+// minutes, not a stale login timestamp.
+const ACTIVE_WINDOW_MS = 15 * 60 * 1000;
 
 export default async function UsersPage() {
   const user = await requireTenantUser();
   const tenantId = user.tenantId!;
+  const canManage = userPermissions(user).includes(PERMISSIONS.USERS_MANAGE);
   const [users, roles, contacts] = await Promise.all([
     db.user.findMany({ where: { tenantId }, include: { userRoles: { include: { role: true } } }, orderBy: { createdAt: "asc" } }),
     db.role.findMany({ where: { tenantId }, orderBy: { key: "asc" } }),
     db.contact.findMany({ where: { tenantId }, include: { contactRoles: { include: { role: true } } }, orderBy: { createdAt: "asc" } }),
   ]);
 
+  // Real gap found 2026-08-23 (asked directly, "so we can trace incase of
+  // anything"): staff had no visibility into which of their own teammates
+  // are actually active. One query, real session data, not inferred.
+  const activeSessions = users.length
+    ? await db.userSession.findMany({
+        where: { userId: { in: users.map((u) => u.id) }, lastActiveAt: { gte: new Date(Date.now() - ACTIVE_WINDOW_MS) }, revokedAt: null, expiresAt: { gt: new Date() } },
+        distinct: ["userId"],
+        select: { userId: true },
+      })
+    : [];
+  const activeUserIds = new Set(activeSessions.map((s) => s.userId));
+
+  // Staff roles only — DEFAULT_CONTACT_ROLES (parent/end_user) exist in the
+  // same tenant-scoped Role table but grant access to CONTACTS, not dashboard
+  // Users; offering them here would let an invite silently assign the wrong
+  // kind of role. No custom-role creation exists yet (grepped — every
+  // tenant's roles are exactly the seeded defaults), so filtering by the
+  // known staff-role keys is complete today, not just a heuristic.
+  const staffRoleKeys = new Set(DEFAULT_USER_ROLES.map((r) => r.key));
+  const staffRoles = roles.filter((r) => staffRoleKeys.has(r.key));
+
   return (
     <div>
       <PageHeader title="Users & roles" subtitle="Dashboard staff, conversational contacts, and the roles that grant them access." />
 
+      {canManage && <InviteUserForm roles={staffRoles.map((r) => ({ id: r.id, name: r.name }))} />}
+
       <Card className="mb-4 p-5">
-        <h2 className="mb-3 font-display font-semibold">Staff (dashboard users)</h2>
+        <h2 className="mb-3 font-display font-semibold">Staff (dashboard users) — {activeUserIds.size} active now</h2>
         <div className="space-y-2">
-          {users.map((u) => (
-            <div key={u.id} className="flex items-center justify-between rounded-xl border border-line px-3.5 py-2.5 transition-colors hover:bg-surface-2">
-              <div className="flex items-center gap-2.5">
-                <Avatar name={u.name} size={30} />
-                <div><div className="text-sm font-medium">{u.name}</div><div className="text-xs text-muted">{u.email}</div></div>
+          {users.map((u) => {
+            const active = activeUserIds.has(u.id);
+            return (
+              <div key={u.id} className="flex items-center justify-between rounded-xl border border-line px-3.5 py-2.5 transition-colors hover:bg-surface-2">
+                <div className="flex items-center gap-2.5">
+                  <Avatar name={u.name} size={30} />
+                  <div>
+                    <div className="flex items-center gap-1.5 text-sm font-medium">{u.name} <Badge tone={active ? "green" : "neutral"} dot>{active ? "active now" : "offline"}</Badge></div>
+                    <div className="text-xs text-muted">{u.email}</div>
+                  </div>
+                </div>
+                <div className="flex gap-1">{u.userRoles.map((ur) => <Badge key={ur.id} tone="accent">{ur.role.name}</Badge>)}</div>
               </div>
-              <div className="flex gap-1">{u.userRoles.map((ur) => <Badge key={ur.id} tone="accent">{ur.role.name}</Badge>)}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </Card>
 

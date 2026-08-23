@@ -1018,6 +1018,66 @@ type TenantSettingsInput = {
   assistantName?: string; logoText?: string; primaryColor?: string; welcome?: string; poweredBy?: string; pdfFooter?: string;
 };
 
+export type InviteUserResult = { ok: true; email: string; password: string; emailSent: boolean } | { error: string };
+
+// Real gap found 2026-08-23: /dashboard/users was read-only — the schema
+// (User.emailCanonical's own comment) already anticipated "invited staff"
+// as a user-creation path, but nothing ever implemented it. Only the one
+// account created at /onboard could ever use the dashboard. Mirrors
+// finalizeOnboarding's own owner-account pattern exactly (randomToken(6)
+// password, shown once) rather than inventing a new credential scheme.
+export async function inviteUserAction(_prev: unknown, formData: FormData): Promise<InviteUserResult> {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.USERS_MANAGE)) return { error: "You don't have permission to invite teammates." };
+
+  const name = String(formData.get("name") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const roleId = String(formData.get("roleId") ?? "").trim();
+  if (!name) return { error: "Name is required." };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Enter a valid email address." };
+  if (!roleId) return { error: "Pick a role." };
+
+  const role = await db.role.findUnique({ where: { id: roleId } });
+  if (!role || role.tenantId !== user.tenantId) return { error: "That role doesn't belong to your organization." };
+
+  // User.email is globally unique across the whole platform (not per-tenant
+  // — see the schema), so this really can collide with someone else's
+  // account, not just a duplicate invite. Caught here with a clear message
+  // rather than surfacing a raw P2002.
+  const existing = await db.user.findUnique({ where: { email } });
+  if (existing) return { error: `Someone already has an account with ${email}.` };
+
+  const password = randomToken(6);
+  const tenant = await db.tenant.findUnique({ where: { id: user.tenantId! }, select: { name: true } });
+  const created = await db.$transaction(async (tx) => {
+    const newUser = await tx.user.create({ data: { tenantId: user.tenantId!, name, email, passwordHash: await hashPassword(password) } });
+    await tx.userRole.create({ data: { userId: newUser.id, roleId } });
+    return newUser;
+  });
+
+  const { audit } = await import("./audit");
+  const { requestId: newRequestId } = await import("./crypto");
+  await audit({ tenantId: user.tenantId!, requestId: newRequestId(), actorType: "user", actorId: user.id, action: "user.invited", target: created.id, success: true, detail: { invitedEmail: email, roleId, roleName: role.name } });
+
+  // Never fake a send — same "no_provider_configured stays honest" rule as
+  // every other outbound channel here (notification-channels.ts). If email
+  // isn't configured, the inviting admin relays the credentials themselves,
+  // same as the demo-code fallback used everywhere SMS isn't configured.
+  const { isEmailConfigured, sendEmail } = await import("./notification-channels");
+  let emailSent = false;
+  if (isEmailConfigured()) {
+    const res = await sendEmail({
+      to: email,
+      subject: `You've been added to ${tenant?.name ?? "your team"} on P2Less`,
+      text: `Hi ${name},\n\n${user.name} added you to ${tenant?.name ?? "their P2Less workspace"} as ${role.name}.\n\nSign in at ${(process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "")}/login with:\nEmail: ${email}\nPassword: ${password}\n\nYou can change your password after signing in.`,
+    });
+    emailSent = res.ok;
+  }
+
+  revalidatePath("/dashboard/users");
+  return { ok: true, email, password, emailSent };
+}
+
 export async function updateTenantSettingsAction(_prev: unknown, formData: FormData): Promise<{ ok?: boolean; unchanged?: boolean; error?: string }> {
   const user = await requireTenantUser();
   if (!userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE)) return { error: "You don't have permission to edit organization settings." };

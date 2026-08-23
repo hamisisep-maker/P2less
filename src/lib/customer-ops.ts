@@ -43,7 +43,7 @@ export async function getTenantOperationalSummary(tenantId: string) {
     db.aiRequestLog.aggregate({ where: { tenantId, createdAt: { gte: since } }, _sum: { costKes: true } }),
     db.aiRequestLog.groupBy({ by: ["provider", "model"], where: { tenantId, createdAt: { gte: since } }, _count: { _all: true } }),
     db.supportTicket.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: 10 }),
-    db.user.findMany({ where: { tenantId }, select: { id: true, email: true } }),
+    db.user.findMany({ where: { tenantId }, select: { id: true, name: true, email: true, createdAt: true, userRoles: { include: { role: true } } }, orderBy: { createdAt: "asc" } }),
   ]);
 
   // Security: UserSession/LoginAttempt aren't tenantId-columns directly —
@@ -51,11 +51,19 @@ export async function getTenantOperationalSummary(tenantId: string) {
   // is keyed by email, so join via this tenant's staff emails.
   const staffUserIds = staffUsers.map((u) => u.id);
   const staffEmails = staffUsers.map((u) => u.email);
-  const [recentSessions, recentLoginAttempts, adminActions] = await Promise.all([
+  const [recentSessions, activeSessions, recentLoginAttempts, adminActions] = await Promise.all([
     staffUserIds.length ? db.userSession.findMany({ where: { userId: { in: staffUserIds } }, orderBy: { createdAt: "desc" }, take: 10 }) : [],
+    // Real gap found 2026-08-23 (asked directly, "so we can trace incase of
+    // anything"): the ip/timestamp session list below had no user attached
+    // at all — an admin investigating a tenant couldn't tell WHICH staff
+    // member a session belonged to. Same "active in the last 15 min" query
+    // as the admin overview's own "Right now" stat (src/app/admin/page.tsx).
+    staffUserIds.length ? db.userSession.findMany({ where: { userId: { in: staffUserIds }, lastActiveAt: { gte: new Date(Date.now() - 15 * 60 * 1000) }, revokedAt: null, expiresAt: { gt: new Date() } }, distinct: ["userId"], select: { userId: true } }) : [],
     staffEmails.length ? db.loginAttempt.findMany({ where: { email: { in: staffEmails } }, orderBy: { createdAt: "desc" }, take: 10 }) : [],
     db.auditLog.findMany({ where: { tenantId, action: { startsWith: "admin." } }, orderBy: { createdAt: "desc" }, take: 10 }),
   ]);
+  const staffNameById = new Map(staffUsers.map((u) => [u.id, u.name]));
+  const activeStaffIds = new Set(activeSessions.map((s) => s.userId));
 
   // "Relevant outages" — honest, not fake tenant-specificity. Incident has no
   // tenant attribution (platform-wide only), so this matches on the
@@ -120,10 +128,14 @@ export async function getTenantOperationalSummary(tenantId: string) {
       relevantIncidents: relevantIncidents.map((i) => ({ id: i.id, number: i.number, severity: i.severity, source: i.source, title: i.title, status: i.status, isPlatformWide: !relevantKeys.includes(i.relatedIntegrationKey ?? "") && !relevantKeys.includes(i.source) })),
     },
     security: {
-      recentSessions: recentSessions.map((s) => ({ ip: s.ip, userAgent: s.userAgent, createdAt: s.createdAt, lastActiveAt: s.lastActiveAt, revokedAt: s.revokedAt })),
+      recentSessions: recentSessions.map((s) => ({ userName: staffNameById.get(s.userId) ?? "Former staff member", ip: s.ip, userAgent: s.userAgent, createdAt: s.createdAt, lastActiveAt: s.lastActiveAt, revokedAt: s.revokedAt })),
       recentLoginAttempts: recentLoginAttempts.map((l) => ({ email: l.email, success: l.success, ip: l.ip, createdAt: l.createdAt })),
       adminActions: adminActions.map((a) => ({ action: a.action, target: a.target, actorId: a.actorId, reason: a.reason, createdAt: a.createdAt })),
     },
+    // Real gap found 2026-08-23 (asked directly): the admin tenant page had
+    // no staff headcount or active status at all — team-invites (dashboard
+    // side) made this matter, since there can now be more than one person.
+    staff: staffUsers.map((u) => ({ id: u.id, name: u.name, email: u.email, roles: u.userRoles.map((ur) => ur.role.name), active: activeStaffIds.has(u.id), createdAt: u.createdAt })),
     tickets: recentTickets.map((t) => ({ id: t.id, number: t.number, subject: t.subject, status: t.status, priority: t.priority, createdAt: t.createdAt })),
   };
 }

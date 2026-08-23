@@ -167,13 +167,31 @@ export default async function TenantOperationsPage({ params }: { params: Promise
         </div>
       </Card>
 
+      {/* ── Staff — real gap found 2026-08-23, no headcount/activity existed here at all ── */}
+      <Card className="mt-4 p-5">
+        <h2 className="mb-3 font-display font-semibold">Staff — {summary.staff.filter((u) => u.active).length} active now, {summary.staff.length} total</h2>
+        <div className="space-y-2">
+          {summary.staff.map((u) => (
+            <div key={u.id} className="flex items-center justify-between rounded-xl border border-line-soft px-3 py-2 text-sm">
+              <div className="flex items-center gap-2">
+                <Badge tone={u.active ? "green" : "neutral"} dot>{u.active ? "active now" : "offline"}</Badge>
+                <span className="font-medium">{u.name}</span>
+                <span className="text-xs text-muted">{u.email}</span>
+              </div>
+              <div className="flex gap-1">{u.roles.map((r) => <Badge key={r} tone="accent">{r}</Badge>)}</div>
+            </div>
+          ))}
+          {summary.staff.length === 0 && <p className="text-xs text-muted">No staff yet.</p>}
+        </div>
+      </Card>
+
       {/* ── Security ── */}
       <Card className="mt-4 p-5">
         <h2 className="mb-3 font-display font-semibold">Security</h2>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <h3 className="mb-1.5 text-xs font-semibold text-faint uppercase">Recent sessions</h3>
-            {summary.security.recentSessions.map((s, i) => <div key={i} className="text-xs text-muted">{s.ip ?? "unknown ip"} · {timeAgo(s.createdAt)}{s.revokedAt ? " · revoked" : ""}</div>)}
+            {summary.security.recentSessions.map((s, i) => <div key={i} className="text-xs text-muted">{s.userName} · {s.ip ?? "unknown ip"} · {timeAgo(s.createdAt)}{s.revokedAt ? " · revoked" : ""}</div>)}
             {summary.security.recentSessions.length === 0 && <p className="text-xs text-muted">None.</p>}
           </div>
           <div>
