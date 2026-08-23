@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { runCrossTenant } from "@/lib/tenant-context";
 import { DemoClient } from "./demo-client";
 
 // Queries the DB, so it must render per-request, not be statically prerendered
@@ -9,15 +10,21 @@ export const dynamic = "force-dynamic";
 // which organization number to message and which sender you are; P2Less routes
 // by the destination number to the right tenant — exactly like the real webhook.
 export default async function DemoPage() {
-  const numbers = await db.whatsAppNumber.findMany({
-    where: { status: "active" },
-    include: { tenant: true },
-    orderBy: { createdAt: "asc" },
-  });
-  const contacts = await db.contact.findMany({
-    include: { tenant: { include: { numbers: true } } },
-    orderBy: { createdAt: "asc" },
-  });
+  // Public, unauthenticated page — a genuinely intentional cross-tenant read
+  // (lets a visitor pick any org/contact to simulate). Found broken in
+  // production by the 2026-08-23 fail-closed rollout, same as the landing
+  // page — public pages are a category the choke-point audit missed.
+  const [numbers, contacts] = await runCrossTenant(() => Promise.all([
+    db.whatsAppNumber.findMany({
+      where: { status: "active" },
+      include: { tenant: true },
+      orderBy: { createdAt: "asc" },
+    }),
+    db.contact.findMany({
+      include: { tenant: { include: { numbers: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+  ]));
 
   const orgs = numbers.map((n) => ({
     number: n.phoneNumber,

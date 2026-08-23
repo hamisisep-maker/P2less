@@ -4,7 +4,7 @@ import { randomToken } from "@/lib/crypto";
 import { recordInboundEvent, finishInboundEvent } from "@/lib/inbound-events";
 import { recordChannelOutcome, recordChannelCallback } from "@/lib/payment-channels";
 import { handleSubscriptionPaymentConfirmed } from "@/lib/billing-lifecycle";
-import { enterTenantContext } from "@/lib/tenant-context";
+import { enterTenantContext, runCrossTenant } from "@/lib/tenant-context";
 
 // Daraja C2B "Confirmation" — fires AFTER Safaricom has ALREADY moved the
 // customer's money into the PayBill/Till. Unlike STK Push, P2Less never
@@ -55,8 +55,11 @@ export async function POST(req: Request) {
   let relatedPaymentId: string | undefined;
   let relatedTenantId: string | undefined;
 
+  // Deliberately cross-tenant — resolves WHICH tenant this confirmation
+  // belongs to, before any context can exist. Found in the same 2026-08-23
+  // fail-closed audit as every other webhook's own lookup.
   const subscription = parsed.billRefNumber
-    ? await db.subscription.findUnique({ where: { paybillReference: parsed.billRefNumber } })
+    ? await runCrossTenant(() => db.subscription.findUnique({ where: { paybillReference: parsed.billRefNumber! } }))
     : null;
 
   if (subscription) {

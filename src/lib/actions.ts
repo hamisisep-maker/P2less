@@ -6,6 +6,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { db } from "./db";
 import { verifyPassword, hashPassword, createSession, destroySession, requireTenantUser, userPermissions, recordLoginAttempt, clientMeta } from "./auth";
+import { runCrossTenant } from "./tenant-context";
 import { encryptJSON, randomToken, sha256 } from "./crypto";
 import { rateLimit } from "./rate-limit";
 import { WEBHOOK_EVENTS } from "./webhooks";
@@ -51,7 +52,12 @@ export async function loginAction(_prev: unknown, formData: FormData) {
     return { error: `Too many failed attempts. Try again in a few minutes.` };
   }
 
-  const user = await db.user.findUnique({ where: { email } });
+  // Deliberately cross-tenant — this IS the lookup that resolves who's
+  // logging in and which tenant (if any) they belong to; nothing can be
+  // scoped yet. Found in the same 2026-08-23 fail-closed audit as every
+  // other identity-resolution lookup — this one is the most critical, since
+  // it broke login itself in production.
+  const user = await runCrossTenant(() => db.user.findUnique({ where: { email } }));
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
     await recordLoginAttempt(email, false);
     return { error: "Invalid email or password." };
@@ -196,15 +202,18 @@ async function validateOnboardFields(formData: FormData): Promise<{ error: strin
   const d = parsed.data;
   const emailCanonical = canonicalizeEmail(d.adminEmail);
 
-  if (await db.user.findUnique({ where: { email: d.adminEmail } })) {
-    return { error: "That email already has an account. Try signing in." };
-  }
-  if (await db.user.findUnique({ where: { emailCanonical } })) {
-    return { error: "That email already has an account (even if it looks slightly different — dots and +tags on the same inbox count as one account). Try signing in, or contact us if this isn't yours." };
-  }
-  if (await db.whatsAppNumber.findUnique({ where: { phoneNumber: d.phoneNumber } })) {
-    return { error: "That phone number is already registered on P2Less. Use a different number, or contact us if this is yours." };
-  }
+  // Deliberately cross-tenant — these are global uniqueness pre-checks
+  // before any tenant exists to create context from. Found in the same
+  // 2026-08-23 fail-closed audit as every other pre-context lookup.
+  const clash = await runCrossTenant(async () => {
+    if (await db.user.findUnique({ where: { email: d.adminEmail } })) return "email";
+    if (await db.user.findUnique({ where: { emailCanonical } })) return "emailCanonical";
+    if (await db.whatsAppNumber.findUnique({ where: { phoneNumber: d.phoneNumber } })) return "phone";
+    return null;
+  });
+  if (clash === "email") return { error: "That email already has an account. Try signing in." };
+  if (clash === "emailCanonical") return { error: "That email already has an account (even if it looks slightly different — dots and +tags on the same inbox count as one account). Try signing in, or contact us if this isn't yours." };
+  if (clash === "phone") return { error: "That phone number is already registered on P2Less. Use a different number, or contact us if this is yours." };
   return { data: d, emailCanonical };
 }
 
@@ -278,7 +287,16 @@ async function finalizeOnboarding(
   // number collision slipping past the check above under a race) must not leave
   // an orphaned tenant/roles/owner with no WhatsApp number. One transaction.
   try {
-    const { password } = await db.$transaction(async (tx) => {
+    // Self-service signup creates a BRAND-NEW tenant's rows (Subscription,
+    // Role, User, WhatsAppNumber, Channel — all tenant-scoped models) before
+    // any tenant context could possibly exist to "enter" — there's no
+    // pre-existing tenant yet. Found broken in production by the 2026-08-23
+    // fail-closed rollout: every create below explicitly sets tenantId
+    // itself already (safe), but the extension's context check ran before
+    // ever looking at that. runCrossTenant is the correct marker here, same
+    // as the public landing/demo pages — genuinely not scoped to an existing
+    // single tenant at the point these writes happen.
+    const { password } = await runCrossTenant(() => db.$transaction(async (tx) => {
       const tenant = await tx.tenant.create({
         data: {
           name: d.orgName, slug, industry: d.industry, status: "trial",
@@ -323,7 +341,7 @@ async function finalizeOnboarding(
       });
 
       return { password };
-    });
+    }));
 
     // Real signup-clustering check — several DIFFERENT signups completing
     // from the same IP within a day is exactly the trial-abuse pattern

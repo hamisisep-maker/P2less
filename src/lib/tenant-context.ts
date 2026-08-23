@@ -4,11 +4,18 @@ import { AsyncLocalStorage } from "node:async_hooks";
 // ─────────────────────────────────────────────────────────────────────────────
 // Tenant-isolation hardening — carries the CURRENT tenant through to db.ts's
 // Prisma Client Extension (src/lib/db.ts), which auto-scopes every query on a
-// tenant-scoped model to this tenant. Mirrors ai-context.ts's exact pattern:
-// enterWith() for request-scoped entry points (applies to the rest of the
-// current async call chain, no wrapping callback needed), a real .run()
-// callback scope for background-job loops that must isolate one tenant's
-// iteration from the next.
+// tenant-scoped model to this tenant. Mirrors ai-context.ts's exact pattern.
+//
+// Every function here uses enterWith() (ambient mutation of the current async
+// context), never storage.run(). A real bug found and fixed 2026-08-23:
+// runWithTenant()/runCrossTenant() originally used storage.run() on the
+// documented theory that a real callback scope isolates one loop iteration
+// better than ambient mutation — proved wrong by a live isolated test
+// (see runWithTenant's comment): storage.run()'s context reliably did NOT
+// survive into Prisma's $allOperations extension callback in this Prisma
+// version, so every query inside a runWithTenant/runCrossTenant callback
+// silently ran with NO context at all. enterWith() is confirmed live to work
+// correctly through the same extension.
 //
 // Also carries the current CHANNEL label (WhatsApp/Messenger/Telegram/Email/
 // the website chat) — same "set once at handleInbound, read deep inside
@@ -55,12 +62,24 @@ export function enterTenantContext(tenantId: string, channelType?: string): void
 
 /** For background jobs that loop over MANY tenants in one function
  *  invocation (e.g. runReconciliationSweep finds stale payments across every
- *  tenant, then processes each). A real callback scope so each iteration's
- *  context is isolated and automatically pops back to "no tenant" afterward
- *  — enterWith() would instead persist for the rest of the job function,
- *  bleeding into the next iteration or any post-loop code. */
+ *  tenant, then processes each) — sets context for the current iteration.
+ *
+ *  REAL BUG FOUND 2026-08-23, fixed same day: this used to use
+ *  `storage.run({ tenantId }, fn)`, on the documented theory that a real
+ *  callback scope isolates one iteration from the next better than
+ *  enterWith()'s ambient mutation. Proved wrong by a live isolated test
+ *  (src/app/api/debug-ctx, temporary): `storage.run()`'s context reliably
+ *  does NOT survive into Prisma's `$allOperations` extension callback in
+ *  this Prisma version — the query dispatch escapes whatever continuation
+ *  chain `.run()` tracks, so every query inside the callback saw NO context
+ *  at all, not even the wrong one. `enterWith()`-based context, confirmed
+ *  live to work correctly through the same extension. Every call site here
+ *  is a sequential `for...of` loop (never `Promise.all`), so ambient mutation
+ *  is safe: each iteration sets its own tenantId before its own work runs,
+ *  with no concurrent interleaving to race against. */
 export function runWithTenant<T>(tenantId: string, fn: () => T): T {
-  return storage.run({ tenantId }, fn);
+  storage.enterWith({ tenantId });
+  return fn();
 }
 
 export function getCurrentTenantId(): string | undefined {
@@ -91,13 +110,18 @@ export function enterCrossTenantContext(): void {
   storage.enterWith({ crossTenant: true });
 }
 
-/** Same intent, scoped to one background-job execution via a real callback
- *  (storage.run(), not enterWith()) — concurrent job runs shouldn't share
- *  mutable context, and it should NOT persist past the job like enterWith
- *  would. Mirrors runWithTenant's own reasoning for the identical
- *  loop-isolation problem. */
+/** Same intent as enterCrossTenantContext(), for one background-job
+ *  execution (job-runner.ts's runJobNow wraps every job with this).
+ *  Uses enterWith() internally, not storage.run() — see runWithTenant's
+ *  comment for the real bug this fixes: storage.run()'s context did not
+ *  survive into Prisma's extension callback, confirmed by a live isolated
+ *  test. Each runJobNow() call is a fresh, independent async invocation
+ *  (from setInterval or a server action) with nothing after it that needs
+ *  the prior context back, so enterWith()'s ambient (non-popping) mutation
+ *  is safe here too. */
 export function runCrossTenant<T>(fn: () => T): T {
-  return storage.run({ crossTenant: true }, fn);
+  storage.enterWith({ crossTenant: true });
+  return fn();
 }
 
 export function isCrossTenantContext(): boolean {

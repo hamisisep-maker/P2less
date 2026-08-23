@@ -4,6 +4,7 @@ import { sendTyping, fetchWhatsAppMedia, sendWhatsAppText } from "@/lib/transpor
 import { transcribeAudio } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { recordInboundEvent, finishInboundEvent } from "@/lib/inbound-events";
+import { runCrossTenant } from "@/lib/tenant-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WhatsApp Cloud API channel adapter. Same shared engine as web chat — the only
@@ -128,7 +129,16 @@ async function processEvents(payload: WaPayload): Promise<void> {
 
       // Route on the DESTINATION: the Cloud-API phone_number_id identifies which
       // registered organization number (and therefore which tenant) was messaged.
-      const orgNumber = await db.whatsAppNumber.findUnique({ where: { phoneNumberId } });
+      // Deliberately cross-tenant — this IS the lookup that resolves which
+      // tenant a message belongs to, so no tenant context can exist yet.
+      // Found broken (silently — this whole block runs inside a
+      // .catch(() => {}), so it was dropping every real inbound WhatsApp
+      // message with no visible error) by the 2026-08-23 fail-closed
+      // rollout: real channel webhooks' pre-context lookups are a category
+      // the choke-point audit missed entirely, since scripts/test.ts
+      // exercises a separate test-only /api/channels/webchat endpoint that
+      // never goes through this real lookup.
+      const orgNumber = await runCrossTenant(() => db.whatsAppNumber.findUnique({ where: { phoneNumberId } }));
       if (!orgNumber) continue;
 
       for (const m of messages) {

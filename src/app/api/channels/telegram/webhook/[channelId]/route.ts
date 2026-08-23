@@ -1,6 +1,7 @@
 import { handleInbound } from "@/lib/conversation";
 import { db } from "@/lib/db";
 import { recordInboundEvent, finishInboundEvent } from "@/lib/inbound-events";
+import { runCrossTenant } from "@/lib/tenant-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Telegram channel adapter — Phase 8d. Same shared engine as every other
@@ -30,7 +31,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ channel
   const { channelId } = await params;
   const raw = await req.text();
 
-  const channel = await db.channel.findUnique({ where: { id: channelId } });
+  // Deliberately cross-tenant — resolves WHICH tenant this bot belongs to,
+  // via the route's own channelId param, before any context can exist.
+  // Same category of gap as every other channel webhook's own lookup,
+  // found in the same 2026-08-23 fail-closed audit.
+  const channel = await runCrossTenant(() => db.channel.findUnique({ where: { id: channelId } }));
   if (!channel || channel.type !== "telegram" || channel.status !== "active") {
     return new Response("Not found", { status: 404 });
   }

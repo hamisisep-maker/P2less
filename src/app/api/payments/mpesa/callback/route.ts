@@ -7,7 +7,7 @@ import { tryAssignTrip } from "@/lib/dispatch";
 import { handleSubscriptionPaymentConfirmed, handleSubscriptionPaymentFailed } from "@/lib/billing-lifecycle";
 import { recordInboundEvent, finishInboundEvent } from "@/lib/inbound-events";
 import { recordChannelOutcome, recordChannelCallback, syncReconciliationFlag } from "@/lib/payment-channels";
-import { enterTenantContext } from "@/lib/tenant-context";
+import { enterTenantContext, runCrossTenant } from "@/lib/tenant-context";
 
 // Safaricom Daraja posts the final STK-push result here. We match it to the
 // pending Payment by CheckoutRequestID and mark it paid or failed. Every
@@ -36,7 +36,10 @@ export async function POST(req: Request) {
   let matched = false;
 
   if (parsed) {
-    const payment = await db.payment.findFirst({ where: { providerRef: parsed.checkoutId } });
+    // Deliberately cross-tenant — resolves WHICH tenant this callback
+    // belongs to, before any context can exist. Found in the same
+    // 2026-08-23 fail-closed audit as every other webhook's own lookup.
+    const payment = await runCrossTenant(() => db.payment.findFirst({ where: { providerRef: parsed.checkoutId } }));
     // Accept a genuinely late callback even after the reconciliation sweep
     // already flipped this payment to "unknown" — previously only "pending"
     // was accepted, so a real-but-late webhook arriving after that point was

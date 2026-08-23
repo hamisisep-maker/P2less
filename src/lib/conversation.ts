@@ -19,7 +19,7 @@ import { pickTool, allTools } from "./tools";
 import { startTopup, creditRateKes, creditsForAmount } from "./wallet";
 import { isConfigured as mpesaConfigured } from "./mpesa";
 import { setAiTenantContext } from "./ai-context";
-import { enterTenantContext, currentChannelSupportsFiles, getCurrentChannelLabel } from "./tenant-context";
+import { enterTenantContext, currentChannelSupportsFiles, getCurrentChannelLabel, runCrossTenant } from "./tenant-context";
 import { nextTicketNumber } from "./ticket-numbering";
 import { queueNotification } from "./notifications";
 import { resolveNumberBranch } from "./branches";
@@ -222,19 +222,31 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       name: assistant,
     };
     branchLookup = { branchId: null, tenantId: tenant.id };
+    // Deliberately cross-tenant — this whole routing block runs BEFORE
+    // enterTenantContext() below resolves who "the current tenant" even is.
+    // Found in the same 2026-08-23 fail-closed audit as every other
+    // identity-resolution lookup.
     if (input.channelType === "messenger") {
-      const channel = await db.channel.findFirst({ where: { tenantId: tenant.id, type: "messenger", status: "active" } });
+      const channel = await runCrossTenant(() => db.channel.findFirst({ where: { tenantId: tenant.id, type: "messenger", status: "active" } }));
       fromPageId = channel?.address ?? null;
     }
     if (input.channelType === "telegram") {
-      const channel = await db.channel.findFirst({ where: { tenantId: tenant.id, type: "telegram", status: "active" } });
+      const channel = await runCrossTenant(() => db.channel.findFirst({ where: { tenantId: tenant.id, type: "telegram", status: "active" } }));
       fromTelegramBotId = channel?.address ?? null;
     }
   } else {
-    const num = await db.whatsAppNumber.findUnique({
+    // Deliberately cross-tenant — resolves WHICH tenant this destination
+    // number belongs to, before any context can exist. Same category of
+    // gap as every channel webhook's own lookup, found in the same
+    // 2026-08-23 fail-closed audit — this is the ADDITIONAL internal lookup
+    // handleInbound() itself does (separate from the webhook route's own
+    // phoneNumberId lookup, already fixed), hit by every caller that routes
+    // via toNumber instead of a pre-resolved tenantId (webchat, and the
+    // real WhatsApp webhook, which passes toNumber here too).
+    const num = await runCrossTenant(() => db.whatsAppNumber.findUnique({
       where: { phoneNumber: input.toNumber },
       include: { tenant: { include: { subscription: true } } },
-    });
+    }));
     if (!num || num.status !== "active" || num.tenant.status === "suspended") {
       // Unknown/inactive number: nothing to reply as, and no tenant to bill/audit.
       return { ok: false, replies: [{ body: "This number is not in service." }] };

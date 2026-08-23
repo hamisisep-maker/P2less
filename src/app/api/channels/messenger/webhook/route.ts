@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { handleInbound } from "@/lib/conversation";
 import { db } from "@/lib/db";
 import { recordInboundEvent, finishInboundEvent } from "@/lib/inbound-events";
+import { runCrossTenant } from "@/lib/tenant-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Facebook Messenger channel adapter — Phase 8a. Same shared engine as
@@ -99,7 +100,10 @@ async function processEvents(payload: MessengerPayload): Promise<void> {
       if (!psid || !text || m.message?.is_echo) continue;
       if (!firstTimeSeeing(m.message?.mid)) continue; // skip Meta re-deliveries
 
-      const channel = await db.channel.findFirst({ where: { type: "messenger", address: pageId, status: "active" } });
+      // Deliberately cross-tenant — resolves WHICH tenant this Page belongs
+      // to. Same category of gap as the WhatsApp webhook's own lookup,
+      // found in the same 2026-08-23 fail-closed audit.
+      const channel = await runCrossTenant(() => db.channel.findFirst({ where: { type: "messenger", address: pageId, status: "active" } }));
       if (!channel) continue; // Page not connected to any tenant — nothing to route to
 
       await handleInbound({

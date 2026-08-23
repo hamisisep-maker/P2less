@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "./db";
 import { sha256 } from "./crypto";
 import { rateLimit } from "./rate-limit";
-import { enterTenantContext } from "./tenant-context";
+import { enterTenantContext, runCrossTenant } from "./tenant-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Developer API authentication. Requests present a tenant API key as
@@ -21,10 +21,14 @@ export async function authenticateApiKey(req: Request): Promise<ApiActor | null>
   const m = header.match(/^Bearer\s+(p2l_[A-Za-z0-9_-]+)$/);
   if (!m) return null;
   const key = m[1];
-  const record = await db.apiKey.findFirst({ where: { keyHash: sha256(key), revokedAt: null } });
+  // Deliberately cross-tenant — resolves WHICH tenant this key belongs to,
+  // before any context can exist. Found in the same 2026-08-23 fail-closed
+  // audit as every other identity-resolution lookup (webhooks, OAuth
+  // callbacks) — the Developer API has the identical chicken-and-egg shape.
+  const record = await runCrossTenant(() => db.apiKey.findFirst({ where: { keyHash: sha256(key), revokedAt: null } }));
   if (!record) return null;
   // Best-effort last-used timestamp (don't block the request).
-  db.apiKey.update({ where: { id: record.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
+  runCrossTenant(() => db.apiKey.update({ where: { id: record.id }, data: { lastUsedAt: new Date() } })).catch(() => {});
   return { tenantId: record.tenantId, apiKeyId: record.id, scopes: (record.scopes as string[]) ?? [] };
 }
 

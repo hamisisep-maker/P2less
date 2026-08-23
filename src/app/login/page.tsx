@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { runCrossTenant } from "@/lib/tenant-context";
 import { Logo } from "@/components/ui";
 import { LoginForm } from "./login-form";
 
@@ -15,7 +16,7 @@ export default async function LoginPage() {
   // Demo-account listing is a real credential exposure (real seeded emails +
   // the literal shared password, pre-filled) — dev/staging convenience only,
   // never rendered against a production build (Gap-011, fixed 2026-08-23).
-  const accounts = process.env.NODE_ENV === "production" ? [] : await (async () => {
+  const accounts = process.env.NODE_ENV === "production" ? [] : await runCrossTenant(async () => {
     const demo = await db.user.findMany({
       where: { isSuperAdmin: false },
       include: { userRoles: { include: { role: true } }, tenant: true },
@@ -27,7 +28,7 @@ export default async function LoginPage() {
     return demo
       .filter((u) => u.tenantId && !seen.has(u.tenantId) && (seen.add(u.tenantId), true))
       .map((u) => ({ email: u.email, name: u.name, role: u.tenant?.name ?? "Organization" }));
-  })();
+  });
 
   return (
     <div className="grid min-h-screen lg:grid-cols-2">

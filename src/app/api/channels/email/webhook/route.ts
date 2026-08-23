@@ -2,6 +2,7 @@ import { handleInbound } from "@/lib/conversation";
 import { db } from "@/lib/db";
 import { verifyResendWebhookSignature, fetchReceivedEmail, extractPlainText } from "@/lib/email-channel";
 import { recordInboundEvent, finishInboundEvent } from "@/lib/inbound-events";
+import { runCrossTenant } from "@/lib/tenant-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Email channel adapter — Phase 8d, deliberately last/lowest-priority
@@ -59,7 +60,10 @@ async function processEmail(payload: ResendWebhookPayload): Promise<void> {
   const from = payload.data?.from;
   if (!emailId || !from || recipients.length === 0) return;
 
-  const channel = await db.channel.findFirst({ where: { type: "email", address: { in: recipients }, status: "active" } });
+  // Deliberately cross-tenant — resolves WHICH tenant this recipient address
+  // belongs to. Same category of gap as every other channel webhook's own
+  // lookup, found in the same 2026-08-23 fail-closed audit.
+  const channel = await runCrossTenant(() => db.channel.findFirst({ where: { type: "email", address: { in: recipients }, status: "active" } }));
   if (!channel) return; // sent to an address not connected to any tenant
 
   const full = await fetchReceivedEmail(emailId);

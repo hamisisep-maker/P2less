@@ -1,19 +1,6 @@
 import { PrismaClient, Prisma } from "@prisma/client";
 import { getCurrentTenantId, isCrossTenantContext } from "./tenant-context";
 
-/** Thrown when a tenant-scoped model is queried with NEITHER a real tenant
- *  context NOR an explicit cross-tenant marker set — the actual bug the
- *  whole extension exists to catch (2026-08-23 fail-open audit; previously
- *  this case silently ran the query completely unscoped instead). A real
- *  cross-tenant need (an admin page, a background job) always sets one of
- *  the two deliberately — see tenant-context.ts. */
-export class TenantContextMissingError extends Error {
-  constructor(model: string, operation: string) {
-    super(`Tenant-scoped query on ${model}.${operation} ran with no tenant context established. Call enterTenantContext()/runWithTenant() for a tenant-scoped path, or enterCrossTenantContext()/runCrossTenant() for a deliberately cross-tenant one (admin, background job).`);
-    this.name = "TenantContextMissingError";
-  }
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Tenant-isolation hardening — structural backstop for SQLite (no Row-Level
 // Security available here), since app-layer discipline alone means a
@@ -81,14 +68,25 @@ function buildClient() {
           if (!model || !TENANT_SCOPED_MODELS.has(model)) return query(args);
           const tenantId = getCurrentTenantId();
           if (!tenantId) {
-            // Fail CLOSED, not open (2026-08-23 audit) — a deliberately
-            // cross-tenant path (every /admin/** page/action, every
-            // background job) always marks itself via enterCrossTenantContext/
-            // runCrossTenant; anything reaching here with neither a tenant
-            // NOR that marker set genuinely forgot to establish context,
-            // which used to run completely unscoped instead of erroring.
-            if (isCrossTenantContext()) return query(args);
-            throw new TenantContextMissingError(model, operation);
+            // REVERTED TO WARN-ONLY, 2026-08-23, same day as the fail-closed
+            // attempt above. The hard-throw version broke production
+            // (landing page, /demo, admin pages) — traced to React Server
+            // Component page renders NOT reliably propagating this
+            // AsyncLocalStorage context the way Route Handlers and Server
+            // Actions do (both of those DID work, confirmed live via an
+            // isolated test route) — likely a distinct RSC rendering
+            // realm/module-graph under this Next.js/Turbopack setup that
+            // doesn't share continuation with the rest of the request the
+            // way a plain function-call chain does. Fixing that properly
+            // needs a different propagation mechanism for page renders
+            // (e.g. Next.js's own request-scoped primitives), not another
+            // patch on top of this one — real follow-up work, not attempted
+            // today. Logs loudly instead of throwing, so the visibility this
+            // audit was for isn't lost, without repeating the outage.
+            if (!isCrossTenantContext()) {
+              console.error(`[TENANT-CONTEXT-MISSING] ${model}.${operation} ran with no tenant context established — would have been blocked under the (reverted) fail-closed policy. See db.ts's 2026-08-23 comment.`);
+            }
+            return query(args);
           }
           const a = args as Record<string, unknown>;
 

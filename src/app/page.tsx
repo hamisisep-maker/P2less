@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { runCrossTenant } from "@/lib/tenant-context";
 import { Logo } from "@/components/ui";
 import { AudienceOrbit } from "./audience-orbit";
 import { AudienceTabs } from "./audience-tabs";
@@ -33,7 +34,11 @@ const PROCESS_STEPS = [
 ];
 
 export default async function Landing() {
-  const numbers = await db.whatsAppNumber.findMany({ where: { status: "active" }, include: { tenant: true } });
+  // Public, unauthenticated page — a genuinely intentional cross-tenant read
+  // (lists which real orgs are demoable), found broken in production by the
+  // 2026-08-23 fail-closed rollout: no admin/job/dashboard choke point
+  // applies to a public marketing page, a category the audit missed.
+  const numbers = await runCrossTenant(() => db.whatsAppNumber.findMany({ where: { status: "active" }, include: { tenant: true } }));
   const industries = Array.from(new Set(numbers.map((n) => n.tenant.industry)));
 
   return (

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
-import { enterTenantContext, enterCrossTenantContext } from "./tenant-context";
+import { enterTenantContext, enterCrossTenantContext, runCrossTenant } from "./tenant-context";
 
 const secret = new TextEncoder().encode(process.env.AUTH_SECRET || "p2less-dev-secret");
 const COOKIE = "p2less_session";
@@ -104,10 +104,16 @@ export async function getSession(): Promise<SessionPayload | null> {
 export async function getCurrentUser() {
   const session = await getSession();
   if (!session) return null;
-  const user = await db.user.findUnique({
+  // Deliberately cross-tenant — this IS the lookup that resolves who's
+  // making the request and which tenant (if any) they belong to, called
+  // before requireTenantUser()/requireSuperAdmin() get a chance to
+  // establish real context. The single most critical fix in the 2026-08-23
+  // fail-closed audit: every authenticated request on the platform depends
+  // on this one function.
+  const user = await runCrossTenant(() => db.user.findUnique({
     where: { id: session.uid },
     include: { tenant: true, userRoles: { include: { role: true } }, adminRole: true },
-  });
+  }));
   // A deactivated staff/admin account is treated as logged out on their very
   // next request — no separate session-table revocation needed, since this
   // check runs on every request that resolves a user.

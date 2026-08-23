@@ -1,6 +1,7 @@
 import { handleInbound } from "@/lib/conversation";
 import { db } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
+import { runCrossTenant } from "@/lib/tenant-context";
 import { z } from "zod";
 
 // Universal Platform roadmap Phase 8e (2026-08-20) — the embeddable website
@@ -62,7 +63,11 @@ export async function POST(req: Request) {
   if (!parsed.success) return Response.json({ error: "Invalid request", issues: parsed.error.issues }, { status: 400, headers });
   const { widgetKey: keyValue, sessionId, text, displayName } = parsed.data;
 
-  const widgetKey = await db.widgetKey.findUnique({ where: { key: keyValue } });
+  // Deliberately cross-tenant — this resolves WHICH tenant the key belongs
+  // to, so no tenant context can exist yet. Found broken by the 2026-08-23
+  // fail-closed rollout, same category as the WhatsApp webhook's own
+  // destination lookup.
+  const widgetKey = await runCrossTenant(() => db.widgetKey.findUnique({ where: { key: keyValue } }));
   if (!widgetKey || !widgetKey.active) {
     return Response.json({ error: "invalid_key" }, { status: 401, headers });
   }
@@ -84,7 +89,7 @@ export async function POST(req: Request) {
     );
   }
 
-  db.widgetKey.update({ where: { id: widgetKey.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
+  runCrossTenant(() => db.widgetKey.update({ where: { id: widgetKey.id }, data: { lastUsedAt: new Date() } })).catch(() => {});
 
   const result = await handleInbound({
     tenantId: widgetKey.tenantId,
