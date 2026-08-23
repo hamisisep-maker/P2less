@@ -225,6 +225,8 @@ This is the user's own stated caution, and it's exactly the right one — it's p
 
 **The concrete test for whether a report is honest, worth keeping as the acceptance bar**: it should be able to say *"This report contains 137 verified findings originating from 4 testing exercises and 82 user feedback reports"* — every number traceable back to a real count of real rows — never a polished document whose numbers were manually entered.
 
+**Status update, 2026-08-23**: the atomic-enrollment concern raised above is no longer purely a design note — a minimal `TrainingSession`/`TrainingParticipant` v1 shipped, atomically enforced exactly as described, plus a real isolation bug caught before it reached production (an active session was initially gating *every* contact who messaged the tenant, not just enrolled testers — fixed to explicit per-contact enrollment). The permanent continuous-testing-alongside-real-clients architecture (dedicated tester identities, a personal Live/Training toggle, knowledge/config staging-and-promote, findings linked to production telemetry) and a separate platform-level registration/onboarding kill-switch proposal were both recorded as VISION, not built. Full detail in `docs/OPERATIONS-GUIDE-2026-08-23.md` §41–§42 — not duplicated here.
+
 ### Presentation tiers
 
 The same underlying records, filtered differently by audience — this is also the first concrete answer to open question 3 below (data handling):

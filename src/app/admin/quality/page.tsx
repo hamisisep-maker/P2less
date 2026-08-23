@@ -4,6 +4,7 @@ import { requireAdminPermission } from "@/lib/admin-authz";
 import { Card, PageHeader, Badge, timeAgo } from "@/components/ui";
 import { QUALITY_CATEGORIES, TICKET_SOURCES, ACTION_DECISIONS } from "@/lib/quality-taxonomy";
 import { RecruitPilotCard } from "./recruit-pilot-card";
+import { TrainingSessionCard } from "./training-session-card";
 
 const STATUS_TONE: Record<string, "rose" | "amber" | "indigo" | "green" | "neutral"> = {
   open: "rose", assigned: "amber", in_progress: "indigo", waiting_on_customer: "amber",
@@ -23,11 +24,24 @@ function actionTone(value: string): "rose" | "green" | "indigo" {
 export default async function AdminQualityPage() {
   await requireAdminPermission("tickets.view");
 
-  const tickets = await db.supportTicket.findMany({
-    where: { qualityCategory: { not: null } },
-    include: { tenant: { select: { name: true } } },
-    orderBy: { createdAt: "desc" },
-  });
+  const [tickets, tenants, activeSessionsRaw] = await Promise.all([
+    db.supportTicket.findMany({
+      where: { qualityCategory: { not: null } },
+      include: { tenant: { select: { name: true } } },
+      orderBy: { createdAt: "desc" },
+    }),
+    db.tenant.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.trainingSession.findMany({
+      where: { status: "active" },
+      include: { tenant: { select: { name: true } }, participants: { include: { contact: { select: { address: true } } } } },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+  const activeSessions = activeSessionsRaw.map((s) => ({
+    id: s.id, tenantId: s.tenantId, tenantName: s.tenant.name, name: s.name, questionsPerParticipant: s.questionsPerParticipant,
+    participantCount: s.participants.length, questionsUsed: s.participants.reduce((sum, p) => sum + p.questionCount, 0), createdAt: s.createdAt,
+    participants: s.participants.map((p) => ({ address: p.contact.address, questionCount: p.questionCount })),
+  }));
 
   const bySource = { internal: 0, tenant: 0, public_report: 0 } as Record<string, number>;
   for (const t of tickets) bySource[t.source] = (bySource[t.source] ?? 0) + 1;
@@ -50,6 +64,8 @@ export default async function AdminQualityPage() {
         title="Quality Centre"
         subtitle="Every ticket that's entered the AI-quality investigation waterfall, grouped by what the investigation actually found. Flag a ticket from its own page (Quality investigation panel) to bring it in here."
       />
+
+      <TrainingSessionCard tenants={tenants} activeSessions={activeSessions} />
 
       <RecruitPilotCard />
 

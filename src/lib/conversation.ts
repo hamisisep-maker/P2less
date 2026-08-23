@@ -359,15 +359,67 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // these; the AI may answer from them verbatim but never invents beyond them.
   const orgFaqs = ((tenant.faqs as { q: string; a: string }[] | null) ?? []).filter((f) => f && f.q && f.a);
 
+  // Training Session gate (minimal v1, docs/PUBLIC-FEEDBACK-QUALITY-CENTRE-
+  // 2026-08-23.md's TestExercise section, built after seven rounds of
+  // design with nothing shipped) — declared here, ahead of emit(), so
+  // emit's closure picks up whatever this turn's gate check sets below.
+  // Deliberately does NOT alter the real reply; it only appends one extra
+  // notice on a participant's final allowed question, via the SAME emit()
+  // every reply path already funnels through — so this covers every branch
+  // uniformly instead of needing to touch each one.
+  let trainingWarnNearLimit = false;
+
   const emit = async (replies: Reply[], status: string, nextCtx: ConvContext) => {
     await db.conversation.update({ where: { id: conversation!.id }, data: { status, context: nextCtx as object } });
-    for (const r of replies) {
+    const finalReplies = trainingWarnNearLimit
+      ? [...replies, { body: "You've reached your allocated questions for this P2Less training session. If you found anything incorrect, confusing, unexpected, or broken, please report it now — your team lead will follow up. Thank you for participating!" }]
+      : replies;
+    for (const r of finalReplies) {
       // otp_hint / system notes are demo aids and are not re-metered as separate sends
       if (r.kind === "otp_hint" || r.kind === "system") continue;
       await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body: r.body, meta: r.meta, fromNumberId: number?.phoneNumberId, fromPageId, fromTelegramBotId, document: r.document, image: r.image });
     }
-    return { ok: true, replies, conversationId: conversation!.id, from: fromIdentity } satisfies HandleResult;
+    return { ok: true, replies: finalReplies, conversationId: conversation!.id, from: fromIdentity } satisfies HandleResult;
   };
+
+  // Checked right after emit() is defined so a participant who's already
+  // over their limit can be short-circuited immediately, before any
+  // AI/connector work runs for their message — a real resource saving, not
+  // just a UX nicety.
+  //
+  // Deliberately does NOT look up "is there an active session for this
+  // tenant" first — an active session must never change behavior for a
+  // contact nobody explicitly enrolled. Only a contact an admin has already
+  // added to a session via addTrainingParticipantAction (a TrainingParticipant
+  // row that already exists) is gated at all; a real customer messaging the
+  // same tenant number is untouched regardless of session state. This is
+  // the actual safety boundary, not a comment — a tenant-wide "if session
+  // active, gate everyone" check was the first version and was wrong.
+  {
+    const existingParticipant = await db.trainingParticipant.findFirst({
+      where: { contactId: contact.id, session: { tenantId: tenant.id, status: "active" } },
+      include: { session: true },
+    });
+    if (existingParticipant) {
+      const activeSession = existingParticipant.session;
+      // Atomic — SQLite's single-writer semantics make one $transaction
+      // genuinely close the race window a naive "read count, then write"
+      // would leave open under concurrent messages from the same
+      // participant. Would need re-verification — a real row lock or
+      // constraint-based upsert — before ever running against Postgres
+      // with multiple app instances.
+      const gate = await db.$transaction(async (tx) => {
+        const current = await tx.trainingParticipant.findUniqueOrThrow({ where: { id: existingParticipant.id } });
+        if (current.questionCount >= activeSession.questionsPerParticipant) return { overLimit: true as const, count: current.questionCount };
+        const p = await tx.trainingParticipant.update({ where: { id: current.id }, data: { questionCount: { increment: 1 } } });
+        return { overLimit: false as const, count: p.questionCount };
+      });
+      if (gate.overLimit) {
+        return emit([{ body: "Thank you for participating in this P2Less training session. You've reached your allocated question limit. Your participation has been recorded." }], "open", ctx);
+      }
+      trainingWarnNearLimit = gate.count === activeSession.questionsPerParticipant;
+    }
+  }
 
   // Send ONE message right now, mid-turn — before slow work (reading a document,
   // writing a CV) starts — so the person sees "I'm on it" instead of long silence

@@ -504,6 +504,7 @@ model Tenant {
   apiKeys       ApiKey[]
   webhooks      Webhook[]
   tickets       SupportTicket[]
+  trainingSessions TrainingSession[]
   payments      Payment[]
   products      Product[]
   orders        Order[]
@@ -924,6 +925,7 @@ model Contact {
   payments      Payment[]
   orders        Order[]
   tickets       SupportTicket[]
+  trainingParticipations TrainingParticipant[]
 
   @@unique([tenantId, channelType, address])
   @@index([tenantId])
@@ -1451,6 +1453,49 @@ model TicketEvent {
   createdAt  DateTime @default(now())
 
   @@index([ticketId, createdAt])
+}
+
+/// Minimal v1 of the "training session" design (docs/PUBLIC-FEEDBACK-
+/// QUALITY-CENTRE-2026-08-23.md's TestExercise section) — built 2026-08-23
+/// after the design was refined across seven rounds with nothing shipped.
+/// Deliberately scoped down to exactly three things: a named session, a
+/// per-participant question counter (atomically enforced — see
+/// setTrainingQuestionCountAction), and a near-limit "did you find
+/// anything?" prompt. Explicitly NOT built here: participant caps
+/// (target/maximum), session objectives/coverage tracking, structured-vs-
+/// exploratory modes, the full draft/scheduled/active/paused/completed/
+/// under_review/verified/archived lifecycle (just active/completed) — all
+/// still real, all still documented, deferred until this minimal version
+/// proves the workflow is worth the rest.
+model TrainingSession {
+  id                     String   @id @default(cuid())
+  tenantId               String
+  tenant                 Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name                   String
+  questionsPerParticipant Int     @default(20)
+  status                 String   @default("active") // active | completed
+  createdAt              DateTime @default(now())
+  endedAt                DateTime?
+
+  participants TrainingParticipant[]
+
+  @@index([tenantId, status])
+}
+
+/// One row per (session, contact) — questionCount incremented atomically
+/// (a $transaction, not a naive read-then-write) specifically because the
+/// design this implements explicitly called out the race condition a
+/// naive implementation would have under concurrent messages.
+model TrainingParticipant {
+  id            String          @id @default(cuid())
+  sessionId     String
+  session       TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  contactId     String
+  contact       Contact         @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  questionCount Int             @default(0)
+  createdAt     DateTime        @default(now())
+
+  @@unique([sessionId, contactId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
