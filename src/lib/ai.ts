@@ -760,13 +760,26 @@ Keep each answer SHORT and factual — one or two sentences, in the org's own wo
 
 Respond with ONLY a compact JSON array: [{"q":"<question>","a":"<answer>"}, ...] — an EMPTY array [] if nothing on the page is clearly FAQ-worthy. Never pad with low-value or invented entries just to have something to show.`;
   const raw = await callLLM(system, `WEBSITE CONTENT:\n${combined}`, { maxTokens: 1200, temperature: 0.2, feature: "faq_extraction" });
-  if (!raw) return [];
+  // Real bug found live 2026-08-23: a failed AI call (every provider
+  // rate-limited/out of quota at once — confirmed happening in production via
+  // server logs) was silently treated as "the page has no FAQ-worthy
+  // content" — the exact same empty-array return as the AI genuinely
+  // succeeding and finding nothing. A real user hit this scanning their own
+  // site and got a misleading "didn't find any clear FAQ-worthy content"
+  // message that implied a problem with THEIR website, when the actual cause
+  // was every AI provider failing. Throwing here (instead of returning [])
+  // lets the caller (crawlWebsiteAction) tell these apart and give an honest
+  // "try again shortly" message instead of blaming the site's content.
+  if (!raw) throw new Error("AI_UNAVAILABLE");
   try {
     const parsed = JSON.parse(raw.slice(raw.indexOf("["), raw.lastIndexOf("]") + 1)) as { q?: string; a?: string }[];
-    if (!Array.isArray(parsed)) return [];
+    if (!Array.isArray(parsed)) throw new Error("AI_UNAVAILABLE");
     return parsed.map((f) => ({ q: String(f.q ?? "").trim(), a: String(f.a ?? "").trim() })).filter((f) => f.q && f.a).slice(0, 30);
-  } catch {
-    return [];
+  } catch (e) {
+    if (e instanceof Error && e.message === "AI_UNAVAILABLE") throw e;
+    // A genuinely malformed (non-JSON) response is the same class of "the AI
+    // didn't do what we asked" as an outright failure, not "found nothing".
+    throw new Error("AI_UNAVAILABLE");
   }
 }
 

@@ -534,7 +534,15 @@ export async function crawlWebsiteAction(_prev: unknown, formData: FormData) {
     return { error: e instanceof Error ? e.message : "Couldn't reach that site." };
   }
   if (pages.length === 0) return { error: "Couldn't find any readable pages at that address." };
-  const draft = await extractFaqDraft(tenant?.name ?? "the organization", pages);
+  let draft;
+  try {
+    draft = await extractFaqDraft(tenant?.name ?? "the organization", pages);
+  } catch (e) {
+    if (e instanceof Error && e.message === "AI_UNAVAILABLE") {
+      return { error: `Scanned ${pages.length} page${pages.length === 1 ? "" : "s"} successfully, but our AI provider is temporarily busy and couldn't read through them just now — this isn't about your site, please try scanning again in a few minutes.` };
+    }
+    return { error: "Something went wrong reading the scanned pages — please try again." };
+  }
   if (draft.length === 0) return { error: "Scanned the site but didn't find any clear FAQ-worthy content — try a more specific page (e.g. an FAQ or admissions page) or add entries manually." };
   return { ok: true, draft, pagesScanned: pages.length };
 }
