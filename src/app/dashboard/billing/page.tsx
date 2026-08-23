@@ -21,7 +21,7 @@ export default async function BillingPage() {
 
   return (
     <div>
-      <PageHeader title="Billing" subtitle={`Plan + usage for ${bill.periodLabel}. You pay P2Less once — P2Less settles WhatsApp & provider costs for you.`} />
+      <PageHeader title="Billing" subtitle={`Plan + usage for ${bill.periodLabel} — one simple monthly bill.`} />
 
       {sub && (
         <Card className="mb-4 p-4">
@@ -38,7 +38,7 @@ export default async function BillingPage() {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Stat label="This month" value={kes(bill.total)} sub={`${bill.planName} plan + usage`} />
-        <Stat label="P2Less pays out" value={kes(bill.passthrough)} sub="Meta WhatsApp + providers" />
+        <Stat label="Conversations" value={bill.lines[0]?.qty.toLocaleString("en-US") ?? "0"} sub="WhatsApp messages this month" />
         <Stat label="Plan fee" value={kes(bill.planFee)} sub="per month" />
       </div>
 
@@ -81,15 +81,12 @@ export default async function BillingPage() {
         </Card>
 
         <Card className="p-5">
-          <h2 className="mb-2 font-display font-semibold">How the money flows</h2>
-          <ol className="space-y-2 text-sm text-muted">
-            <li><b className="text-ink">1.</b> Your organization pays <b>P2Less</b> one bill: plan + usage ({kes(bill.total)}).</li>
-            <li><b className="text-ink">2.</b> P2Less pays <b>Meta</b> the WhatsApp conversation fees and covers AI/compute on your behalf ({kes(bill.passthrough)}).</li>
-            <li><b className="text-ink">3.</b> You never set up Meta billing or a WhatsApp payment method yourself — P2Less is the single point of settlement.</li>
-          </ol>
-          <div className="mt-3 rounded-xl bg-surface-2 p-3 text-xs text-muted">
-            P2Less gross margin this month: <b className="text-ink">{kes(bill.margin)}</b>. In production, gateway webhooks confirm each payment and reconcile against Meta&apos;s invoice.
-          </div>
+          <h2 className="mb-2 font-display font-semibold">What&apos;s included</h2>
+          <ul className="space-y-2 text-sm text-muted">
+            <li>One simple bill covering your plan and usage — nothing else to set up or manage separately.</li>
+            <li>Fully managed, end to end — no other accounts, vendors, or invoices for you to track.</li>
+            <li>Payments are confirmed automatically — no manual reconciliation on your side.</li>
+          </ul>
         </Card>
       </div>
 
