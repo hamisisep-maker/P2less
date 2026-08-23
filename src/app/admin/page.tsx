@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, MessagesSquare, Send, ShieldAlert, Wallet, BrainCircuit, Settings, ArrowRight } from "lucide-react";
+import { Building2, MessagesSquare, Send, ShieldAlert, Wallet, BrainCircuit, Settings, ArrowRight, Radio } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card, PageHeader, Badge, timeAgo } from "@/components/ui";
 import { IconStat, SimpleAreaChart, InfoTip } from "@/components/dashboard-ui";
@@ -13,7 +13,21 @@ export default async function AdminPage() {
   const since14 = new Date(); since14.setDate(since14.getDate() - 13); since14.setHours(0, 0, 0, 0);
   const today = new Date().toISOString().slice(0, 10);
 
-  const [tenants, totalConvos, totalMsgs, growthEvents, suspended, pastDue, aiStatsToday, recentActivity] = await Promise.all([
+  // "Recently active" — real gap found 2026-08-23: no presence/online
+  // tracking existed anywhere (no SDK, no heartbeat, no lastSeenAt on
+  // Contact/User). This isn't true real-time presence either — it's an
+  // honest approximation from data that already exists: UserSession.
+  // lastActiveAt IS genuinely touched on real requests (auth.ts, throttled),
+  // not just set at login, so "active in the last 15 min" is a real signal
+  // for staff/admin users. There's no equivalent for end-user contacts (no
+  // session-activity field), so that side is approximated by real inbound
+  // message activity instead — a different, also-honest signal, not the
+  // same thing, which is why the UI labels them separately rather than
+  // combining into one fake "N online" number.
+  const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000);
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+  const [tenants, totalConvos, totalMsgs, growthEvents, suspended, pastDue, aiStatsToday, recentActivity, activeStaffSessions, activeConversations] = await Promise.all([
     db.tenant.count(),
     db.conversation.count(),
     db.usageEvent.aggregate({ where: { type: "message_in" }, _sum: { quantity: true } }),
@@ -22,7 +36,11 @@ export default async function AdminPage() {
     db.subscription.count({ where: { status: "past_due" } }),
     db.aiProviderStat.findMany({ where: { date: today } }),
     db.platformAuditLog.findMany({ orderBy: { createdAt: "desc" }, take: 8 }),
+    db.userSession.findMany({ where: { lastActiveAt: { gte: fifteenMinAgo }, revokedAt: null, expiresAt: { gt: new Date() } }, distinct: ["userId"], select: { userId: true } }),
+    db.message.findMany({ where: { direction: "in", createdAt: { gte: oneHourAgo } }, distinct: ["conversationId"], select: { conversationId: true } }),
   ]);
+  const activeStaffCount = activeStaffSessions.length;
+  const activeConversationCount = activeConversations.length;
 
   const buckets = new Map<string, number>();
   for (let i = 0; i < 14; i++) { const d = new Date(since14); d.setDate(d.getDate() + i); buckets.set(dayKey(d), 0); }
@@ -49,6 +67,24 @@ export default async function AdminPage() {
         <IconStat icon={<Send size={17} />} label="Inbound messages" value={totalMsgs._sum.quantity ?? 0} tip="All-time inbound message volume." tone="amber" />
         <IconStat icon={<ShieldAlert size={17} />} label="Needs attention" value={suspended + pastDue + aiIssues} tip="Suspended tenants + past-due subscriptions + failing AI providers." tone="rose" />
       </div>
+
+      <Card className="mt-4 p-5">
+        <div className="mb-3 flex items-center gap-1.5">
+          <Radio size={15} className="text-accent" />
+          <h2 className="font-display font-semibold">Right now</h2>
+          <InfoTip text="Not true real-time presence (no heartbeat/SDK exists) — approximated honestly from session activity and real message timestamps." />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <div className="text-2xl font-bold tabular-nums">{activeStaffCount}</div>
+            <div className="text-xs text-muted">Staff/admin{activeStaffCount === 1 ? "" : "s"} active in the last 15 min — real session activity, not a login timestamp</div>
+          </div>
+          <div>
+            <div className="text-2xl font-bold tabular-nums">{activeConversationCount}</div>
+            <div className="text-xs text-muted">Conversation{activeConversationCount === 1 ? "" : "s"} with a real inbound message in the last hour, across every tenant</div>
+          </div>
+        </div>
+      </Card>
 
       {needsAttention && (
         <Card className="mt-4 border-rose/30 bg-rose-soft/40 p-4">
