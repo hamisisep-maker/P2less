@@ -12,6 +12,7 @@ import type { AdminPermission } from "@/lib/admin-permissions";
 // dead-end links to pages a role would immediately be redirected away from.
 const NAV_PERMISSION: Partial<Record<string, AdminPermission>> = {
   "/admin/tenants": "tenants.view",
+  "/admin/conversations": "tenants.view",
   "/admin/billing": "billing.view",
   "/admin/ai": "providers.view",
   "/admin/models": "models.view",

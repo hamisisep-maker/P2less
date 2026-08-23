@@ -15,9 +15,10 @@ import {
   XAxis, YAxis, CartesianGrid, Legend,
 } from "recharts";
 import {
-  useReactTable, getCoreRowModel, getSortedRowModel, getPaginationRowModel,
+  useReactTable, getCoreRowModel, getSortedRowModel, getPaginationRowModel, getFilteredRowModel,
   flexRender, type ColumnDef, type SortingState,
 } from "@tanstack/react-table";
+import { Search } from "lucide-react";
 import { clsx } from "clsx";
 import { Badge, Card, timeAgo } from "@/components/ui";
 
@@ -308,25 +309,47 @@ export function StatusPieChart({ data }: { data: { name: string; value: number }
   );
 }
 
-// ── Data table (sortable + paginated) ────────────────────────────────────
-export function DataTable<T>({ columns, data, pageSize = 6 }: { columns: ColumnDef<T, unknown>[]; data: T[]; pageSize?: number }) {
+// ── Data table (sortable + paginated + searchable) ───────────────────────
+// Real gap found 2026-08-23 (asked directly — "search field... in
+// conversations in both tenants and admins"): this backs Conversations,
+// Tenants, and other admin tables, and had sorting/pagination but no way to
+// find one row among many beyond paging through. tanstack's own global
+// filter (matches across every column's rendered value, not one field) —
+// added once here so every table using this component gets it, not just
+// the one that surfaced the gap. `searchable` defaults on; pass false for a
+// table genuinely too short to need it.
+export function DataTable<T>({ columns, data, pageSize = 6, searchable = true, searchPlaceholder = "Search…" }: { columns: ColumnDef<T, unknown>[]; data: T[]; pageSize?: number; searchable?: boolean; searchPlaceholder?: string }) {
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [globalFilter, setGlobalFilter] = useState("");
   const table = useReactTable({
-    data, columns, state: { sorting },
+    data, columns, state: { sorting, globalFilter },
     onSortingChange: setSorting,
+    onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     initialState: { pagination: { pageSize } },
   });
   const rows = table.getRowModel().rows;
   const pg = table.getState().pagination;
-  const totalRows = data.length;
+  const totalRows = table.getFilteredRowModel().rows.length;
   const from = totalRows === 0 ? 0 : pg.pageIndex * pg.pageSize + 1;
   const to = Math.min(totalRows, (pg.pageIndex + 1) * pg.pageSize);
 
   return (
     <div>
+      {searchable && data.length > 0 && (
+        <div className="relative mb-3 max-w-xs">
+          <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
+          <input
+            value={globalFilter}
+            onChange={(e) => setGlobalFilter(e.target.value)}
+            placeholder={searchPlaceholder}
+            className="w-full rounded-xl border border-line bg-surface py-1.5 pl-8 pr-3 text-sm outline-none focus:border-accent"
+          />
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
           <thead>
@@ -352,7 +375,7 @@ export function DataTable<T>({ columns, data, pageSize = 6 }: { columns: ColumnD
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-sm text-muted">No data yet.</td></tr>
+              <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-sm text-muted">{globalFilter ? "No results match your search." : "No data yet."}</td></tr>
             )}
             {rows.map((r) => (
               <tr key={r.id} className="border-b border-line-soft last:border-0 hover:bg-surface-2">
@@ -412,7 +435,51 @@ const convoColumns: ColumnDef<ConvoRow, unknown>[] = [
 ];
 
 export function ConversationsTable({ data, pageSize = 8 }: { data: ConvoRow[]; pageSize?: number }) {
-  return <DataTable columns={convoColumns} data={data} pageSize={pageSize} />;
+  return <DataTable columns={convoColumns} data={data} pageSize={pageSize} searchPlaceholder="Search by name, channel, or status…" />;
+}
+
+// ── Admin conversations table — real gap found 2026-08-23 (asked directly,
+// "search field... in conversations in both tenants and admins"): there was
+// no admin-wide conversations view AT ALL, tenant or not, so "both" wasn't
+// possible. Same DataTable/search this session's tenant fix already uses,
+// with a Tenant column since this spans every organization. ────────────────
+export type AdminConvoRow = ConvoRow & { tenantId: string; tenantName: string };
+
+// Deliberately NOT a spread of convoColumns — its Contact cell links to
+// /dashboard/conversations/[id], a tenant-session route an admin isn't
+// logged into. Contact here is plain text; Tenant links to the real admin
+// view of that organization instead.
+const adminConvoColumns: ColumnDef<AdminConvoRow, unknown>[] = [
+  {
+    accessorKey: "tenantName",
+    header: "Tenant",
+    cell: ({ row }) => <Link href={`/admin/tenants/${row.original.tenantId}`} className="font-medium hover:text-accent">{row.original.tenantName}</Link>,
+  },
+  {
+    accessorKey: "name",
+    header: "Contact",
+    cell: ({ row }) => (
+      <span className="flex items-center gap-2.5">
+        <Avatar name={row.original.name} size={28} />
+        {row.original.name}
+      </span>
+    ),
+  },
+  { accessorKey: "channel", header: "Channel", cell: ({ getValue }) => <span className="capitalize text-muted">{getValue() as string}</span> },
+  { accessorKey: "messages", header: "Messages" },
+  {
+    accessorKey: "status",
+    header: "Status",
+    cell: ({ getValue }) => {
+      const s = getValue() as string;
+      return <Badge tone={s === "escalated" ? "rose" : s === "closed" ? "neutral" : "accent"}>{s}</Badge>;
+    },
+  },
+  { accessorKey: "updated", header: "Updated", cell: ({ getValue }) => <span className="text-muted" suppressHydrationWarning>{timeAgo(getValue() as Date)}</span> },
+];
+
+export function AdminConversationsTable({ data, pageSize = 12 }: { data: AdminConvoRow[]; pageSize?: number }) {
+  return <DataTable columns={adminConvoColumns} data={data} pageSize={pageSize} searchPlaceholder="Search by tenant, name, channel, or status…" />;
 }
 
 // ── Tenants table (super admin) ──────────────────────────────────────────
@@ -438,7 +505,7 @@ const tenantColumns: ColumnDef<TenantRow, unknown>[] = [
 ];
 
 export function TenantsTable({ data, pageSize = 8 }: { data: TenantRow[]; pageSize?: number }) {
-  return <DataTable columns={tenantColumns} data={data} pageSize={pageSize} />;
+  return <DataTable columns={tenantColumns} data={data} pageSize={pageSize} searchPlaceholder="Search by organization or industry…" />;
 }
 
 // ── Single-series area chart (platform-wide growth trend) ──────────────────

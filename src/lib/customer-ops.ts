@@ -25,15 +25,28 @@ export async function getTenantOperationalSummary(tenantId: string) {
   const since = monthStart();
 
   const [
-    usageEvents, numbers, lastIn, lastOut,
+    usageEvents, numbers, lastIn, lastOut, otherChannels,
     recentPayments, pendingPayments, unknownPayments, unmatchedTransactions,
     recentAiRequests, recentAiFailures, aiCostAgg, aiModelsUsed,
     recentTickets, staffUsers,
   ] = await Promise.all([
     db.usageEvent.groupBy({ by: ["type"], where: { tenantId, createdAt: { gte: since } }, _sum: { quantity: true } }),
     db.whatsAppNumber.findMany({ where: { tenantId } }),
-    db.message.findFirst({ where: { tenantId, direction: "in" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
-    db.message.findFirst({ where: { tenantId, direction: "out" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+    // Real bug found 2026-08-23, asked directly ("is Riverside using just
+    // one channel, or are other channels tracked"): this used to be ALL
+    // messages tenant-wide, not scoped to WhatsApp at all, despite being
+    // labeled "WhatsApp status" below — a real cross-channel/WhatsApp-only
+    // mislabeling, same class as §45's billing fix. Scoped via
+    // Contact.channelType (the established real source of truth for a
+    // conversation's channel — see the ticket page's own comment on why,
+    // confirmed Conversation.channelId/Channel.type are never actually set).
+    db.message.findFirst({ where: { tenantId, direction: "in", conversation: { contact: { channelType: "whatsapp" } } }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+    db.message.findFirst({ where: { tenantId, direction: "out", conversation: { contact: { channelType: "whatsapp" } } }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+    // The admin page previously had a WhatsApp-only section with no way to
+    // even see that a tenant has Messenger/Telegram/Email connected too —
+    // real gap, the tenant's own /dashboard/channels already shows all of
+    // these, admin should not be blind to what the tenant itself can see.
+    db.channel.findMany({ where: { tenantId, type: { not: "whatsapp" } } }),
     db.payment.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: 10 }),
     db.payment.findMany({ where: { tenantId, status: "pending" }, orderBy: { createdAt: "desc" } }),
     db.payment.findMany({ where: { tenantId, status: "unknown" }, orderBy: { createdAt: "desc" } }),
@@ -112,6 +125,7 @@ export async function getTenantOperationalSummary(tenantId: string) {
       lastInboundAt: lastIn?.createdAt ?? null,
       lastOutboundAt: lastOut?.createdAt ?? null,
     },
+    otherChannels: otherChannels.map((c) => ({ type: c.type, address: c.address, status: c.status })),
     billing: {
       recentPayments: recentPayments.map((p) => ({ id: p.id, reference: p.reference, amount: p.amount, currency: p.currency, purpose: p.purpose, channelKey: p.channelKey, status: p.status, createdAt: p.createdAt, paidAt: p.paidAt, failureCategory: p.failureCategory })),
       pendingPayments: pendingPayments.map((p) => ({ id: p.id, reference: p.reference, amount: p.amount, currency: p.currency, purpose: p.purpose, channelKey: p.channelKey, createdAt: p.createdAt })),

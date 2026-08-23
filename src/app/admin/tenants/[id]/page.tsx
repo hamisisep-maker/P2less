@@ -75,6 +75,19 @@ export default async function TenantOperationsPage({ params }: { params: Promise
           <div className="mt-1.5 text-xs text-muted">
             Last inbound {summary.whatsapp.lastInboundAt ? timeAgo(summary.whatsapp.lastInboundAt) : "never"} · last outbound {summary.whatsapp.lastOutboundAt ? timeAgo(summary.whatsapp.lastOutboundAt) : "never"}
           </div>
+          {/* Real gap found 2026-08-23, asked directly: this card used to be
+              the only channel visibility on this page, with no way to tell
+              whether a tenant has Messenger/Telegram/Email connected too —
+              the tenant's own /dashboard/channels already shows all of
+              these; admin shouldn't be blind to what the tenant can see. */}
+          {summary.otherChannels.length > 0 && (
+            <div className="mt-3 border-t border-line-soft pt-2.5">
+              <h3 className="mb-1 text-xs font-semibold text-faint uppercase">Other channels</h3>
+              {summary.otherChannels.map((c, i) => (
+                <div key={i} className="text-xs text-muted capitalize">{c.type} · {c.address} · <Badge tone={c.status === "active" ? "green" : "neutral"}>{c.status}</Badge></div>
+              ))}
+            </div>
+          )}
         </Card>
       </div>
 
