@@ -166,6 +166,18 @@ model PlatformAuditLog {
   reason     String? // required for elevated/dangerous actions (refunds, suspensions, role changes...)
   ip         String?
   createdAt  DateTime @default(now())
+  // Hash-chain (2026-08-23/24 security review, "you control the evidence
+  // you're selling" — a SQLite row has no append-only guarantee beyond
+  // convention; any UPDATE is silently possible). hash = sha256(prevHash +
+  // canonical JSON of this row's own fields), computed and stored inside the
+  // SAME transaction that reads the previous row's hash (logPrivilegedAction,
+  // admin-authz.ts), so the chain can never fork under concurrent writes.
+  // ONE global chain (this model isn't tenant-scoped). Nullable: rows written
+  // before this shipped predate the chain and are left unhashed rather than
+  // backfilled with a fabricated value — verifyPlatformAuditChain() starts
+  // verification from the first hashed row, not row zero.
+  prevHash   String?
+  hash       String?
 
   @@index([createdAt])
 }
@@ -914,6 +926,18 @@ model Contact {
   address     String // phone number / chat id — unique per tenant+channel
   displayName String?
   phoneVerified Boolean @default(false)
+  // When phoneVerified was last actually CONFIRMED via a real OTP round-trip
+  // (initial linking, or any later step-up) — not merely when the contact
+  // last sent a message. Nullable: pre-existing rows from before this field
+  // shipped are left unset (grandfathered in as "not stale" rather than
+  // forced through mass re-verification the moment this deploys) — every
+  // real verification from this point on sets a real timestamp. Read by
+  // isContactStale() (conversation.ts) — a phone number is LEASED, not
+  // OWNED (Safaricom recycles dormant numbers), so a long gap since the
+  // last real proof-of-possession is treated as needing one again, even for
+  // actions that don't normally require step-up. Real gap found in the
+  // 2026-08-23/24 security review, fixed same window.
+  lastVerifiedAt DateTime?
   // Super-app credit wallet: end users spend credits per tool use; topped up via
   // M-Pesa. New contacts get a few free credits so anyone can try it instantly.
   credits     Int      @default(30)
@@ -1325,6 +1349,11 @@ model AuditLog {
   reason      String?
   ip          String?
   createdAt   DateTime @default(now())
+  // Hash-chain, ONE PER TENANT (unlike PlatformAuditLog's single global
+  // chain, since this model IS tenant-scoped) — same reasoning and same
+  // write-time transaction pattern, see PlatformAuditLog's comment.
+  prevHash    String?
+  hash        String?
 
   @@index([tenantId])
   @@index([requestId])

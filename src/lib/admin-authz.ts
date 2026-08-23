@@ -154,18 +154,43 @@ export async function logPrivilegedAction(input: LogPrivilegedActionInput): Prom
   // same detail/previousState/newState payloads (including e.g. credential
   // rotation actions) without ever sanitizing them until this fix.
   const { sanitize } = await import("./audit");
-  await db.platformAuditLog.create({
-    data: {
+  const { CHAIN_GENESIS, chainHash } = await import("./audit-chain");
+  const sanitizedDetail = sanitize(detail);
+  const createdAt = new Date();
+  // Hash-chain (2026-08-23/24 security review) — same reasoning and
+  // transaction-based race-safety as AuditLog's chain (audit.ts), ONE global
+  // chain here since PlatformAuditLog isn't tenant-scoped.
+  await db.$transaction(async (tx) => {
+    const last = await tx.platformAuditLog.findFirst({ orderBy: { createdAt: "desc" } });
+    const prevHash = last?.hash ?? CHAIN_GENESIS;
+    const hash = chainHash(prevHash, {
       actorId: input.admin.id,
       actorEmail: input.admin.email,
       action: input.action,
       target: input.target ?? null,
-      detail: (sanitize(detail) ?? undefined) as Prisma.InputJsonValue | undefined,
-      role,
+      detail: sanitizedDetail,
+      role: role ?? null,
       permission: input.permission,
       reason: input.reason ?? null,
       ip,
-    },
+      createdAtIso: createdAt.toISOString(),
+    });
+    await tx.platformAuditLog.create({
+      data: {
+        actorId: input.admin.id,
+        actorEmail: input.admin.email,
+        action: input.action,
+        target: input.target ?? null,
+        detail: (sanitizedDetail ?? undefined) as Prisma.InputJsonValue | undefined,
+        role,
+        permission: input.permission,
+        reason: input.reason ?? null,
+        ip,
+        createdAt,
+        prevHash,
+        hash,
+      },
+    });
   }).catch(() => {});
 
   if (input.tenantId) {
@@ -186,4 +211,35 @@ export async function logPrivilegedAction(input: LogPrivilegedActionInput): Prom
       ip,
     });
   }
+}
+
+/** Walks the single global PlatformAuditLog chain, recomputing each row's
+ *  hash and confirming it matches both the stored value and the previous
+ *  row's hash — same shape as verifyAuditChain (audit.ts), see its comment.
+ *  Read-only. */
+export async function verifyPlatformAuditChain(): Promise<{ ok: boolean; checked: number; brokenAt?: { id: string; createdAt: Date } }> {
+  const { CHAIN_GENESIS, chainHash } = await import("./audit-chain");
+  const rows = await db.platformAuditLog.findMany({ where: { hash: { not: null } }, orderBy: { createdAt: "asc" } });
+  let expectedPrev = rows[0]?.prevHash ?? CHAIN_GENESIS;
+  let checked = 0;
+  for (const row of rows) {
+    const recomputed = chainHash(row.prevHash ?? CHAIN_GENESIS, {
+      actorId: row.actorId,
+      actorEmail: row.actorEmail,
+      action: row.action,
+      target: row.target,
+      detail: row.detail,
+      role: row.role,
+      permission: row.permission,
+      reason: row.reason,
+      ip: row.ip,
+      createdAtIso: row.createdAt.toISOString(),
+    });
+    if (row.prevHash !== expectedPrev || recomputed !== row.hash) {
+      return { ok: false, checked, brokenAt: { id: row.id, createdAt: row.createdAt } };
+    }
+    expectedPrev = row.hash!;
+    checked++;
+  }
+  return { ok: true, checked };
 }

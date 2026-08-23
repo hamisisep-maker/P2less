@@ -740,7 +740,13 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
         const caps = numberedMenu(await loadActions(tenant.id));
         return emit([{ body: `✅ Verified — welcome, ${pl.name.split(" ")[0]}! Your number is now linked to ${assistant}.${menuPrompt(caps, "Reply with a number, or just ask:")}` }], "open", { menu: caps.ids });
       }
-      // Case 2: OTP gated a sensitive action → resume it now.
+      // Case 2: OTP gated a sensitive action (either the action's own
+      // requiresStepUp, or isContactStale()'s "prove it again" gate below) →
+      // resume it now. Refresh lastVerifiedAt here too, not just at initial
+      // linking (linkContact, Case 1 above) — this IS a real, fresh
+      // proof-of-possession, and it's what resets the staleness clock for
+      // ordinary (non-step-up) actions going forward.
+      await db.contact.update({ where: { id: contact.id }, data: { lastVerifiedAt: new Date() } });
       const resumed = await runAction({
         tenantId: tenant.id, reqId, contact, permissions, grants, assistant, channelType: input.channelType, contactName: contact.displayName ?? undefined, userText: text, history,
         actionId: ctx.pendingActionId!, resolved: ctx.pendingResolved ?? {}, alreadyConfirmed: false,
@@ -2064,7 +2070,7 @@ function resourceLabel(g: ResourceGrant): string {
 type CollectBase = {
   tenantId: string;
   reqId: string;
-  contact: { id: string };
+  contact: { id: string; phoneVerified: boolean; lastVerifiedAt: Date | null };
   permissions: string[];
   grants: Record<string, ResourceGrant[]>;
   assistant: string;
@@ -2129,7 +2135,7 @@ function promptFor(entity: string): string {
 type RunArgs = {
   tenantId: string;
   reqId: string;
-  contact: { id: string };
+  contact: { id: string; phoneVerified: boolean; lastVerifiedAt: Date | null };
   permissions: string[];
   grants: Record<string, ResourceGrant[]>;
   assistant: string;
@@ -2143,6 +2149,28 @@ type RunArgs = {
   lastResource?: { id: string; name: string; grade?: string };
   lastAction?: ConvContext["lastAction"];
 };
+
+// A phone number is LEASED, not OWNED — Safaricom (and every carrier)
+// recycles dormant numbers to a new subscriber. A Contact's grants stay
+// attached to the phone number forever once phoneVerified is true, and
+// requiresStepUp (OTP) was, until this fix, the ONLY thing that ever
+// re-confirmed possession — for every OTHER action, a long-dormant number
+// that resumed messaging was trusted with zero re-proof. Real gap found in
+// the 2026-08-23/24 security review ("this is not an edge case in the
+// Kenyan market; it's routine... the current design has no answer at all").
+// CAN-tier fix, not the SHOULD-tier one (that needs a second factor the
+// school controls, e.g. a PIN or last-payment-amount — real future work):
+// treat a long gap since the last actual OTP proof as needing one again,
+// even for actions that don't normally require step-up. 180 days — long
+// enough that a genuinely active parent never notices it, short enough to
+// meaningfully bound the exposure window on a recycled number.
+const REVERIFY_GAP_MS = 180 * 24 * 60 * 60 * 1000;
+
+function isContactStale(contact: { phoneVerified: boolean; lastVerifiedAt: Date | null }): boolean {
+  if (!contact.phoneVerified) return false; // nothing to be stale about yet — the normal identify/OTP flow already governs this
+  if (!contact.lastVerifiedAt) return false; // predates this field — grandfathered in, see schema comment
+  return Date.now() - contact.lastVerifiedAt.getTime() > REVERIFY_GAP_MS;
+}
 
 async function runAction(args: RunArgs): Promise<{ replies: Reply[]; status: string; ctx: ConvContext }> {
   const { tenantId, reqId, contact, permissions, grants } = args;
@@ -2160,15 +2188,20 @@ async function runAction(args: RunArgs): Promise<{ replies: Reply[]; status: str
   const grantedResourceIds = action.resourceGrantKey
     ? ((grants as Record<string, ResourceGrant[] | undefined>)[action.resourceGrantKey] ?? []).map((g) => g.id)
     : undefined;
+  // Recycled-phone-number fix (2026-08-23/24 audit) — a long-dormant,
+  // previously-verified contact must prove possession again even for an
+  // action that doesn't normally require step-up, same as if the action
+  // itself demanded it. See isContactStale()'s own comment.
+  const effectiveRequiresStepUp = action.requiresStepUp || isContactStale(contact);
   // Only pay for the session lookup when step-up is actually required —
   // same short-circuit the original inline check had.
-  const verifiedSession = action.requiresStepUp ? await hasVerifiedSession(contact.id) : true;
+  const verifiedSession = effectiveRequiresStepUp ? await hasVerifiedSession(contact.id) : true;
   const decision = evaluateCapabilityGate({
     action: {
       requiredPermission: action.requiredPermission,
       resourceGrantKey: action.resourceGrantKey,
       resourceParam: action.resourceParam,
-      requiresStepUp: action.requiresStepUp,
+      requiresStepUp: effectiveRequiresStepUp,
       requiresConfirm: action.requiresConfirm,
       approvalRequired: action.approvalRequired,
     },
@@ -2400,7 +2433,7 @@ function onboardingFor(industry: string): Onboarding | null {
 async function linkContact(tenantId: string, contactId: string, ob: Onboarding, personId: string, name: string): Promise<void> {
   await db.contact.update({
     where: { id: contactId },
-    data: { displayName: name, phoneVerified: true, grants: { [ob.grantKey]: [{ id: personId, name }] } as object },
+    data: { displayName: name, phoneVerified: true, lastVerifiedAt: new Date(), grants: { [ob.grantKey]: [{ id: personId, name }] } as object },
   });
   const role = await db.role.findUnique({ where: { tenantId_key: { tenantId, key: ob.roleKey } } });
   if (role) {

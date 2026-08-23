@@ -1,6 +1,7 @@
 import "server-only";
 import { Prisma } from "@prisma/client";
 import { db } from "./db";
+import { CHAIN_GENESIS, chainHash, type ChainVerifyResult } from "./audit-chain";
 
 export type AuditInput = {
   tenantId: string;
@@ -44,8 +45,18 @@ export function sanitize(detail?: Record<string, unknown>): Record<string, unkno
 
 export async function audit(input: AuditInput): Promise<void> {
   try {
-    await db.auditLog.create({
-      data: {
+    const createdAt = new Date();
+    const detail = sanitize(input.detail);
+    // Hash-chain (2026-08-23/24 security review) — read-then-write inside a
+    // real transaction so concurrent audit() calls for the same tenant can
+    // never both read the same "previous" row and fork the chain; SQLite
+    // serializes concurrent write transactions, so the second one to commit
+    // correctly sees the first one's row. See audit-chain.ts's own comment
+    // for what this does and doesn't defend against.
+    await db.$transaction(async (tx) => {
+      const last = await tx.auditLog.findFirst({ where: { tenantId: input.tenantId }, orderBy: { createdAt: "desc" } });
+      const prevHash = last?.hash ?? CHAIN_GENESIS;
+      const hash = chainHash(prevHash, {
         tenantId: input.tenantId,
         requestId: input.requestId,
         actorType: input.actorType,
@@ -53,15 +64,70 @@ export async function audit(input: AuditInput): Promise<void> {
         action: input.action,
         target: input.target ?? null,
         success: input.success,
-        detail: (sanitize(input.detail) ?? undefined) as Prisma.InputJsonValue | undefined,
+        detail,
         role: input.role ?? null,
         permission: input.permission ?? null,
         reason: input.reason ?? null,
         ip: input.ip ?? null,
-      },
+        createdAtIso: createdAt.toISOString(),
+      });
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          requestId: input.requestId,
+          actorType: input.actorType,
+          actorId: input.actorId ?? null,
+          action: input.action,
+          target: input.target ?? null,
+          success: input.success,
+          detail: (detail ?? undefined) as Prisma.InputJsonValue | undefined,
+          role: input.role ?? null,
+          permission: input.permission ?? null,
+          reason: input.reason ?? null,
+          ip: input.ip ?? null,
+          createdAt,
+          prevHash,
+          hash,
+        },
+      });
     });
   } catch {
     // Auditing must never break the request path; failures are swallowed but
     // would surface in observability in production.
   }
+}
+
+/** Walks one tenant's AuditLog chain in order, recomputing each row's hash
+ *  from its own stored fields and confirming it both matches the stored
+ *  `hash` AND correctly chains from the previous row's `hash`. Starts from
+ *  the first HASHED row (skips any that predate this feature, per the
+ *  schema's own comment) — a partial chain is still fully verifiable from
+ *  that point forward. Read-only; never called on the hot path. */
+export async function verifyAuditChain(tenantId: string): Promise<ChainVerifyResult> {
+  const rows = await db.auditLog.findMany({ where: { tenantId, hash: { not: null } }, orderBy: { createdAt: "asc" } });
+  let expectedPrev = rows[0]?.prevHash ?? CHAIN_GENESIS;
+  let checked = 0;
+  for (const row of rows) {
+    const recomputed = chainHash(row.prevHash ?? CHAIN_GENESIS, {
+      tenantId: row.tenantId,
+      requestId: row.requestId,
+      actorType: row.actorType,
+      actorId: row.actorId,
+      action: row.action,
+      target: row.target,
+      success: row.success,
+      detail: row.detail,
+      role: row.role,
+      permission: row.permission,
+      reason: row.reason,
+      ip: row.ip,
+      createdAtIso: row.createdAt.toISOString(),
+    });
+    if (row.prevHash !== expectedPrev || recomputed !== row.hash) {
+      return { ok: false, checked, brokenAt: { id: row.id, createdAt: row.createdAt } };
+    }
+    expectedPrev = row.hash!;
+    checked++;
+  }
+  return { ok: true, checked };
 }
