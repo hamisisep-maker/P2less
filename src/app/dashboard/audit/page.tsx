@@ -10,8 +10,17 @@ const toneFor = (action: string, success: boolean): "green" | "rose" | "amber" |
 
 export default async function AuditPage() {
   const user = await requireTenantUser();
+  // Real gap found 2026-08-23: ai.provider_failover is an internal AI-
+  // reliability telemetry event (audit()'d with the tenant's real
+  // tenantId by ai.ts's own failover logic), not something a tenant asked
+  // for or should see — showing it here reveals P2Less's internal
+  // multi-provider AI architecture on a page titled "audit log", which a
+  // real customer would read as being about THEIR actions. Excluded by
+  // name rather than filtering all actorType:"system" entries — billing.*
+  // and notification.delivery_failed_terminal are also system-authored but
+  // genuinely about the tenant's own account, so they stay visible.
   const logs = await db.auditLog.findMany({
-    where: { tenantId: user.tenantId! },
+    where: { tenantId: user.tenantId!, action: { not: "ai.provider_failover" } },
     orderBy: { createdAt: "desc" },
     take: 100,
   });
