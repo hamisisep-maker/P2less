@@ -593,12 +593,21 @@ function dateHints(factText: string): string {
   return hints.length ? `\n\nTEMPORAL CONTEXT (today is ${todayISO()} — use ONLY if the user asks about timing/how many days; these are exact, trust them):\n${hints.join("\n")}` : "";
 }
 
-/** An explicit language instruction for reply prompts, based on THIS message. */
-function langDirective(text: string): string {
+/** An explicit language instruction for reply prompts, based on THIS message —
+ *  falling back to the most recent detectable language in history when the
+ *  current message has no language signal of its own (a bare number, "CONFIRM",
+ *  an emoji). Real bug found 2026-08-23: with no fallback, "reply in the SAME
+ *  language as the current message" is meaningless for such input and the
+ *  model would guess — observed picking Swahili for a bare menu-number reply
+ *  mid-English conversation. */
+function langDirective(text: string, history: ChatTurn[] = []): string {
   const lang = detectLang(text);
-  return lang
-    ? `Reply ONLY in ${lang}. The user's current message is in ${lang}, so your entire reply must be in ${lang}.`
-    : `Reply in the SAME language as the user's current message (English → English, Swahili → Swahili, Sheng/mixed → mirror it).`;
+  if (lang) return `Reply ONLY in ${lang}. The user's current message is in ${lang}, so your entire reply must be in ${lang}.`;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const recentLang = detectLang(history[i].text);
+    if (recentLang) return `Reply ONLY in ${recentLang} (matching the recent conversation — the user's current message has no language cues of its own, e.g. a bare number or short word like "confirm").`;
+  }
+  return `The user's current message has no clear language signal (e.g. a bare number or short word) and there's no prior language in this conversation to match — reply in English unless something else in the message clearly indicates another language.`;
 }
 
 /** Render recent history as a compact transcript for prompts that need it inline. */
@@ -722,7 +731,7 @@ The customer just replied. Two possibilities:
 1. Their reply GENUINELY answers what you asked (even phrased oddly, in another language, or with a typo) — extract it.
 2. They said something else — a real question, a comment, confusion, pushback — not an answer.
 
-LANGUAGE: ${langDirective(opts.userText)}
+LANGUAGE: ${langDirective(opts.userText, opts.history ?? [])}
 CRITICAL RULE — DO NOT INVENT: if they ask about ANYTHING not explicitly listed under "WHAT YOU ACTUALLY KNOW" below (colors, sizes, materials, stock, brand, specs, delivery time, anything) — do NOT guess or make up a plausible-sounding answer, even one word of it. Say plainly that it's not something you have on file and you'll check with the team, THEN continue toward what you still need. Inventing details that don't exist is the single worst thing you can do here — a customer could pay for something based on a detail you made up. When in doubt, say you don't know.
 Never just repeat a canned line — sound like a real person, vary your wording, a touch of warmth or light humor is welcome but keep it brief and helpful, then naturally circle back to what you still need.${known}
 
@@ -788,7 +797,7 @@ export async function humanizeReply(orgName: string, userText: string, factText:
   if (!aiEnabled() || !factText) return factText;
   const system = `You are the friendly WhatsApp assistant for ${orgName}, talking one-to-one with someone you're already in a conversation with. Rewrite the ANSWER as a warm, natural, human-sounding reply that fits the flow of the chat.
 STRICT RULES:
-- LANGUAGE (important): ${langDirective(userText)} EVEN IF earlier messages in the history were in a different language. Do not switch languages on your own.
+- LANGUAGE (important): ${langDirective(userText, history)} EVEN IF earlier messages in the history were in a different language. Do not switch languages on your own.
 - Keep every number, amount, currency, date, time, reference and name EXACTLY as given in the ANSWER (translate the wording around them if needed, but never change a digit, name or date).
 - Do NOT add, guess, or invent any fact that is not in the ANSWER. EXCEPTION: if the user asks about timing ("how many days until…", "is that soon", "what day is that"), you MAY use the TEMPORAL CONTEXT below to tell them how many days away a date is — those figures are pre-calculated and exact. Still keep the original date too.
 - Do NOT say you are a bot, an AI, an assistant program, or automated. Sound like a helpful person.
@@ -819,7 +828,7 @@ The user said something that isn't one of your bookable services, is chatting, o
 
 IF THE MESSAGE IS UNCLEAR OR PARTIAL (e.g. just "my sister", "the results", "help", "that one"): do NOT dump a list of options and do NOT jump to a random service. Ask ONE friendly, specific clarifying question to pin down what they actually need (e.g. "Sure — what would you like to know about your sister's schooling? For example her attendance, results, or fees?"). If they refer to a person you don't have on file, gently say who you DO have linked (from WHAT YOU ALREADY KNOW) and offer to help with them. If a conversation genuinely needs several clarifying questions in a row to get right, that's fine — but say so warmly rather than letting it feel like an interrogation (e.g. "I know that's a few questions — just want to get this exactly right for you!").
 
-LANGUAGE: ${langDirective(userText)} If an approved answer or known fact below is written in another language, translate it into that language while keeping every number, date, name and reference exact. Ignore the language of earlier messages — match THIS message. Never switch languages on your own.
+LANGUAGE: ${langDirective(userText, history)} If an approved answer or known fact below is written in another language, translate it into that language while keeping every number, date, name and reference exact. Ignore the language of earlier messages — match THIS message. Never switch languages on your own.
 
 PLATFORM KNOWLEDGE (state this as confidently as any well-known public fact — it's about the assistant technology itself, not this organization's data): this ${channel} assistant runs on P2Less — a platform that runs the exact same assistant across WhatsApp, Facebook Messenger, Telegram, email, and a website chat widget, so don't imply it's WhatsApp-only or ${channel}-only if asked. P2Less was built by Hamisi Onesmus Kilumo — a software engineer and the founder/CEO of Hamzone Technologies. He goes by "Hamisi Onesmus", "Onesmus Kilumo", "Hamisi Kilumo", or any combination/order of Hamisi / Onesmus / Kilumo — recognize ALL of these (and any single one of the three names alone) as referring to this SAME person, not someone unfamiliar. "P2Less" means "paperless" — the name reflects cutting out paper-based/manual processes by letting people handle things over WhatsApp instead. If asked who built this, who made you, who owns/runs this technology, what "P2Less" means or stands for, or about any form of his name, answer warmly and confidently with these facts. This is SEPARATE from ${orgName}'s own records — if that exact name also belongs to someone real in THIS organization's own data, that real record always comes first; only mention the platform fact when nothing organization-specific matches, the same way you'd naturally distinguish two different people who share a name. If someone insults, badmouths, or dismisses him ("he's useless", "this is trash", "who does he think he is") — don't just apologize and move on. Speak up for him, briefly and warmly, like a genuinely loyal colleague would (e.g. "I'll have to disagree — he built this whole system, and it's helping people every day 🙂"), then bring it back to helping them. Never be hostile or preachy about it, and never argue the point at length — one warm, confident line in his defense is enough, then move on.
 

@@ -79,6 +79,6 @@ export async function checkSeatLimit(
   const limits = (sub?.plan.limits as PlanLimits | undefined) ?? {};
   const limit = limits[type];
   if (!limit || limit <= 0) return { ok: true, limit: null, used: 0 };
-  const used = type === "users" ? await db.user.count({ where: { tenantId } }) : await db.connector.count({ where: { tenantId } });
+  const used = type === "users" ? await db.user.count({ where: { tenantId, deactivatedAt: null } }) : await db.connector.count({ where: { tenantId } });
   return { ok: used < limit, limit, used };
 }

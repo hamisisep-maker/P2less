@@ -4,6 +4,7 @@ import { Card, PageHeader, Badge } from "@/components/ui";
 import { Avatar } from "@/components/dashboard-ui";
 import { PERMISSIONS, DEFAULT_USER_ROLES } from "@/lib/permissions";
 import { InviteUserForm } from "./invite-user-form";
+import { StaffRow } from "./staff-row";
 
 // "Active" mirrors the exact query the admin overview's "Right now" stat
 // uses (src/app/admin/page.tsx) — a real session touched in the last 15
@@ -50,21 +51,19 @@ export default async function UsersPage() {
       <Card className="mb-4 p-5">
         <h2 className="mb-3 font-display font-semibold">Staff (dashboard users) — {activeUserIds.size} active now</h2>
         <div className="space-y-2">
-          {users.map((u) => {
-            const active = activeUserIds.has(u.id);
-            return (
-              <div key={u.id} className="flex items-center justify-between rounded-xl border border-line px-3.5 py-2.5 transition-colors hover:bg-surface-2">
-                <div className="flex items-center gap-2.5">
-                  <Avatar name={u.name} size={30} />
-                  <div>
-                    <div className="flex items-center gap-1.5 text-sm font-medium">{u.name} <Badge tone={active ? "green" : "neutral"} dot>{active ? "active now" : "offline"}</Badge></div>
-                    <div className="text-xs text-muted">{u.email}</div>
-                  </div>
-                </div>
-                <div className="flex gap-1">{u.userRoles.map((ur) => <Badge key={ur.id} tone="accent">{ur.role.name}</Badge>)}</div>
-              </div>
-            );
-          })}
+          {users.map((u) => (
+            <StaffRow
+              key={u.id}
+              id={u.id}
+              name={u.name}
+              email={u.email}
+              roleNames={u.userRoles.map((ur) => ur.role.name)}
+              active={activeUserIds.has(u.id)}
+              deactivated={!!u.deactivatedAt}
+              canManage={canManage}
+              isSelf={u.id === user.id}
+            />
+          ))}
         </div>
       </Card>
 

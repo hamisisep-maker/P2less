@@ -1044,6 +1044,10 @@ export async function inviteUserAction(_prev: unknown, formData: FormData): Prom
   const user = await requireTenantUser();
   if (!userPermissions(user).includes(PERMISSIONS.USERS_MANAGE)) return { error: "You don't have permission to invite teammates." };
 
+  const { rateLimit } = await import("./rate-limit");
+  const invRate = rateLimit(`invite:user:${user.id}`, { max: 5, windowMs: 10 * 60 * 1000 });
+  if (!invRate.ok) return { error: "Too many invites sent in a short time. Please wait a few minutes and try again." };
+
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const roleId = String(formData.get("roleId") ?? "").trim();
@@ -1099,6 +1103,63 @@ export async function inviteUserAction(_prev: unknown, formData: FormData): Prom
 
   revalidatePath("/dashboard/users");
   return { ok: true, email, password, emailSent };
+}
+
+// Offboarding — no path existed to revoke a departed staff member's dashboard
+// access (2026-08-23 security review). Deactivation is checked in
+// getCurrentUser(), so it takes effect on their very next request; reversible
+// (reactivateUserAction), unlike a delete, since audit history references
+// User.id and shouldn't be orphaned by an offboarding action.
+export async function deactivateUserAction(_prev: unknown, formData: FormData): Promise<{ ok?: boolean; error?: string }> {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.USERS_MANAGE)) return { error: "You don't have permission to manage teammates." };
+
+  const targetId = String(formData.get("userId") ?? "").trim();
+  if (!targetId) return { error: "Missing user." };
+  if (targetId === user.id) return { error: "You can't deactivate your own account." };
+
+  const target = await db.user.findUnique({ where: { id: targetId }, include: { userRoles: { include: { role: true } } } });
+  if (!target || target.tenantId !== user.tenantId) return { error: "That teammate doesn't belong to your organization." };
+  if (target.deactivatedAt) return { ok: true }; // already inactive — idempotent
+
+  const isOwner = target.userRoles.some((ur) => ur.role.key === "owner");
+  if (isOwner) {
+    const otherActiveOwners = await db.user.count({
+      where: { tenantId: user.tenantId!, id: { not: targetId }, deactivatedAt: null, userRoles: { some: { role: { key: "owner" } } } },
+    });
+    if (otherActiveOwners === 0) return { error: "Can't deactivate the only owner — assign another owner first." };
+  }
+
+  await db.user.update({ where: { id: targetId }, data: { deactivatedAt: new Date() } });
+
+  const { audit } = await import("./audit");
+  const { requestId: newRequestId } = await import("./crypto");
+  await audit({ tenantId: user.tenantId!, requestId: newRequestId(), actorType: "user", actorId: user.id, action: "user.deactivated", target: targetId, success: true, detail: { targetEmail: target.email } });
+
+  revalidatePath("/dashboard/users");
+  return { ok: true };
+}
+
+export async function reactivateUserAction(_prev: unknown, formData: FormData): Promise<{ ok?: boolean; error?: string }> {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.USERS_MANAGE)) return { error: "You don't have permission to manage teammates." };
+
+  const targetId = String(formData.get("userId") ?? "").trim();
+  const target = await db.user.findUnique({ where: { id: targetId } });
+  if (!target || target.tenantId !== user.tenantId) return { error: "That teammate doesn't belong to your organization." };
+
+  const { checkSeatLimit } = await import("./usage");
+  const seatCheck = await checkSeatLimit(user.tenantId!, "users");
+  if (!seatCheck.ok) return { error: `Your plan allows up to ${seatCheck.limit} staff account${seatCheck.limit === 1 ? "" : "s"} — you're already at that limit. Upgrade your plan or deactivate someone else first.` };
+
+  await db.user.update({ where: { id: targetId }, data: { deactivatedAt: null } });
+
+  const { audit } = await import("./audit");
+  const { requestId: newRequestId } = await import("./crypto");
+  await audit({ tenantId: user.tenantId!, requestId: newRequestId(), actorType: "user", actorId: user.id, action: "user.reactivated", target: targetId, success: true, detail: { targetEmail: target.email } });
+
+  revalidatePath("/dashboard/users");
+  return { ok: true };
 }
 
 export async function updateTenantSettingsAction(_prev: unknown, formData: FormData): Promise<{ ok?: boolean; unchanged?: boolean; error?: string }> {

@@ -778,6 +778,12 @@ model User {
   // this is safe to add without backfilling existing rows.
   emailCanonical String? @unique
   passwordHash String
+  // Offboarding a staff account (Gap found in 2026-08-23 security review: no
+  // path existed to revoke a departed employee's dashboard access to
+  // student/patient/payroll data). Checked in getCurrentUser() so it takes
+  // effect on the very next request regardless of session/cookie state — no
+  // separate session-revocation bookkeeping needed.
+  deactivatedAt DateTime?
   // LEGACY bootstrap flag — kept in sync with adminRole.key == "super_admin"
   // so the very first seeded admin always works even before AdminRole rows
   // exist. New authorization checks (requireAdminPermission in

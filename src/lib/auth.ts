@@ -108,6 +108,10 @@ export async function getCurrentUser() {
     where: { id: session.uid },
     include: { tenant: true, userRoles: { include: { role: true } }, adminRole: true },
   });
+  // A deactivated staff/admin account is treated as logged out on their very
+  // next request — no separate session-table revocation needed, since this
+  // check runs on every request that resolves a user.
+  if (user?.deactivatedAt) return null;
   return user;
 }
 

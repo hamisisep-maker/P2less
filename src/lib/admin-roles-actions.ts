@@ -159,6 +159,10 @@ export async function inviteAdminAction(_prev: unknown, formData: FormData): Pro
     throw e;
   }
 
+  const { rateLimit } = await import("./rate-limit");
+  const invRate = rateLimit(`invite:admin:${admin.id}`, { max: 5, windowMs: 10 * 60 * 1000 });
+  if (!invRate.ok) return { error: "Too many invites sent in a short time. Please wait a few minutes and try again." };
+
   const parsed = inviteSchema.safeParse({
     name: formData.get("name"), email: formData.get("email"), roleId: formData.get("roleId"), reason: formData.get("reason"),
   });

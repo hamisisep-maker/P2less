@@ -12,17 +12,22 @@ export default async function LoginPage() {
   const current = await getCurrentUser();
   if (current) redirect(current.isSuperAdmin ? "/admin" : "/dashboard");
 
-  const demo = await db.user.findMany({
-    where: { isSuperAdmin: false },
-    include: { userRoles: { include: { role: true } }, tenant: true },
-    orderBy: { createdAt: "asc" },
-    take: 8,
-  });
-  // One owner per tenant, for a compact multi-organization demo list.
-  const seen = new Set<string>();
-  const accounts = demo
-    .filter((u) => u.tenantId && !seen.has(u.tenantId) && (seen.add(u.tenantId), true))
-    .map((u) => ({ email: u.email, name: u.name, role: u.tenant?.name ?? "Organization" }));
+  // Demo-account listing is a real credential exposure (real seeded emails +
+  // the literal shared password, pre-filled) — dev/staging convenience only,
+  // never rendered against a production build (Gap-011, fixed 2026-08-23).
+  const accounts = process.env.NODE_ENV === "production" ? [] : await (async () => {
+    const demo = await db.user.findMany({
+      where: { isSuperAdmin: false },
+      include: { userRoles: { include: { role: true } }, tenant: true },
+      orderBy: { createdAt: "asc" },
+      take: 8,
+    });
+    // One owner per tenant, for a compact multi-organization demo list.
+    const seen = new Set<string>();
+    return demo
+      .filter((u) => u.tenantId && !seen.has(u.tenantId) && (seen.add(u.tenantId), true))
+      .map((u) => ({ email: u.email, name: u.name, role: u.tenant?.name ?? "Organization" }));
+  })();
 
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
