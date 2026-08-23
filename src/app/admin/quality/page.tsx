@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { requireAdminPermission } from "@/lib/admin-authz";
 import { Card, PageHeader, Badge, timeAgo } from "@/components/ui";
 import { QUALITY_CATEGORIES, TICKET_SOURCES } from "@/lib/quality-taxonomy";
+import { RecruitPilotCard } from "./recruit-pilot-card";
 
 const STATUS_TONE: Record<string, "rose" | "amber" | "indigo" | "green" | "neutral"> = {
   open: "rose", assigned: "amber", in_progress: "indigo", waiting_on_customer: "amber",
@@ -36,6 +37,8 @@ export default async function AdminQualityPage() {
         title="Quality Centre"
         subtitle="Every ticket that's entered the AI-quality investigation waterfall, grouped by what the investigation actually found. Flag a ticket from its own page (Quality investigation panel) to bring it in here."
       />
+
+      <RecruitPilotCard />
 
       <Card className="mb-4 p-5">
         <h2 className="mb-2 font-display font-semibold">Origin, this pilot</h2>
