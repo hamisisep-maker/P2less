@@ -1,6 +1,6 @@
 # P2Less — Controlled Production-Learning Loop (Public Feedback → Quality Centre)
 
-Proposed by the user 2026-08-23, refined against the actual current state of the codebase, then refined a second time against a detailed follow-up review, then extended a third time to formalize the **Evidence & Assurance subsystem** (below) as the layer this whole pipeline actually converges into. **The six governing principles are agreed as a formal P2Less system standard** — the philosophy of evidence-before-correction applies from today, to any AI-quality investigation, not just ones that come through this specific programme. **The channels/rollout/implementation, and the Evidence & Assurance subsystem's data model/dashboard/PDF report, all stay "not started" — vision + phased plan only**, same discipline as every other future-strategic item in this project (see the main roadmap doc's Phase 8b/candidate-channels sections for precedent). Don't conflate the two: the standard is adopted now, everything that produces or presents evidence under it is still unbuilt.
+Proposed by the user 2026-08-23, refined against the actual current state of the codebase, then refined a second time against a detailed follow-up review, then extended a third time to formalize the **Evidence & Assurance subsystem** (below) as the layer this whole pipeline actually converges into, then locked in a fourth time with the single-convergence-point architecture (`SupportTicket` as the one shared record both a test exercise and a public report resolve through) and the four-term glossary (`SupportTicket`/`Finding`/`TestExercise`/`AssuranceReport`). **The six governing principles are agreed as a formal P2Less system standard** — the philosophy of evidence-before-correction applies from today, to any AI-quality investigation, not just ones that come through this specific programme. **The channels/rollout/implementation, and the Evidence & Assurance subsystem's data model/dashboard/PDF report, all stay "not started" — vision + phased plan only**, same discipline as every other future-strategic item in this project (see the main roadmap doc's Phase 8b/candidate-channels sections for precedent). Don't conflate the two: the standard is adopted now, everything that produces or presents evidence under it is still unbuilt.
 
 **Framing, deliberately not "a bug-hunting campaign":** this is P2Less's controlled production-learning loop — a structured, engineering-discipline pipeline from real conversations to verified corrections, not a community bug-bounty event. The public channels are only the input layer; the actual product is the review, evidence, attribution, correction, and regression-testing system behind them.
 
@@ -159,21 +159,60 @@ The original 6-category version conflated a few genuinely different failure mode
 
 Proposed by the user as a third extension: formalize **P2Less Evidence & Assurance** as a subsystem alongside Support/Ticket/Incident and AI Quality — not a separate product, but the layer that turns everything above into something reportable to a tenant, a prospect, or a government/enterprise buyer. Real, adopted as direction. **Not built** — no new models exist yet, this is entirely design.
 
-### Two evidence origins, one pipeline
+### Two evidence origins, one pipeline — locked in as the architecture
 
 Everything upstream of this section already produces one kind of evidence: a **report** — something a person (public, tenant, or internal) noticed and flagged. That's *reactive* evidence. The proposal adds a second, *proactive* kind: a **test exercise** — a deliberate, planned round of checking specific things, run by the team itself, whether or not anyone reported a problem.
 
-These aren't different systems. A test exercise that finds a bug produces the exact same kind of finding a public report does, and both resolve through the identical waterfall, taxonomy, and fix→regression-test→ship loop already defined above. The only difference is *how the finding was discovered* — worth keeping visible because it's a genuinely different signal ("we found this ourselves, proactively" reads very differently to a client than "a user hit this in production"), not because it needs a second review process.
+These aren't different systems, and — refined on this fourth pass — they don't stay parallel past the very first step either. Both origins funnel into the *same* operational record before anything else happens, so there is exactly one convergence point, not two:
+
+```
+                    P2Less Quality System
+                           │
+          ┌────────────────┴────────────────┐
+          │                                 │
+      Test Exercise                    Public Feedback
+          │                                 │
+          └────────────────┬────────────────┘
+                           ↓
+                    SupportTicket
+                           ↓
+                     Finding
+                           ↓
+                    Verification
+                           ↓
+                       Fix
+                           ↓
+                  Regression Test
+                           ↓
+                 Verified Evidence
+                           ↓
+              ┌────────────┴────────────┐
+              ↓                         ↓
+       Internal Evidence          Client Evidence
+                                        ↓
+                              Assurance Report / PDF
+```
+
+A test exercise that finds a bug and a public report both become a `SupportTicket` first — the exact same waterfall, taxonomy, and fix→regression-test→ship loop already defined above applies either way, no second review process. The only difference is *how the ticket was opened* — worth keeping visible (`source: internal | tenant | public_report`, already recommended above) because "we found this ourselves, proactively, before anyone hit it" is a genuinely different signal to a client than "a user hit this in production," not because it needs different machinery.
 
 Concretely, this session's own work already fits the shape: each of the 11 widget bug-hunt rounds this session ran was a real test exercise — planned, dated, scoped to specific things, with real findings, real fixes, and real regression tests. If this schema existed today, those 11 rounds would already be 11 real historical records, not a hypothetical example — worth retroactively entering once the model exists, so the subsystem launches with a real seed dataset instead of an empty table.
+
+### The critical distinction — four terms, not synonyms
+
+- **`SupportTicket`** — the operational record. What was opened, by whom, when, current status.
+- **`Finding`** — the verified conclusion. What the investigation actually determined, once a human has looked at the evidence — not what was alleged at intake.
+- **`TestExercise`** — the structured testing activity that produced a ticket, when the origin was proactive testing rather than an incoming report.
+- **`AssuranceReport`** — the presentation of accumulated, already-verified evidence. Never a place where a new claim originates.
+
+And the sentence that governs all four, kept prominent because it's the one thing this entire subsystem exists to enforce: **chat is evidence, not the assurance layer itself.**
 
 ### Proposed shape (design only, not scoped for build)
 
 Additive to the `SupportTicket`/`TicketEvent` extension already recommended above, not a replacement:
 
-- **`TestExercise`** — a planned round of testing: what was being checked, when, by whom, against which tenant/environment. Parent of...
+- **`TestExercise`** — a planned round of testing, parent of `SupportTicket` rows opened during it. To make the eventual report feel like a real assurance artifact rather than a marketing PDF, worth capturing from the start once this is built: **who conducted it, when, against which environment/tenant, which version/build, what scope, which test cases were actually executed, and who verified the results.** Preserved here now specifically so it isn't lost by the time this gets built.
 - **`TestCase`** — an individual check within an exercise, with a pass/fail result.
-- **`Finding`** — the actual unit of evidence, produced either by a failed `TestCase` **or** a triaged `SupportTicket` (the convergence point). Carries the same category/waterfall/fix-path data already defined above, regardless of which origin produced it.
+- **`Finding`** — the verified unit of evidence, attached to a `SupportTicket` once triage/investigation is complete (the same waterfall/taxonomy above, regardless of whether the ticket originated from a test exercise or a public report).
 - **`AssuranceReport`** — a generated (never hand-assembled) snapshot over a date range: which exercises ran, which findings were confirmed, which were fixed and regression-tested, computed straight from the rows above.
 
 This is a real schema addition — four new models, not the two fields (`source`/`category`) Phase A below already commits to. Worth being honest about the size difference: Phase A is an afternoon's migration; this is its own design-and-build effort, only worth starting once Phase A/B have produced enough real findings for a `TestExercise`/`Finding` model to have something to hold.
@@ -183,6 +222,8 @@ This is a real schema addition — four new models, not the two fields (`source`
 > **Don't manufacture a "97.8%" score unless the underlying methodology actually supports it.**
 
 This is the user's own stated caution, and it's exactly the right one — it's principle 6 (capability is evidence-gated) applied to the reporting layer itself. Concretely: every number that ever appears on a dashboard or in a PDF must be a live query result over real `TestExercise`/`TestCase`/`Finding` rows — never a typed-in figure, never rounded up for effect. If the underlying data can't support a claim, the report should say "not yet measured," not omit the gap or paper over it with a softer-sounding number. This is the same discipline the taxonomy above already applies to individual findings, now applied to the aggregate.
+
+**The concrete test for whether a report is honest, worth keeping as the acceptance bar**: it should be able to say *"This report contains 137 verified findings originating from 4 testing exercises and 82 user feedback reports"* — every number traceable back to a real count of real rows — never a polished document whose numbers were manually entered.
 
 ### Presentation tiers
 
@@ -207,6 +248,8 @@ This subsystem is a formal part of the roadmap now, not a vague someday. But bui
 5. The PDF generator and Executive/government tier, once there's a real prospective client or pilot to show it to — this is a sales-enablement artifact, and it earns its build the same way a channel earns its place in Phase C: proven need first, not built speculatively ahead of one.
 
 The Phase D dashboard sketched below is what the Executive tier eventually renders — same "aspirational, not scoped" status, now with a concrete data model underneath it instead of just a mockup.
+
+**Status, stated plainly so it can't drift**: direction approved → architecture documented → implementation deferred → real evidence accumulated first. Nothing above is a commitment to build on any particular date; it's a commitment that when the time comes, it gets built on this shape, not reinvented from scratch or rushed into existence with fabricated numbers.
 
 ## Phased rollout
 
