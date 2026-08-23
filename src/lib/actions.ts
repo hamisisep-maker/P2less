@@ -787,6 +787,18 @@ export async function createConnectorAction(_prev: unknown, formData: FormData) 
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   const d = parsed.data;
 
+  // SSRF guard (2026-08-23 stress-test review, #31): reject an unsafe
+  // baseUrl at creation time too, for immediate feedback — the real
+  // enforcement is at execution time (connector-engine.ts's safeFetch),
+  // since DNS can change between now and every future call.
+  const { assertSafeUrl, UnsafeUrlError } = await import("./ssrf-guard");
+  try {
+    await assertSafeUrl(d.baseUrl);
+  } catch (e) {
+    if (e instanceof UnsafeUrlError) return { error: e.message };
+    throw e;
+  }
+
   // Gap-002, fixed 2026-08-23 — same seat-limit fix as inviteUserAction,
   // applied to the other plan limit that was configurable but never
   // enforced: a tenant's connector count.
@@ -901,6 +913,17 @@ export async function createConnectorFromDraftAction(_prev: unknown, formData: F
   }
   const actionsParsed = z.array(draftActionSchema).min(1, "Select at least one capability.").safeParse(draftActions);
   if (!actionsParsed.success) return { error: actionsParsed.error.issues[0]?.message ?? "Invalid capability data." };
+
+  // SSRF guard (2026-08-23 stress-test review, #31) — same check as
+  // createConnectorAction; this path creates a Connector too and must not
+  // bypass it.
+  const { assertSafeUrl, UnsafeUrlError } = await import("./ssrf-guard");
+  try {
+    await assertSafeUrl(d.baseUrl);
+  } catch (e) {
+    if (e instanceof UnsafeUrlError) return { error: e.message };
+    throw e;
+  }
 
   // Gap-002 — same connector seat-limit check as createConnectorAction;
   // this path (OpenAPI import + marketplace install) creates a Connector

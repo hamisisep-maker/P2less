@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "./db";
 import { decryptJSON } from "./crypto";
+import { safeFetch, UnsafeUrlError } from "./ssrf-guard";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Connector engine — the integration layer.
@@ -60,16 +61,6 @@ function applyMapping(raw: unknown, mapping?: Record<string, string> | null): Re
 
 function fillPath(template: string, values: Record<string, unknown>): string {
   return template.replace(/\{(\w+)\}/g, (_, k) => encodeURIComponent(String(values[k] ?? "")));
-}
-
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 /**
@@ -152,7 +143,12 @@ export async function executeAction(
   let lastErr: ExecuteResult | null = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const res = await fetchWithTimeout(url, init, connector.timeoutMs);
+      // SSRF guard (2026-08-23 stress-test review, #31): a tenant-supplied
+      // baseUrl is fetched with the server's own network identity — safeFetch
+      // rejects loopback/private/link-local/metadata addresses, checked
+      // against the RESOLVED IP (defeats DNS rebinding) and re-checked on
+      // every redirect hop, not just the original URL.
+      const res = await safeFetch(url, { ...init, timeoutMs: connector.timeoutMs });
       const latencyMs = Date.now() - started;
       if (!res.ok) {
         lastErr = {
@@ -177,6 +173,11 @@ export async function executeAction(
       return { ok: true, data, raw, status: res.status, latencyMs };
     } catch (e) {
       const latencyMs = Date.now() - started;
+      if (e instanceof UnsafeUrlError) {
+        // Config error, not transient — retrying won't change a disallowed
+        // address, so stop immediately rather than burning the retry budget.
+        return { ok: false, error: "This connector's address is not allowed.", code: "config", latencyMs };
+      }
       const isAbort = e instanceof Error && e.name === "AbortError";
       lastErr = {
         ok: false,

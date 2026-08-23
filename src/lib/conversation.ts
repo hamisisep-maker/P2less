@@ -28,6 +28,7 @@ import { evaluateWorkflowAsk } from "./workflow-engine";
 import type { FactSource } from "./provenance";
 import { computeSlaDeadline } from "./ticket-sla";
 import { findLikelyDuplicate } from "./duplicate-detection";
+import { detectDistressSignal } from "./safeguarding";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Conversation orchestrator — the channel-agnostic core pipeline:
@@ -382,6 +383,21 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     }
     return { ok: true, replies: finalReplies, conversationId: conversation!.id, from: fromIdentity } satisfies HandleResult;
   };
+
+  // ── Crisis / distress detection — checked FIRST, before ANY state-dependent
+  // branching (training codes, identify flow, capability routing) below.
+  // Deliberately placed here rather than deeper in the function: the
+  // escalation-matcher bug fixed three times in this project's history (see
+  // escalateToHuman's own comments) was always the same shape — a check
+  // declared too late silently misses whichever states were added before it
+  // existed. S10 stress-test finding, 2026-08-23: nothing in the platform
+  // detected distress/crisis language at all — the assistant would cheerfully
+  // attempt to answer a fee question from someone in crisis. This never
+  // attempts to counsel (an AI attempting crisis support is worse than one
+  // that immediately hands off) — detection and warm handoff only.
+  if (detectDistressSignal(input.text)) {
+    return escalateToHuman(contact, conversation, { distress: true });
+  }
 
   // Public join-by-code: the ONLY way a contact can enroll themselves,
   // alongside the admin-driven addTrainingParticipantAction path. A real
@@ -1465,7 +1481,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // narrows them to non-null at each call site (both plain, synchronous
   // spots in the main function body) but can't carry that narrowing through
   // a nested function's closure over the mutable `let` bindings.
-  async function escalateToHuman(escalatingContact: NonNullable<typeof contact>, escalatingConversation: NonNullable<typeof conversation>) {
+  async function escalateToHuman(escalatingContact: NonNullable<typeof contact>, escalatingConversation: NonNullable<typeof conversation>, opts?: { distress?: boolean }) {
     // Duplicate-escalation detection (docs/OPERATIONS-GUIDE-2026-08-23.md
     // §47) — captured once here, at the moment of escalation, since this is
     // the one place we reliably know "something went wrong enough that a
@@ -1492,23 +1508,27 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     // message ever — no prior content exists to compare.
     const priorMessages = await db.message.findMany({ where: { conversationId: escalatingConversation.id, direction: "in" }, orderBy: { createdAt: "desc" }, take: 2, select: { body: true } });
     const triggerText = priorMessages[1]?.body ?? null;
-    const duplicate = triggerText ? await findLikelyDuplicate(tenant.id, triggerText) : null;
+    // A distress ticket is never merged/deprioritized as a "duplicate" of
+    // someone else's crisis — every one gets its own full-priority ticket.
+    const duplicate = !opts?.distress && triggerText ? await findLikelyDuplicate(tenant.id, triggerText) : null;
 
     const ticket = await db.supportTicket.create({
       data: {
         number: await nextTicketNumber(),
         tenantId: tenant.id, conversationId: escalatingConversation.id, contactId: escalatingContact.id,
-        subject: `Escalation from ${escalatingContact.displayName ?? input.fromNumber}`,
+        subject: opts?.distress ? `SAFEGUARDING — possible distress from ${escalatingContact.displayName ?? input.fromNumber}` : `Escalation from ${escalatingContact.displayName ?? input.fromNumber}`,
         // "tenant" per the 3-way source split (docs/PUBLIC-FEEDBACK-QUALITY-
         // CENTRE-2026-08-23.md) — this is the exact "already happens
         // informally today" precedent that split was written around.
         source: "tenant",
-        slaDeadlineAt: await computeSlaDeadline("normal"),
+        category: opts?.distress ? "safeguarding" : undefined,
+        priority: opts?.distress ? "urgent" : "normal",
+        slaDeadlineAt: await computeSlaDeadline(opts?.distress ? "urgent" : "normal"),
         triggerText,
         duplicateOfId: duplicate?.ticketId,
       },
     });
-    await db.ticketEvent.create({ data: { ticketId: ticket.id, type: "created", visibility: "internal", detail: { source: "conversation_escalation", ...(duplicate ? { possibleDuplicateOf: duplicate.ticketId, similarity: duplicate.similarity } : {}) } } });
+    await db.ticketEvent.create({ data: { ticketId: ticket.id, type: "created", visibility: "internal", detail: { source: opts?.distress ? "distress_detection" : "conversation_escalation", ...(duplicate ? { possibleDuplicateOf: duplicate.ticketId, similarity: duplicate.similarity } : {}) } } });
     await audit({ tenantId: tenant.id, requestId: reqId, actorType: "contact", actorId: escalatingContact.id, action: "escalate", success: true, detail: { ticketNumber: ticket.number } });
     // The reply below promises "notified the team" — this is what actually
     // makes that true, instead of the promise being backed by nothing.
@@ -1516,12 +1536,22 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     // "WhatsApp" regardless of the actual channel — staff reading this
     // notification could be misdirected to reply on the wrong channel for a
     // Telegram/Messenger/email escalation.
-    await queueNotification("ticket_created", `New ${getCurrentChannelLabel()} escalation ${ticket.number ?? ticket.id} from ${tenant.name}: ${ticket.subject}`).catch(() => {});
+    await queueNotification("ticket_created", `${opts?.distress ? "🚨 URGENT — SAFEGUARDING: " : "New "}${getCurrentChannelLabel()} escalation ${ticket.number ?? ticket.id} from ${tenant.name}: ${ticket.subject}`).catch(() => {});
     // Real gap found writing docs/OPERATIONS-GUIDE-2026-08-23.md: the user
     // was never told their own ticket number, even though it's generated
     // right here — nothing to reference if they follow up later.
     const ref = ticket.number ? ` Your reference is ${ticket.number}.` : "";
-    return emit([{ body: `I've created a support request and notified the team.${ref} Someone will get back to you shortly.` }], "escalated", { lastResource: ctx.lastResource });
+    // Distress reply deliberately does NOT attempt to counsel, does NOT
+    // recite a specific crisis-helpline number (an unverified or
+    // out-of-date number stated as fact could cause real harm — this is a
+    // first-pass CAN-tier mitigation, not the SHOULD-tier fix, which
+    // requires each tenant to nominate a real, confirmed contact and
+    // helpline at onboarding), and does NOT continue toward the original
+    // question — only a warm, honest handoff.
+    const body = opts?.distress
+      ? `I can hear that things feel really heavy right now, and I want a real person from ${tenant.name} to reach out to you as soon as possible — I've flagged this urgently.${ref} If you or someone else is in immediate danger, please reach out to someone you trust or your local emergency services right away.`
+      : `I've created a support request and notified the team.${ref} Someone will get back to you shortly.`;
+    return emit([{ body }], "escalated", { lastResource: ctx.lastResource });
   }
 
   // ── Unknown contact → warm welcome + self-service linking, never a cold "no" ─
