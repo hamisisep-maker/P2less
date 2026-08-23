@@ -74,6 +74,12 @@ FAQs' save success moved from an inline banner (easy to miss after scrolling) to
 
 Live-verified all three flows in a real browser session: FAQ save toast caught in the DOM; API key Revoke confirmed with the exact right message, correctly aborted on cancel, correctly persisted `revokedAt` on confirm; webhook Delete confirmed with the exact right message, correctly aborted on cancel, confirmed genuinely gone from the database (not just hidden) on confirm. All test data cleaned up afterward.
 
+## Phase 4 — ✅ SHIPPED 2026-08-23 (commit `c5e98a4`, Railway `20397db0`)
+
+Backend-authoritative "no changes made" detection, per the standard's own preference: `saveFaqsAction`, `saveProductAction`, `saveDeliveryZoneAction`, and `saveDriverAction` all now compare the incoming data against what's actually stored before writing. FAQs compares the full array (order-sensitive, exact JSON equality); Products/Delivery zones/Drivers compare field-by-field against the current record. Products' check is skipped whenever a new photo was uploaded, since that's always a real, intentional change regardless of the other fields. When nothing changed, the write and `revalidatePath` are skipped entirely and the action returns `unchanged: true`; the four client editors show a neutral "No changes were made" toast instead of the usual success toast in that case.
+
+Live-verified both branches end-to-end for FAQs and Products (the two most structurally different cases) in a real browser session: a first save with real content showed the normal success toast, an identical second save correctly showed "No changes were made" instead. Delivery zones and Drivers use the identical pattern already proven correct in earlier phases, not independently re-verified.
+
 ## Recommended path — phased, not all 34 sections at once
 
 Trying to apply the full original standards document everywhere at once is realistically months of work across 20+ modules. Here's a sequence that fixes the real, live problems first and treats the rest as deliberate follow-on phases:
@@ -87,7 +93,7 @@ Widget key Deactivate gets a real confirmation step + toast feedback. This is th
 **Phase 3 — ✅ SHIPPED, see above — consistency pass:**
 Bring FAQs onto the same toast pattern as everywhere else (or formally decide inline-banner is the intended pattern for form-heavy editors and standardize *that* — worth a real decision, not just copying whichever is more common). Generalize `ReasonAction` (or a lighter variant) for use in the tenant dashboard, not just admin.
 
-**Phase 4 — the "no changes made" detection:**
+**Phase 4 — ✅ SHIPPED, see above — the "no changes made" detection:**
 Build one reusable dirty-check helper, pilot it on FAQs (the case that started this), then extend to Products/Delivery/Drivers.
 
 **Phase 5 — deferred, real but lower priority for a first client demo:**
