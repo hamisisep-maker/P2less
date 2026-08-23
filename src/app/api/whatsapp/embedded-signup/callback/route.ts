@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { exchangeCodeForToken } from "@/lib/whatsapp-embedded-signup";
+import { enterTenantContext } from "@/lib/tenant-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Universal Platform roadmap Phase 9 — Meta redirects here after an org
@@ -36,6 +37,10 @@ export async function GET(req: Request) {
   if (!tenant) {
     redirect(`/dashboard/channels?embedded_signup=error&message=${encodeURIComponent("Couldn't match this signup back to an organization.")}`);
   }
+  // Tenant-isolation hardening audit, 2026-08-23 — same fix as the Messenger
+  // OAuth callback: this route resolves a tenant but never established
+  // context, unlike every other webhook/callback route in the codebase.
+  enterTenantContext(tenant.id);
 
   const exchange = await exchangeCodeForToken(code);
   if (!exchange.ok) {

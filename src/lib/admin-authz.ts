@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
 import { db } from "./db";
 import { getCurrentUser, type CurrentUser } from "./auth";
+import { enterCrossTenantContext } from "./tenant-context";
 import type { AdminPermission } from "./admin-permissions";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -91,6 +92,10 @@ export async function assertAdminPermission(
   if (opts?.tenantId !== undefined && !isTenantInScope(user, opts.tenantId)) {
     throw new ForbiddenError("Tenant outside your assigned scope");
   }
+  // Tenant-isolation fail-open audit, 2026-08-23 — the real choke point for
+  // every admin SERVER ACTION (requireAdminPermission, the page-level
+  // variant, calls this too). See tenant-context.ts's comment.
+  enterCrossTenantContext();
   return user;
 }
 

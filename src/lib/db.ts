@@ -1,5 +1,18 @@
 import { PrismaClient, Prisma } from "@prisma/client";
-import { getCurrentTenantId } from "./tenant-context";
+import { getCurrentTenantId, isCrossTenantContext } from "./tenant-context";
+
+/** Thrown when a tenant-scoped model is queried with NEITHER a real tenant
+ *  context NOR an explicit cross-tenant marker set — the actual bug the
+ *  whole extension exists to catch (2026-08-23 fail-open audit; previously
+ *  this case silently ran the query completely unscoped instead). A real
+ *  cross-tenant need (an admin page, a background job) always sets one of
+ *  the two deliberately — see tenant-context.ts. */
+export class TenantContextMissingError extends Error {
+  constructor(model: string, operation: string) {
+    super(`Tenant-scoped query on ${model}.${operation} ran with no tenant context established. Call enterTenantContext()/runWithTenant() for a tenant-scoped path, or enterCrossTenantContext()/runCrossTenant() for a deliberately cross-tenant one (admin, background job).`);
+    this.name = "TenantContextMissingError";
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tenant-isolation hardening — structural backstop for SQLite (no Row-Level
@@ -65,8 +78,18 @@ function buildClient() {
     query: {
       $allModels: {
         async $allOperations({ model, operation, args, query }) {
+          if (!model || !TENANT_SCOPED_MODELS.has(model)) return query(args);
           const tenantId = getCurrentTenantId();
-          if (!tenantId || !model || !TENANT_SCOPED_MODELS.has(model)) return query(args);
+          if (!tenantId) {
+            // Fail CLOSED, not open (2026-08-23 audit) — a deliberately
+            // cross-tenant path (every /admin/** page/action, every
+            // background job) always marks itself via enterCrossTenantContext/
+            // runCrossTenant; anything reaching here with neither a tenant
+            // NOR that marker set genuinely forgot to establish context,
+            // which used to run completely unscoped instead of erroring.
+            if (isCrossTenantContext()) return query(args);
+            throw new TenantContextMissingError(model, operation);
+          }
           const a = args as Record<string, unknown>;
 
           if (READ_MANY_OPS.has(operation) || WRITE_MANY_OPS.has(operation)) {

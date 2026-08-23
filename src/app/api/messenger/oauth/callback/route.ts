@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { exchangeCodeForPages, saveConnectedPage, subscribePageToWebhook } from "@/lib/messenger";
+import { enterTenantContext } from "@/lib/tenant-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 8a — Meta redirects here after an org authorizes Facebook Login for
@@ -32,6 +33,13 @@ export async function GET(req: Request) {
   if (!tenant) {
     redirect(`/dashboard/channels?connect=error&message=${encodeURIComponent("Couldn't match this connection back to an organization.")}`);
   }
+  // Tenant-isolation hardening audit, 2026-08-23: found this route never
+  // established tenant context, unlike every other webhook/callback route in
+  // the codebase — its own queries happen to be safe today (saveConnectedPage
+  // explicitly scopes by tenantId in its own where clause), but that's safety
+  // "by construction of this one call site," not by the platform's structural
+  // backstop. Brought in line with the established pattern.
+  enterTenantContext(tenant.id);
 
   const result = await exchangeCodeForPages(code);
   if (!result.ok) {

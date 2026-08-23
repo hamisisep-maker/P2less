@@ -20,7 +20,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 // wrong, and undermining the exact multi-channel pitch the page makes.
 // ─────────────────────────────────────────────────────────────────────────────
 
-type TenantContext = { tenantId: string; channelLabel?: string; channelType?: string };
+type TenantContext = { tenantId?: string; channelLabel?: string; channelType?: string; crossTenant?: boolean };
 
 // Backed by globalThis, same reasoning as job-runner.ts's registry Map: Next.js
 // bundles server code into separate module graphs per entry point (route
@@ -65,6 +65,43 @@ export function runWithTenant<T>(tenantId: string, fn: () => T): T {
 
 export function getCurrentTenantId(): string | undefined {
   return storage.getStore()?.tenantId;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fail-open audit, 2026-08-23: db.ts's tenant-scoping extension used to treat
+// "no tenant context" as "run the query unscoped" unconditionally — the ONE
+// failure mode the whole extension exists to catch (a forgotten
+// enterTenantContext call) was indistinguishable from a legitimate,
+// intentional cross-tenant read (every /admin/** page, every background
+// job), so it could only ever fail open. These two functions make "cross-
+// tenant is deliberate here" an explicit, checkable fact instead of an
+// absence — called from requireSuperAdmin() and assertAdminPermission()
+// (every /admin/** page and server action) and from job-runner.ts's
+// runJobNow() (every scheduled AND manually-triggered background job — the
+// single real choke point, confirmed by audit: every job in this codebase
+// executes only through it, never a raw sweep function call). Anywhere
+// NEITHER this NOR a real tenantId is set is now the true bug signal, and
+// db.ts fails closed for it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Call once per request that is INTENTIONALLY cross-tenant (an admin page
+ *  or action) — persists for the rest of the current async chain, same
+ *  enterWith() shape as enterTenantContext(). */
+export function enterCrossTenantContext(): void {
+  storage.enterWith({ crossTenant: true });
+}
+
+/** Same intent, scoped to one background-job execution via a real callback
+ *  (storage.run(), not enterWith()) — concurrent job runs shouldn't share
+ *  mutable context, and it should NOT persist past the job like enterWith
+ *  would. Mirrors runWithTenant's own reasoning for the identical
+ *  loop-isolation problem. */
+export function runCrossTenant<T>(fn: () => T): T {
+  return storage.run({ crossTenant: true }, fn);
+}
+
+export function isCrossTenantContext(): boolean {
+  return storage.getStore()?.crossTenant === true;
 }
 
 /** Read by ai.ts's smallTalk() so it describes itself using the REAL channel

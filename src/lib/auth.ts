@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
-import { enterTenantContext } from "./tenant-context";
+import { enterTenantContext, enterCrossTenantContext } from "./tenant-context";
 
 const secret = new TextEncoder().encode(process.env.AUTH_SECRET || "p2less-dev-secret");
 const COOKIE = "p2less_session";
@@ -143,6 +143,11 @@ export async function requireTenantUser(): Promise<CurrentUser> {
 export async function requireSuperAdmin(): Promise<CurrentUser> {
   const user = await requireUser();
   if (!user.isSuperAdmin && !user.adminRoleId) redirect("/dashboard");
+  // Tenant-isolation fail-open audit, 2026-08-23 — every /admin/** page
+  // renders through this (the admin layout's own gate), so this is the
+  // single choke point that marks the whole page tree as deliberately
+  // cross-tenant for db.ts's extension. See tenant-context.ts's comment.
+  enterCrossTenantContext();
   return user;
 }
 

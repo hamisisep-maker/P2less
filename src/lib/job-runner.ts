@@ -2,6 +2,7 @@ import "server-only";
 import { Prisma } from "@prisma/client";
 import { db } from "./db";
 import { maybeOpenJobFailureIncident } from "./incident-detection";
+import { runCrossTenant } from "./tenant-context";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Every background job — the two pre-existing pollers (billing, dispatch)
@@ -55,7 +56,13 @@ export async function runJobNow(key: string, triggeredBy = "scheduler"): Promise
   const started = Date.now();
 
   try {
-    const result = await spec.run();
+    // Tenant-isolation fail-open audit, 2026-08-23 — every background job,
+    // scheduled or manually triggered, executes ONLY through here (confirmed
+    // by grep: no sweep function is ever called directly). Marking the whole
+    // run as deliberately cross-tenant lets db.ts's extension fail closed for
+    // the actual bug case (a query that runs with no context established at
+    // all) instead of treating every unscoped query as "probably a job."
+    const result = await runCrossTenant(() => spec.run());
     const durationMs = Date.now() - started;
     await db.jobRun.update({
       where: { id: run.id },
