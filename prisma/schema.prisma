@@ -1420,6 +1420,23 @@ model SupportTicket {
   // routing ladder) instead of reflexively filing everything as a code task.
   actionRequired String? // null = not decided yet. One of: no_action | knowledge_update | configuration_change | prompt_change | connector_data_fix | ai_model_change | operational_procedure | user_training | monitoring_change | documentation_change | ux_change | code_change
   actionReason   String? // required alongside actionRequired — why this layer, not a cheaper one. Makes the decision auditable, not just a label.
+  // Duplicate-escalation detection (docs/OPERATIONS-GUIDE-2026-08-23.md §47's
+  // "10 tickets, same root cause, nothing groups them" gap). triggerText is
+  // captured once at creation — the customer's own message right before
+  // they escalated (what they were actually asking about), null if this
+  // was their very first message ever with nothing prior to compare. NOT
+  // the AI's reply — tried that first, live-tested, and found AI phrasing
+  // varies too much between calls for word-overlap similarity to reliably
+  // match two genuinely-identical questions. Purely for cheap text-
+  // similarity comparison, never shown as if it were the full transcript.
+  // duplicateOfId is a SUGGESTION set by a heuristic, never
+  // authoritative: nothing auto-merges, auto-resolves, or hides a ticket
+  // because of it — a reviewer decides. Soft reference, same convention as
+  // relatedPaymentId/relatedIncidentId above (no hard @relation) — always
+  // points at the ROOT of a cluster, never chained, so counting "N similar
+  // reports" is a flat findMany, not a recursive walk.
+  triggerText    String?
+  duplicateOfId  String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -1433,6 +1450,7 @@ model SupportTicket {
   @@index([relatedPaymentId])
   @@index([qualityCategory])
   @@index([actionRequired])
+  @@index([duplicateOfId])
 }
 
 /// Timeline entry for a SupportTicket — internal notes AND customer-visible

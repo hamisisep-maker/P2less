@@ -38,7 +38,7 @@ export function Stat({ label, value, sub }: { label: string; value: string | num
   return (
     <Card className="p-5">
       <div className="text-xs font-medium uppercase tracking-wide text-faint">{label}</div>
-      <div className="mt-1 font-display text-2xl font-bold">{value}</div>
+      <div className="mt-1 break-words font-display text-2xl font-bold">{value}</div>
       {sub && <div className="mt-0.5 text-xs text-muted">{sub}</div>}
     </Card>
   );

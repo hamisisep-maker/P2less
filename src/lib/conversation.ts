@@ -27,6 +27,7 @@ import { evaluateCapabilityGate } from "./capability-gate";
 import { evaluateWorkflowAsk } from "./workflow-engine";
 import type { FactSource } from "./provenance";
 import { computeSlaDeadline } from "./ticket-sla";
+import { findLikelyDuplicate } from "./duplicate-detection";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Conversation orchestrator — the channel-agnostic core pipeline:
@@ -566,6 +567,17 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
 
   const text = input.text.trim();
   const lower = text.toLowerCase();
+  // Hoisted here (was previously computed much later, right before its own
+  // two call sites) after finding a THIRD branch that skipped it: the
+  // awaiting_identify resume path (below) answers a non-ID-looking message
+  // via smallTalk() directly, and since it runs long before the old
+  // definition site, an escalation request landing while someone was mid-
+  // onboarding got treated as small talk instead of creating a ticket —
+  // the exact bug class already fixed twice before (see escalateToHuman's
+  // own comment), just in a state that fix didn't reach. One canonical
+  // definition, checked at every branch that can terminate the turn with
+  // an AI-generated reply, closes the whole class instead of one instance.
+  const isEscalationRequest = /(speak|talk).*(human|someone|agent|person)|human agent|customer care/.test(lower);
 
   // ── Super-app ACCESS MODEL ────────────────────────────────────────────────
   // A person RECOGNIZED by this organization (linked with a role — e.g. a
@@ -913,6 +925,13 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     if (contact.contactRoles.length > 0) {
       return emit([{ body: `Good news — you're already connected! 🎉 What can I help you with?` }], "open", {});
     }
+    // Real bug found live-testing 2026-08-23: an unlinked contact asking to
+    // talk to a human while mid-onboarding fell straight into the
+    // "not an ID attempt → smallTalk()" branch below, with a real AI-
+    // generated decline ("I'm the AI assistant... contact the office
+    // directly") instead of ever creating a ticket — this state was missed
+    // by both earlier escalation-check fixes since it runs before either.
+    if (isEscalationRequest) return escalateToHuman(contact, conversation);
     if (/^(cancel|stop|no|nevermind|never mind)$/i.test(lower)) {
       return emit([{ body: "No problem — say “hi” whenever you'd like to get connected." }], "open", {});
     }
@@ -1447,6 +1466,34 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // spots in the main function body) but can't carry that narrowing through
   // a nested function's closure over the mutable `let` bindings.
   async function escalateToHuman(escalatingContact: NonNullable<typeof contact>, escalatingConversation: NonNullable<typeof conversation>) {
+    // Duplicate-escalation detection (docs/OPERATIONS-GUIDE-2026-08-23.md
+    // §47) — captured once here, at the moment of escalation, since this is
+    // the one place we reliably know "something went wrong enough that a
+    // human asked for help".
+    //
+    // REAL correction made live 2026-08-23, not a hypothetical: the first
+    // version compared the AI's own last reply, on the theory that it's
+    // "what allegedly went wrong". Tested live with two contacts asking the
+    // literal same question ("do you offer free shipping to Antarctica") —
+    // the AI phrased its decline completely differently each time (a
+    // different penguin joke), so word-overlap similarity between the two
+    // replies came out under the match threshold despite being genuinely
+    // the same issue. Switched to comparing the CUSTOMER's own prior
+    // message instead — directly matches the actual scenario duplicate
+    // detection exists for (the same broadcast/status reaching many people,
+    // who then type the same or a very similar question), is far more
+    // literal/robust than comparing free-form AI phrasing, and re-verified
+    // live: the same two-contact test now correctly linked as duplicates.
+    // `skip`'s target is the message BEFORE the current escalation request
+    // — the just-recorded current message (line ~326, earlier in
+    // handleInbound) is always priorMessages[0] at this point, so [1] is
+    // what they were actually asking about. Falls back to null (skips
+    // dedup entirely, not a false match) if this is genuinely their first
+    // message ever — no prior content exists to compare.
+    const priorMessages = await db.message.findMany({ where: { conversationId: escalatingConversation.id, direction: "in" }, orderBy: { createdAt: "desc" }, take: 2, select: { body: true } });
+    const triggerText = priorMessages[1]?.body ?? null;
+    const duplicate = triggerText ? await findLikelyDuplicate(tenant.id, triggerText) : null;
+
     const ticket = await db.supportTicket.create({
       data: {
         number: await nextTicketNumber(),
@@ -1457,9 +1504,11 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
         // informally today" precedent that split was written around.
         source: "tenant",
         slaDeadlineAt: await computeSlaDeadline("normal"),
+        triggerText,
+        duplicateOfId: duplicate?.ticketId,
       },
     });
-    await db.ticketEvent.create({ data: { ticketId: ticket.id, type: "created", visibility: "internal", detail: { source: "conversation_escalation" } } });
+    await db.ticketEvent.create({ data: { ticketId: ticket.id, type: "created", visibility: "internal", detail: { source: "conversation_escalation", ...(duplicate ? { possibleDuplicateOf: duplicate.ticketId, similarity: duplicate.similarity } : {}) } } });
     await audit({ tenantId: tenant.id, requestId: reqId, actorType: "contact", actorId: escalatingContact.id, action: "escalate", success: true, detail: { ticketNumber: ticket.number } });
     // The reply below promises "notified the team" — this is what actually
     // makes that true, instead of the promise being backed by nothing.
@@ -1474,7 +1523,6 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     const ref = ticket.number ? ` Your reference is ${ticket.number}.` : "";
     return emit([{ body: `I've created a support request and notified the team.${ref} Someone will get back to you shortly.` }], "escalated", { lastResource: ctx.lastResource });
   }
-  const isEscalationRequest = /(speak|talk).*(human|someone|agent|person)|human agent|customer care/.test(lower);
 
   // ── Unknown contact → warm welcome + self-service linking, never a cold "no" ─
   // Gated on history.length === 0 (genuinely the FIRST message ever in this

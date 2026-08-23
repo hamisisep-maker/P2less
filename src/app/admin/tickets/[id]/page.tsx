@@ -52,12 +52,41 @@ export default async function AdminTicketDetailPage({ params }: { params: Promis
   const actors = actorIds.length ? await db.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } }) : [];
   const actorNameById = new Map(actors.map((a) => [a.id, a.name]));
 
+  // Duplicate-escalation detection (docs/OPERATIONS-GUIDE-2026-08-23.md §47)
+  // — a SUGGESTION from a text-similarity heuristic set once at creation,
+  // never authoritative. Shown regardless of which ticket in a cluster is
+  // open: clusterRootId resolves to the root whether this ticket IS the
+  // root or is itself a duplicate of it, so "N similar reports" is always
+  // the same full cluster no matter which one you're looking at.
+  const clusterRootId = ticket.duplicateOfId ?? ticket.id;
+  const clusterMembers = await db.supportTicket.findMany({
+    where: { id: { not: ticket.id }, OR: [{ id: clusterRootId }, { duplicateOfId: clusterRootId }] },
+    select: { id: true, number: true, subject: true, status: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+  });
+
   return (
     <div>
       <PageHeader
         title={`${ticket.number ?? ticket.id.slice(0, 8)} — ${ticket.subject}`}
         subtitle={`${ticket.tenant.name}${ticket.contact ? ` · ${ticket.contact.displayName ?? ticket.contact.address}` : ""}`}
       />
+      {clusterMembers.length > 0 && (
+        <Card className="mb-4 border-amber/30 bg-amber-soft p-4">
+          <p className="text-sm font-medium text-ink">
+            Possibly the same underlying issue as {clusterMembers.length} other ticket{clusterMembers.length === 1 ? "" : "s"} — detected automatically, not confirmed.
+          </p>
+          <p className="mt-1 text-xs text-muted">Based on a text-similarity match against what each customer asked right before escalating. Worth checking whether these are really the same root cause before deciding an action.</p>
+          <ul className="mt-2 space-y-1 text-sm">
+            {clusterMembers.map((m) => (
+              <li key={m.id}>
+                <a href={`/admin/tickets/${m.id}`} className="text-accent hover:underline">{m.number ?? m.id.slice(0, 8)}</a>
+                <span className="text-muted"> — {m.subject} ({m.status.replace(/_/g, " ")})</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
       <Card className="p-5">
         <TicketWorkspace
           ticket={{
