@@ -50,11 +50,21 @@ Uses `useActionState` + an inline green/red banner — internally consistent, co
 - AI provider failover is intentionally silent to the end user (by design — a provider switch shouldn't alarm anyone), while still being logged for admins via `aiFailoverAudit`. This already satisfies what the original document's §22 asked for; no change needed there.
 - Widget key creation, API key creation, and webhook secret creation all correctly use a persistent inline banner (not an auto-dismissing toast) to show a reveal-once secret — the right call, since a toast that vanishes in 4 seconds would lose the only copy of a credential.
 
+## Phase 1 — ✅ SHIPPED 2026-08-23 (commit `5a000fb`, Railway `c6cce5b9`)
+
+All four confirmed bugs from the audit fixed, live-verified in a real browser session:
+- Products/Delivery zones/Drivers editors now show a real `toast.success("… added" | "… updated")` on save — previously silent.
+- Their Deactivate/Reactivate toggles moved to a new shared `src/components/toggle-active-button.tsx` — confirms before deactivating (the destructive direction only, not reactivating), shows a toast either way, and the three `toggleXActiveAction`s in `actions.ts` now return a real `{ ok, active } | { error }` instead of `void` so the UI can actually tell success from failure.
+- `admin/ai/provider-card.tsx` and `admin/billing/automation/rules-table.tsx` no longer fire a success toast without checking the actual result first.
+- `admin/billing/pricing-form.tsx`'s "Reset defaults" button no longer has an unhandled promise rejection.
+
+Live-verified, not just typechecked: reproduced the exact save/toggle flows against a real tenant (Kilimani Retail), caught the real `"Product updated"` toast rendering in the DOM via a polling script (two earlier attempts missed it purely on tool round-trip timing, not a real bug — confirmed by checking the underlying DB write succeeded both times), confirmed the `confirm()` dialog fires with the intended message, confirmed zero console errors across all three affected pages, confirmed all test data and temporarily-granted permissions were fully reverted afterward.
+
 ## Recommended path — phased, not all 34 sections at once
 
 Trying to apply the full original standards document everywhere at once is realistically months of work across 20+ modules. Here's a sequence that fixes the real, live problems first and treats the rest as deliberate follow-on phases:
 
-**Phase 1 — fix the confirmed bugs (small, safe, no new patterns needed):**
+**Phase 1 — ✅ SHIPPED, see above — fix the confirmed bugs (small, safe, no new patterns needed):**
 Products/Delivery/Drivers silent success → add `toast.success`, matching the 28 files that already do this correctly. Same three files' Deactivate/Reactivate → wrap in the existing `ReasonAction` pattern (or a lighter dashboard-side variant) instead of a bare form. Fix the two false-success toasts and the unhandled promise — these are just bugs, unrelated to any bigger design decision.
 
 **Phase 2 — the highest-risk gap:**
