@@ -1,50 +1,66 @@
 # P2Less — Controlled Production-Learning Loop (Public Feedback → Quality Centre)
 
-Vision document, proposed by the user 2026-08-23, refined against the actual current state of the codebase, then refined a second time against a detailed follow-up review — before being treated as a build plan. **Not started — vision + phased plan only**, same discipline as every other future-strategic item in this project (see the main roadmap doc's Phase 8b/candidate-channels sections for precedent).
+Proposed by the user 2026-08-23, refined against the actual current state of the codebase, then refined a second time against a detailed follow-up review. **The six governing principles below are now agreed as a formal P2Less system standard** — the philosophy of evidence-before-correction applies from today, to any AI-quality investigation, not just ones that come through this specific programme. **The channels/rollout/implementation stays "not started" — vision + phased plan only**, same discipline as every other future-strategic item in this project (see the main roadmap doc's Phase 8b/candidate-channels sections for precedent). Don't conflate the two: the standard is adopted now, the public programme that feeds it is still unbuilt.
 
 **Framing, deliberately not "a bug-hunting campaign":** this is P2Less's controlled production-learning loop — a structured, engineering-discipline pipeline from real conversations to verified corrections, not a community bug-bounty event. The public channels are only the input layer; the actual product is the review, evidence, attribution, correction, and regression-testing system behind them.
 
 ```
-              PUBLIC FEEDBACK (input layer only)
-                        │
-          ┌─────────────┴──────────────┐
-          │                            │
-       WhatsApp                     Widget
-     (V1, proven)                (V1, proven)
-          │                            │
-          └─────────────┬──────────────┘
-                         ↓
-              Existing Ticket System
-           (SupportTicket + TicketEvent)
-                         ↓
-                Quality Classification
-                         ↓
-     ┌───────────────────┼───────────────────┐
-     ↓                   ↓                   ↓
-Technical Bug     AI Quality Issue       User Error /
-                         │              Correct Response
-        ┌────────────────┼────────────────┐
-        ↓                ↓                ↓
-  Hallucination    Knowledge Gap    Intent/Context/
-  (AI changed a                     Connector/Auth
-  correct fact)                        Error
-                         ↓
+          PUBLIC / TENANT / INTERNAL REPORT
+                        ↓
+              Existing SupportTicket
+           (source: public_report | tenant | internal)
+                        ↓
+               Quality Classification
+                (11-category taxonomy, below)
+                        ↓
+                Evidence Collection
+                        ↓
+               Execution Fingerprint
+       (conversation → message → AiRequestLog →
+        provider/model → connector → intent → auth)
+                        ↓
                   Human Review
              (the investigation waterfall)
-                         ↓
-                 Verified Finding
-                         ↓
-                Corrective Action
-          (prompt fix / FAQ / code / config —
-           never a raw "add this fact" write)
-                         ↓
-                 Regression Test
-            (the same scripts/test.ts suite
-             this whole session has run after
-             every single fix)
-                         ↓
-                  Close / Monitor
+                        ↓
+              ┌─────────┴─────────┐
+              ↓                   ↓
+          Verified              Not a Bug
+              ↓             (documented, closed —
+      Corrective Action      no system change)
+   (prompt fix / FAQ / code / config —
+    never a raw "add this fact" write)
+              ↓
+        Regression Test
+   (the same scripts/test.ts suite
+    this whole session has run after
+    every single fix)
+              ↓
+           Monitor
 ```
+
+**The philosophy this reduces to**: people don't teach the AI directly. People provide evidence. P2Less investigates the evidence, identifies the actual failure, fixes the appropriate layer, tests the fix, and only then allows the verified knowledge or configuration to influence future behavior.
+
+## The six governing principles — the formal standard
+
+These apply to any AI-quality investigation at P2Less from today, whatever channel or source the report came from.
+
+**1. Evidence before classification.** A report is an allegation until the underlying execution has actually been investigated — never triage from the description alone.
+
+**2. Human review before learning.** Nothing reported by a user automatically changes prompts, FAQs, configuration, or AI behavior. Every correction passes through a person first.
+
+**3. Identify the origin of the error.** The investigation must determine which layer actually produced the failure — source data, connector, authorization, intent/classification, conversation context, AI generation/transformation, integration, technical infrastructure, or user misunderstanding. This is what the 11-category taxonomy and the investigation waterfall below exist to enforce.
+
+**4. Preserve existing invariants.** The AI layer already has explicit, hard rules about what it must never do — not just the number-preservation rule in `humanizeReply()`. Grepping `ai.ts` turns up several, all worth a reviewer's checklist when classifying a report as a genuine AI-generation violation rather than something else:
+   - *"Keep every number, amount, currency, date, time, reference and name EXACTLY as given in the ANSWER"* (`humanizeReply()`)
+   - *"Never invent ORGANIZATION-SPECIFIC or PERSONAL details you weren't given"* (`smallTalk()`)
+   - *"NEVER offer to 'check', 'ask', 'find out', or 'get back to you' on something... Fabricating a check-in and its outcome is a real lie to someone who trusted you"* (`smallTalk()`)
+   - *"Never invent whether something DID or DIDN'T happen"* (`smallTalk()`)
+
+   A verified violation of any of these is a confirmed integrity failure, not a vague "AI was off" — and this list itself is worth keeping current as the AI layer grows, since it's the actual definition of what "preserve invariants" checks against.
+
+**5. Every verified fix should be testable.** A confirmed fix should produce a regression test where practical, so the same failure gets caught automatically if it returns — the same discipline this whole session has applied to every single shipped fix via `scripts/test.ts`.
+
+**6. Capability is evidence-gated — and this applies project-wide, not just to this programme.** Don't claim a capability because the code exists; claim it once the complete user journey has been proven. This is the exact standard already applied to every channel-readiness call in this document, and it's the same standard this whole session used on the widget itself (an embed script claiming to load asynchronously when it didn't, a widget claiming file-attachment support on channels that don't have it) — worth stating explicitly as a standing rule for any future externally-visible P2Less capability, not just something applied implicitly.
 
 ## The core idea, and why it's right
 
@@ -102,7 +118,20 @@ Every report resolves through this sequence before anything gets corrected. Each
 8. **What response was generated, and does it match what the connector returned?** — the pivotal check (see below).
 9. **What should have happened?** — the reviewer's verified conclusion, which drives the category and the fix.
 
-**Step 8 is the single most important check, and it's why the taxonomy needs to split "wrong data" from "AI changed correct data."** If the connector returned KES 40,000 and the reply said 50,000, that's a real, serious problem: `humanizeReply()` in `ai.ts` has an explicit existing rule — *"Keep every number, amount, currency, date, time, reference and name EXACTLY as given in the ANSWER"* — so a genuine violation of it is rare and high-priority, not "the AI is a bit off today." If the connector itself returned 50,000, the AI faithfully repeating it is not an AI defect at all — the fix is upstream, in the connector or the source system.
+**Step 8 is the single most important check, and it's why the taxonomy needs to split "wrong data" from "AI changed correct data."** Three ways a loan-balance report can resolve, and only one of them is actually an AI problem:
+
+```
+Connector → 40,000        Connector → 50,000        Connector → 40,000
+     ↓                          ↓                          ↓
+  AI → 40,000               AI → 50,000                AI → 50,000
+     ↓                          ↓                          ↓
+User receives 40,000     User receives 50,000     User receives 50,000
+
+    ✅ Correct              ⚠️ Source-data /           🔴 AI transformation
+                            connector problem              violation
+```
+
+If the connector returned 50,000, the AI faithfully repeating it is not an AI defect at all — the fix is upstream, in the connector or the source system. If the connector returned 40,000 and the reply said 50,000, that's the serious case: `humanizeReply()` in `ai.ts` has an explicit existing rule — *"Keep every number, amount, currency, date, time, reference and name EXACTLY as given in the ANSWER"* — so a verified instance of the third diagram isn't merely "the AI hallucinated," it's a confirmed violation of a rule the system already has specifically to prevent this. Rare, high-priority, and worth its own category rather than being lumped in with ordinary hallucinations.
 
 ## Triage taxonomy — refined to 11 categories, each mapped to a real fix path
 
