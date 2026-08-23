@@ -36,6 +36,7 @@ export default async function AdminTicketsPage() {
           <span className="font-mono text-xs text-faint">{t.number ?? t.id.slice(0, 8)}</span>
           <Badge tone={STATUS_TONE[t.status] ?? "neutral"}>{t.status.replace(/_/g, " ")}</Badge>
           <Badge tone={PRIORITY_TONE[t.priority] ?? "neutral"} dot>{t.priority}</Badge>
+          {t.qualityCategory && <Badge tone="amber">Quality</Badge>}
           {t.slaBreached && <Badge tone="rose">SLA breached</Badge>}
           <span className="font-medium">{t.subject}</span>
         </div>

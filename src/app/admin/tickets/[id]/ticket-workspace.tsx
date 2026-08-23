@@ -8,7 +8,9 @@ import { EvidencePanel } from "@/components/evidence-panel";
 import {
   assignTicketAction, updateTicketStatusAction, addInternalNoteAction, addCustomerResponseAction,
   linkIncidentAction, linkPaymentAction, resolveTicketAction, reopenTicketAction, addTicketAttachmentAction,
+  setQualityCategoryAction, linkMessageAction,
 } from "@/lib/ticket-actions";
+import { QUALITY_CATEGORIES, TICKET_SOURCES } from "@/lib/quality-taxonomy";
 
 type Ticket = {
   id: string; number: string | null; tenantId: string; tenantName: string;
@@ -16,13 +18,14 @@ type Ticket = {
   assignedAdminId: string | null; assignedAdminName: string | null;
   slaDeadlineAt: Date | null; slaBreached: boolean;
   resolution: string | null; resolutionReason: string | null; resolvedAt: Date | null;
-  createdAt: Date;
+  createdAt: Date; source: string; qualityCategory: string | null;
 };
 type TicketEventRow = { id: string; type: string; actorName: string; visibility: string; body: string | null; detail: unknown; createdAt: Date };
 type AdminOption = { id: string; name: string; email: string };
 type RelatedIncident = { id: string; number: string | null; title: string; status: string } | null;
 type RelatedPayment = { id: string; reference: string; amount: number; status: string } | null;
 type Attachment = { id: string; filename: string; token: string; createdAt: Date };
+type MessageRow = { id: string; direction: string; body: string; createdAt: Date };
 
 const STATUS_TONE: Record<string, "rose" | "amber" | "indigo" | "green" | "neutral"> = {
   open: "rose", assigned: "amber", in_progress: "indigo", waiting_on_customer: "amber",
@@ -41,11 +44,14 @@ const EVENT_LABELS: Record<string, string> = {
   created: "Ticket created", assigned: "Assigned", status_changed: "Status changed", internal_note: "Internal note",
   customer_response: "Customer response", attachment_added: "Attachment added", linked_incident: "Linked to incident",
   linked_payment: "Linked to payment", resolved: "Resolved", reopened: "Reopened",
+  quality_classified: "Quality category set", linked_message: "Linked to message",
 };
+const SOURCE_TONE: Record<string, "neutral" | "indigo" | "green"> = { internal: "neutral", tenant: "indigo", public_report: "green" };
 
-export function TicketWorkspace({ ticket, events, admins, relatedIncident, relatedPayment, attachments, permissions }: {
+export function TicketWorkspace({ ticket, events, admins, relatedIncident, relatedPayment, attachments, conversationMessages, relatedMessage, permissions }: {
   ticket: Ticket; events: TicketEventRow[]; admins: AdminOption[];
   relatedIncident: RelatedIncident; relatedPayment: RelatedPayment; attachments: Attachment[];
+  conversationMessages: MessageRow[]; relatedMessage: MessageRow | null;
   permissions: { canManage: boolean; canInternalNotes: boolean; canResolve: boolean };
 }) {
   const [pending, startTransition] = useTransition();
@@ -59,6 +65,7 @@ export function TicketWorkspace({ ticket, events, admins, relatedIncident, relat
   const [reopenReason, setReopenReason] = useState("");
   const [showResolve, setShowResolve] = useState(false);
   const [showReopen, setShowReopen] = useState(false);
+  const [messagePick, setMessagePick] = useState("");
 
   const isTerminal = ticket.status === "resolved" || ticket.status === "closed";
 
@@ -77,6 +84,8 @@ export function TicketWorkspace({ ticket, events, admins, relatedIncident, relat
         <Badge tone={STATUS_TONE[ticket.status] ?? "neutral"}>{ticket.status.replace(/_/g, " ")}</Badge>
         <Badge tone="indigo" dot>{ticket.priority}</Badge>
         <Badge tone="neutral">{ticket.category}</Badge>
+        <Badge tone={SOURCE_TONE[ticket.source] ?? "neutral"} dot>{TICKET_SOURCES.find((s) => s.value === ticket.source)?.label.split(" — ")[0] ?? ticket.source}</Badge>
+        {ticket.qualityCategory && <Badge tone="amber">{QUALITY_CATEGORIES.find((c) => c.value === ticket.qualityCategory)?.label ?? ticket.qualityCategory}</Badge>}
         {ticket.slaBreached && <Badge tone="rose">SLA breached</Badge>}
         {!ticket.slaBreached && ticket.slaDeadlineAt && <Badge tone="neutral">{dueIn(ticket.slaDeadlineAt)}</Badge>}
         <span className="text-xs text-muted">created <span suppressHydrationWarning>{timeAgo(ticket.createdAt)}</span> · {ticket.assignedAdminName ? `assigned to ${ticket.assignedAdminName}` : "unassigned"}</span>
@@ -114,6 +123,57 @@ export function TicketWorkspace({ ticket, events, admins, relatedIncident, relat
           ) : <div className="mt-1 text-xs text-faint">None linked — this ticket may still be related to an open incident; a support admin can confirm one from the incident's own page.</div>}
         </div>
       </div>
+
+      {/* ── Quality investigation waterfall (Phase A pilot,
+          docs/PUBLIC-FEEDBACK-QUALITY-CENTRE-2026-08-23.md) — setting a
+          category here is what makes this ticket show up on
+          /admin/quality, grouped by category. Independent of the ticket's
+          normal status/lifecycle above. ── */}
+      {(permissions.canManage || ticket.qualityCategory) && (
+        <div className="rounded-xl border border-amber/30 bg-amber-soft/10 px-3.5 py-3">
+          <h3 className="mb-2 text-sm font-semibold">Quality investigation</h3>
+          {permissions.canManage ? (
+            <select
+              defaultValue={ticket.qualityCategory ?? ""}
+              disabled={pending}
+              onChange={(e) => run(() => setQualityCategoryAction(ticket.id, e.target.value), e.target.value ? "Quality category set" : "Removed from quality dashboard")}
+              className="w-full rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs outline-none focus:border-accent"
+            >
+              <option value="">Not a quality issue</option>
+              {QUALITY_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          ) : (
+            <p className="text-xs text-muted">{ticket.qualityCategory ? QUALITY_CATEGORIES.find((c) => c.value === ticket.qualityCategory)?.label : "Not a quality issue."}</p>
+          )}
+
+          {/* Waterfall step 1 — pin the specific message this is actually about. */}
+          <div className="mt-2.5 border-t border-line-soft pt-2.5">
+            <div className="text-xs font-medium uppercase tracking-wide text-faint">Message this is about</div>
+            {relatedMessage ? (
+              <p className="mt-1 text-xs text-muted">
+                <Badge tone={relatedMessage.direction === "in" ? "indigo" : "neutral"}>{relatedMessage.direction === "in" ? "from contact" : "from P2Less"}</Badge>
+                <span className="ml-1.5" suppressHydrationWarning>{timeAgo(relatedMessage.createdAt)}</span> — “{relatedMessage.body.slice(0, 160)}”
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-faint">None linked yet.</p>
+            )}
+            {permissions.canManage && conversationMessages.length > 0 && (
+              <div className="mt-1.5 flex gap-1.5">
+                <select value={messagePick} onChange={(e) => setMessagePick(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1 text-xs outline-none focus:border-accent">
+                  <option value="">Pick a message from this conversation…</option>
+                  {conversationMessages.map((m) => (
+                    <option key={m.id} value={m.id}>{m.direction === "in" ? "← " : "→ "}{m.body.slice(0, 70)}</option>
+                  ))}
+                </select>
+                <button disabled={pending || !messagePick} onClick={() => run(() => linkMessageAction(ticket.id, messagePick), "Message linked", () => setMessagePick(""))} className="rounded-lg border border-line px-2 py-1 text-xs font-medium hover:bg-surface-2">Link</button>
+              </div>
+            )}
+            {permissions.canManage && conversationMessages.length === 0 && (
+              <p className="mt-1 text-xs text-faint">No conversation linked to this ticket yet.</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Lifecycle controls ── */}
       {permissions.canManage && !isTerminal && (

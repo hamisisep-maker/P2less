@@ -1418,6 +1418,10 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
         number: await nextTicketNumber(),
         tenantId: tenant.id, conversationId: conversation.id, contactId: contact.id,
         subject: `Escalation from ${contact.displayName ?? input.fromNumber}`,
+        // "tenant" per the 3-way source split (docs/PUBLIC-FEEDBACK-QUALITY-
+        // CENTRE-2026-08-23.md) — this is the exact "already happens
+        // informally today" precedent that split was written around.
+        source: "tenant",
         slaDeadlineAt: await computeSlaDeadline("normal"),
       },
     });

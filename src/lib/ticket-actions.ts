@@ -8,6 +8,7 @@ import { computeSlaDeadline } from "./ticket-sla";
 import { storeTicketAttachment } from "./documents";
 import { deliver } from "./transport";
 import { queueNotification } from "./notifications";
+import { QUALITY_CATEGORIES, TICKET_SOURCES } from "./quality-taxonomy";
 
 function isForbidden(e: unknown): e is ForbiddenError {
   return e instanceof ForbiddenError;
@@ -16,6 +17,7 @@ function isForbidden(e: unknown): e is ForbiddenError {
 function revalidateTicket(id: string) {
   revalidatePath("/admin/tickets");
   revalidatePath(`/admin/tickets/${id}`);
+  revalidatePath("/admin/quality");
 }
 
 /** Support-admin-created ticket (vs. the auto-created one from a WhatsApp
@@ -23,8 +25,11 @@ function revalidateTicket(id: string) {
  *  Customer 360 when a support admin spots something worth tracking. */
 export async function createTicketAction(input: {
   tenantId: string; subject: string; description?: string; category?: string; priority?: string; contactId?: string;
+  source?: string; qualityCategory?: string;
 }) {
   if (!input.subject?.trim()) return { error: "A subject is required." };
+  if (input.source && !TICKET_SOURCES.some((s) => s.value === input.source)) return { error: "Invalid source." };
+  if (input.qualityCategory && !QUALITY_CATEGORIES.some((c) => c.value === input.qualityCategory)) return { error: "Invalid quality category." };
   let admin;
   try {
     admin = await assertAdminPermission("tickets.manage", { tenantId: input.tenantId });
@@ -38,6 +43,7 @@ export async function createTicketAction(input: {
       number: await nextTicketNumber(),
       tenantId: input.tenantId, contactId: input.contactId, subject: input.subject.trim(),
       description: input.description?.trim() || null, category: input.category || "general", priority,
+      source: input.source || "internal", qualityCategory: input.qualityCategory || null,
       slaDeadlineAt: await computeSlaDeadline(priority),
     },
   });
@@ -284,6 +290,59 @@ export async function reopenTicketAction(ticketId: string, reason: string) {
   await db.supportTicket.update({ where: { id: ticketId }, data: { status: "reopened" } });
   await db.ticketEvent.create({ data: { ticketId, type: "reopened", actorId: admin.id, body: reason.trim() } });
   await logPrivilegedAction({ admin, permission: "tickets.manage", tenantId: found.ticket.tenantId, action: "admin.ticket_reopened", target: found.ticket.number ?? ticketId, reason: reason.trim() });
+  revalidateTicket(ticketId);
+  return { ok: true };
+}
+
+/** Puts a ticket into (or takes it out of) the AI-quality investigation
+ *  waterfall — see docs/PUBLIC-FEEDBACK-QUALITY-CENTRE-2026-08-23.md. This is
+ *  what makes a ticket show up on the /admin/quality triage dashboard, grouped
+ *  by category. Reuses tickets.manage rather than a new permission for this
+ *  Phase A pilot — documented decision, revisit if the programme grows past
+ *  internal/invite-only. Empty string clears the category (removes it from
+ *  the quality dashboard without touching its status/lifecycle). */
+export async function setQualityCategoryAction(ticketId: string, qualityCategory: string) {
+  const clean = qualityCategory.trim();
+  if (clean && !QUALITY_CATEGORIES.some((c) => c.value === clean)) return { error: "Invalid quality category." };
+  const found = await loadTicketOrError(ticketId);
+  if ("error" in found) return found;
+  let admin;
+  try {
+    admin = await assertAdminPermission("tickets.manage", { tenantId: found.ticket.tenantId });
+  } catch (e) {
+    if (isForbidden(e)) return { error: e.message };
+    throw e;
+  }
+  await db.supportTicket.update({ where: { id: ticketId }, data: { qualityCategory: clean || null } });
+  await db.ticketEvent.create({ data: { ticketId, type: "quality_classified", actorId: admin.id, detail: { qualityCategory: clean || null } } });
+  await logPrivilegedAction({ admin, permission: "tickets.manage", tenantId: found.ticket.tenantId, action: "admin.ticket_quality_classified", target: found.ticket.number ?? ticketId, detail: { qualityCategory: clean || null } });
+  revalidateTicket(ticketId);
+  return { ok: true };
+}
+
+/** Waterfall step 1 ("what did the user ask?") made concrete: pins a ticket
+ *  to the SPECIFIC message it's actually about, picked manually by the
+ *  reviewer from the ticket's own conversation — deliberately not
+ *  auto-detected (see the "Don't build a parallel system" section of the
+ *  design doc for why guessing the match was ruled out). */
+export async function linkMessageAction(ticketId: string, messageId: string) {
+  if (!messageId?.trim()) return { error: "Choose a message to link." };
+  const found = await loadTicketOrError(ticketId);
+  if ("error" in found) return found;
+  const message = await db.message.findUnique({ where: { id: messageId.trim() } });
+  if (!message) return { error: "Message not found." };
+  if (found.ticket.conversationId && message.conversationId !== found.ticket.conversationId) {
+    return { error: "That message isn't part of this ticket's conversation." };
+  }
+  let admin;
+  try {
+    admin = await assertAdminPermission("tickets.manage", { tenantId: found.ticket.tenantId });
+  } catch (e) {
+    if (isForbidden(e)) return { error: e.message };
+    throw e;
+  }
+  await db.supportTicket.update({ where: { id: ticketId }, data: { relatedMessageId: message.id } });
+  await db.ticketEvent.create({ data: { ticketId, type: "linked_message", actorId: admin.id, detail: { messageId: message.id, preview: message.body.slice(0, 140) } } });
   revalidateTicket(ticketId);
   return { ok: true };
 }

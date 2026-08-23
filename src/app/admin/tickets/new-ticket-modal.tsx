@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Plus } from "lucide-react";
 import { Modal } from "@/components/dashboard-ui";
 import { createTicketAction } from "@/lib/ticket-actions";
+import { QUALITY_CATEGORIES, TICKET_SOURCES } from "@/lib/quality-taxonomy";
 
 type State = { error?: string; ok?: boolean; ticketId?: string } | null;
 
@@ -17,6 +18,8 @@ function NewTicketForm({ tenants, fixedTenant, onDone }: { tenants: { id: string
       description: String(formData.get("description") ?? "") || undefined,
       category: String(formData.get("category") ?? "general"),
       priority: String(formData.get("priority") ?? "normal"),
+      source: String(formData.get("source") ?? "internal"),
+      qualityCategory: String(formData.get("qualityCategory") ?? "") || undefined,
     });
   const [state, action, pending] = useActionState<State, FormData>(bound, null);
 
@@ -61,6 +64,19 @@ function NewTicketForm({ tenants, fixedTenant, onDone }: { tenants: { id: string
           </select>
         </label>
       </div>
+      <label className="block">
+        <span className="text-xs font-medium text-muted">Source</span>
+        <select name="source" defaultValue="internal" className="mt-1 w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent">
+          {TICKET_SOURCES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+        </select>
+      </label>
+      <label className="block">
+        <span className="text-xs font-medium text-muted">Quality issue? (optional — puts this on the Quality Centre triage dashboard)</span>
+        <select name="qualityCategory" defaultValue="" className="mt-1 w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent">
+          <option value="">Not a quality issue</option>
+          {QUALITY_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+      </label>
       <button type="submit" disabled={pending} className="w-full rounded-xl bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
         {pending ? "Creating…" : "Create ticket"}
       </button>
