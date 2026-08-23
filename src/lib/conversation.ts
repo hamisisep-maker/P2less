@@ -76,6 +76,10 @@ type ConvContext = {
   lastResource?: LastResource;
   // Set when an OTP is the final step of self-service account linking.
   pendingLink?: { grantKey: string; roleKey: string; personId: string; name: string };
+  // Set when an OTP was required to re-confirm a STALE contact before
+  // showing a bundled multi-fact overview (runOverview's own staleness
+  // gate, not a single action — see that function's comment).
+  pendingOverview?: { grantKey: string; student: LastResource };
   // Ordered action ids behind the last numbered menu we showed (reply "1"/"2").
   menu?: string[];
   // How many stray (non-answer) messages we've fielded while collecting a param /
@@ -740,13 +744,35 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
         const caps = numberedMenu(await loadActions(tenant.id));
         return emit([{ body: `✅ Verified — welcome, ${pl.name.split(" ")[0]}! Your number is now linked to ${assistant}.${menuPrompt(caps, "Reply with a number, or just ask:")}` }], "open", { menu: caps.ids });
       }
-      // Case 2: OTP gated a sensitive action (either the action's own
-      // requiresStepUp, or isContactStale()'s "prove it again" gate below) →
-      // resume it now. Refresh lastVerifiedAt here too, not just at initial
-      // linking (linkContact, Case 1 above) — this IS a real, fresh
-      // proof-of-possession, and it's what resets the staleness clock for
-      // ordinary (non-step-up) actions going forward.
-      await db.contact.update({ where: { id: contact.id }, data: { lastVerifiedAt: new Date() } });
+      // Refresh lastVerifiedAt here — shared by both remaining cases below —
+      // not just at initial linking (linkContact, Case 1 above). This IS a
+      // real, fresh proof-of-possession, and it's what resets the staleness
+      // clock for ordinary (non-step-up) actions going forward.
+      //
+      // Real bug caught live while testing the overview-path fix: `contact`
+      // is a plain JS object loaded once near the top of handleInbound — a
+      // DB write doesn't retroactively update it in memory. Case 3 below
+      // happened to be unaffected by this (isContactStale's false-positive
+      // there gets masked by hasVerifiedSession() checking a REAL, freshly-
+      // minted AuthSession from the OTP verify above, independent of
+      // lastVerifiedAt) — but runOverview()'s check has no such secondary
+      // signal, so without this line it would re-read the stale in-memory
+      // timestamp on resume and loop, asking for another OTP forever.
+      const verifiedNow = new Date();
+      await db.contact.update({ where: { id: contact.id }, data: { lastVerifiedAt: verifiedNow } });
+      contact.lastVerifiedAt = verifiedNow;
+      // Case 2: OTP gated the bundled multi-fact overview (runOverview's own
+      // staleness gate, not a single action) → re-run it now. lastVerifiedAt
+      // is already fresh as of the update above, so isContactStale() no
+      // longer fires and it proceeds normally this time.
+      if (ctx.pendingOverview) {
+        const collectBase: CollectBase = { tenantId: tenant.id, reqId, contact, permissions, grants, assistant, channelType: input.channelType, contactName: contact.displayName ?? undefined, userText: text, history };
+        const ov = await runOverview(collectBase, ctx.pendingOverview.grantKey, ctx.pendingOverview.student);
+        return emit([{ body: "✓ Verification successful." }, ...ov.replies], ov.status, ov.ctx);
+      }
+      // Case 3: OTP gated a single sensitive action (either the action's own
+      // requiresStepUp, or isContactStale()'s "prove it again" gate) →
+      // resume it now.
       const resumed = await runAction({
         tenantId: tenant.id, reqId, contact, permissions, grants, assistant, channelType: input.channelType, contactName: contact.displayName ?? undefined, userText: text, history,
         actionId: ctx.pendingActionId!, resolved: ctx.pendingResolved ?? {}, alreadyConfirmed: false,
@@ -2027,6 +2053,31 @@ async function resolveOverviewTarget(
  *  actions and combining them. Sensitive reads (results, behind step-up/OTP) are
  *  offered, not included. The AI humanizes the combined facts in the user's tongue. */
 async function runOverview(base: CollectBase, grantKey: string, student: LastResource): Promise<{ replies: Reply[]; status: string; ctx: ConvContext }> {
+  // Recycled-phone-number fix, extended to this path (2026-08-23/24 audit,
+  // Part 2 — the gap left open, honestly, when the fix first shipped):
+  // runOverview bundles several requiresStepUp:false actions into one
+  // combined summary via executeAction() directly, entirely bypassing
+  // runAction()'s capability gate (and therefore its staleness check) —
+  // the SAME grants a stale contact shouldn't get handed individually were
+  // still handed over freely in bulk here. Mirrors runAction()'s own
+  // step_up block exactly (same OTP issuance, same widget-channel decline),
+  // just resuming via pendingOverview instead of pendingActionId — the
+  // awaiting_otp resume handler calls runOverview() again on success, by
+  // which point lastVerifiedAt is fresh and this check no longer fires.
+  const baseCtx: ConvContext = { lastResource: student };
+  if (isContactStale(base.contact)) {
+    if (base.channelType === "widget") {
+      return { replies: [{ body: await widgetOtpBlockedMessage(base.tenantId, "view that") }], status: "open", ctx: baseCtx };
+    }
+    const issued = await issueOtp(base.tenantId, base.contact.id);
+    if ("error" in issued) return { replies: [{ body: issued.error }], status: "open", ctx: baseCtx };
+    await audit({ tenantId: base.tenantId, requestId: base.reqId, actorType: "contact", actorId: base.contact.id, action: "otp.issue", target: "overview", success: true });
+    return {
+      replies: buildOtpReplies(base.channelType, issued.code, base.contactName),
+      status: "awaiting_otp",
+      ctx: { ...baseCtx, otpChallengeId: issued.challengeId, pendingOverview: { grantKey, student } },
+    };
+  }
   const actions = await db.connectorAction.findMany({
     where: { enabled: true, key: { not: "IDENTIFY" }, resourceGrantKey: grantKey, requiresConfirm: false, requiresStepUp: false, connector: { tenantId: base.tenantId, status: "active" } },
     orderBy: { name: "asc" },
