@@ -5,8 +5,32 @@ import { toast } from "sonner";
 import { Card, Badge } from "@/components/ui";
 import { createTrainingSessionAction, endTrainingSessionAction, addTrainingParticipantAction } from "@/lib/training-actions";
 
-type ActiveSession = { id: string; tenantId: string; tenantName: string; name: string; questionsPerParticipant: number; maxParticipants: number | null; participantCount: number; questionsUsed: number; createdAt: Date; participants: { address: string; questionCount: number }[] };
+type ActiveSession = { id: string; tenantId: string; tenantName: string; name: string; questionsPerParticipant: number; maxParticipants: number | null; joinCode: string; tenantWhatsAppNumber: string | null; participantCount: number; questionsUsed: number; createdAt: Date; participants: { address: string; questionCount: number }[] };
 type TenantOption = { id: string; name: string };
+
+// wa.me pre-fills the message box with the join code — a tester taps the
+// link, WhatsApp opens already addressed to the right number with the code
+// typed in, and they only have to tap send. Removes both failure points at
+// once: mistyping the phone number, and mistyping the code itself.
+function waLink(phoneNumber: string, joinCode: string): string {
+  const digits = phoneNumber.replace(/[^0-9]/g, "");
+  return `https://wa.me/${digits}?text=${encodeURIComponent(joinCode)}`;
+}
+
+function CopyLink({ url }: { url: string }) {
+  return (
+    <button
+      onClick={() => {
+        navigator.clipboard.writeText(url)
+          .then(() => toast.success("Link copied"))
+          .catch(() => toast.error("Couldn't copy — your browser blocked clipboard access."));
+      }}
+      className="rounded-md border border-line px-2 py-0.5 text-[11px] font-medium hover:bg-surface-2"
+    >
+      Copy link
+    </button>
+  );
+}
 
 function AddParticipant({ sessionId }: { sessionId: string }) {
   const [pending, startTransition] = useTransition();
@@ -78,6 +102,19 @@ export function TrainingSessionCard({ tenants, activeSessions }: { tenants: Tena
               <div className="mt-1.5 text-xs text-muted">
                 <span className="tabular-nums font-medium">{s.participantCount}</span>{s.maxParticipants !== null && <span className="tabular-nums"> / {s.maxParticipants}</span>} participant{s.participantCount === 1 ? "" : "s"} · <span className="tabular-nums font-medium">{s.questionsUsed}</span> questions used · {s.questionsPerParticipant} allowed per participant
               </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+                <span>Join code:</span>
+                <span className="rounded bg-surface-2 px-1.5 py-0.5 font-mono font-semibold tracking-wider text-ink">{s.joinCode}</span>
+                <span>— never guessable, so a real customer&apos;s ordinary message won&apos;t match it.</span>
+              </div>
+              {s.tenantWhatsAppNumber ? (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+                  <span>Share this link (opens WhatsApp with the code pre-filled, one tap to send):</span>
+                  <CopyLink url={waLink(s.tenantWhatsAppNumber, s.joinCode)} />
+                </div>
+              ) : (
+                <div className="mt-1.5 text-xs text-faint">No active WhatsApp number on this tenant yet — a share link needs one to point to.</div>
+              )}
               {s.participants.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {s.participants.map((p) => (

@@ -382,6 +382,45 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     return { ok: true, replies: finalReplies, conversationId: conversation!.id, from: fromIdentity } satisfies HandleResult;
   };
 
+  // Public join-by-code: the ONLY way a contact can enroll themselves,
+  // alongside the admin-driven addTrainingParticipantAction path. A real
+  // customer's ordinary message essentially never collides with an 8-char
+  // random code (~40 bits of entropy) drawn from an unambiguous alphabet —
+  // this is what actually lets Hamzone's one WhatsApp number serve both
+  // real customers and public training testers without a separate
+  // "access mode" concept: a session is reachable by whichever paths the
+  // admin chooses to hand out (a specific phone number added directly, a
+  // code shared publicly, or both at once), same underlying enrollment
+  // either way. Checked first since a first-time joiner has no
+  // TrainingParticipant row yet for the gate below to find.
+  {
+    const candidateCode = input.text?.trim().toUpperCase();
+    if (candidateCode) {
+      const joinable = await db.trainingSession.findFirst({ where: { tenantId: tenant.id, status: "active", joinCode: candidateCode } });
+      if (joinable) {
+        const already = await db.trainingParticipant.findUnique({ where: { sessionId_contactId: { sessionId: joinable.id, contactId: contact.id } } });
+        if (!already) {
+          const joined = await db.$transaction(async (tx) => {
+            if (joinable.maxParticipants !== null) {
+              const count = await tx.trainingParticipant.count({ where: { sessionId: joinable.id } });
+              if (count >= joinable.maxParticipants) return { full: true as const };
+            }
+            await tx.trainingParticipant.create({ data: { sessionId: joinable.id, contactId: contact.id } });
+            return { full: false as const };
+          });
+          return emit(
+            [{
+              body: joined.full
+                ? "Thanks for your interest — this training session is already full."
+                : `You're in! You have ${joinable.questionsPerParticipant} test questions for "${joinable.name}". Go ahead and try to break it — ask anything.`,
+            }],
+            "open", ctx,
+          );
+        }
+      }
+    }
+  }
+
   // Checked right after emit() is defined so a participant who's already
   // over their limit can be short-circuited immediately, before any
   // AI/connector work runs for their message — a real resource saving, not
@@ -389,12 +428,12 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   //
   // Deliberately does NOT look up "is there an active session for this
   // tenant" first — an active session must never change behavior for a
-  // contact nobody explicitly enrolled. Only a contact an admin has already
-  // added to a session via addTrainingParticipantAction (a TrainingParticipant
-  // row that already exists) is gated at all; a real customer messaging the
-  // same tenant number is untouched regardless of session state. This is
-  // the actual safety boundary, not a comment — a tenant-wide "if session
-  // active, gate everyone" check was the first version and was wrong.
+  // contact nobody explicitly enrolled. Only a contact who's actually a
+  // TrainingParticipant (added directly above, or self-joined via code
+  // above) is gated at all; a real customer messaging the same tenant
+  // number is untouched regardless of session state. This is the actual
+  // safety boundary, not a comment — a tenant-wide "if session active,
+  // gate everyone" check was the first version and was wrong.
   {
     const existingParticipant = await db.trainingParticipant.findFirst({
       where: { contactId: contact.id, session: { tenantId: tenant.id, status: "active" } },

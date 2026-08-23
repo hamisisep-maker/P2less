@@ -1,5 +1,6 @@
 "use server";
 
+import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { db } from "./db";
 import { normalizePhone } from "./conversation";
@@ -7,6 +8,18 @@ import { assertAdminPermission, logPrivilegedAction, ForbiddenError } from "./ad
 
 function isForbidden(e: unknown): e is ForbiddenError {
   return e instanceof ForbiddenError;
+}
+
+// Excludes 0/O and 1/I — easy to misread on a phone screen. 8 chars from this
+// 32-char alphabet is ~40 bits of entropy — not brute-forceable by a stranger
+// typing guesses into WhatsApp, while still short enough to read out loud or
+// paste into a broadcast message.
+const JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function generateJoinCode(): string {
+  const bytes = randomBytes(8);
+  let code = "";
+  for (let i = 0; i < 8; i++) code += JOIN_CODE_ALPHABET[bytes[i] % JOIN_CODE_ALPHABET.length];
+  return code;
 }
 
 /** Minimal v1 of the training-session design (docs/PUBLIC-FEEDBACK-QUALITY-
@@ -29,7 +42,7 @@ export async function createTrainingSessionAction(tenantId: string, name: string
   const existing = await db.trainingSession.findFirst({ where: { tenantId, status: "active" } });
   if (existing) return { error: `"${existing.name}" is already active for this tenant — end it before starting a new one.` };
 
-  const session = await db.trainingSession.create({ data: { tenantId, name: name.trim(), questionsPerParticipant, maxParticipants } });
+  const session = await db.trainingSession.create({ data: { tenantId, name: name.trim(), questionsPerParticipant, maxParticipants, joinCode: generateJoinCode() } });
   await logPrivilegedAction({ admin, permission: "tickets.manage", tenantId, action: "admin.training_session_created", target: session.id, detail: { name: session.name, questionsPerParticipant, maxParticipants } });
   revalidatePath("/admin/quality");
   return { ok: true };

@@ -33,12 +33,16 @@ export default async function AdminQualityPage() {
     db.tenant.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     db.trainingSession.findMany({
       where: { status: "active" },
-      include: { tenant: { select: { name: true } }, participants: { include: { contact: { select: { address: true } } } } },
+      include: {
+        tenant: { select: { name: true, numbers: { where: { status: "active" }, select: { phoneNumber: true }, take: 1 } } },
+        participants: { include: { contact: { select: { address: true } } } },
+      },
       orderBy: { createdAt: "desc" },
     }),
   ]);
   const activeSessions = activeSessionsRaw.map((s) => ({
-    id: s.id, tenantId: s.tenantId, tenantName: s.tenant.name, name: s.name, questionsPerParticipant: s.questionsPerParticipant, maxParticipants: s.maxParticipants,
+    id: s.id, tenantId: s.tenantId, tenantName: s.tenant.name, name: s.name, questionsPerParticipant: s.questionsPerParticipant, maxParticipants: s.maxParticipants, joinCode: s.joinCode,
+    tenantWhatsAppNumber: s.tenant.numbers[0]?.phoneNumber ?? null,
     participantCount: s.participants.length, questionsUsed: s.participants.reduce((sum, p) => sum + p.questionCount, 0), createdAt: s.createdAt,
     participants: s.participants.map((p) => ({ address: p.contact.address, questionCount: p.questionCount })),
   }));
