@@ -80,6 +80,16 @@ Backend-authoritative "no changes made" detection, per the standard's own prefer
 
 Live-verified both branches end-to-end for FAQs and Products (the two most structurally different cases) in a real browser session: a first save with real content showed the normal success toast, an identical second save correctly showed "No changes were made" instead. Delivery zones and Drivers use the identical pattern already proven correct in earlier phases, not independently re-verified.
 
+## Phase 5 — 🟡 PARTIALLY SHIPPED 2026-08-23 (commit `4a90c15`, Railway `6be95a43`), other items investigated and confirmed to stay deferred
+
+**Unsaved-changes warning — shipped, piloted on FAQs only.** A real `beforeunload` browser warning that fires when navigating away (closing the tab, refreshing, typing a new URL) with unsaved edits. Piloted on FAQs specifically because it already tracks form state as controlled inputs — Products/Delivery/Drivers use uncontrolled `defaultValue` inputs and would need a real refactor first to know "is this dirty" at all; deliberately not rushed into all three forms in one sitting.
+
+A real bug was caught and fixed during live testing, not just typechecked: the first version compared against the same "complete q+a pairs only" logic Phase 4's submit check uses, so typing a question with no answer yet didn't register as dirty — technically correct for "would this change the database," wrong for "did the user just lose real typing." Fixed to a broader "any row touched on either side" comparison. Re-verified every case in a real browser session: untouched (no warning), a partial single-field edit (warns), clearing back to the original (no warning), and the full save cycle (dirty before saving, correctly clears once a real save lands and `revalidatePath` refreshes the page's data).
+
+**The other two Phase 5 items were investigated, not assumed, and both confirmed to need more than a UI pass:**
+- **Granular WhatsApp delivery-state UI** (accepted → sent to provider → delivered → failed, instead of one generic "sent"): checked `prisma/schema.prisma`'s `Message` model directly — there's no `status`/`deliveredAt`/`failedAt` tracking at all today — and checked the WhatsApp webhook route — it only ever processes inbound messages, never Meta's own `statuses` delivery-receipt events. This needs new schema fields AND new webhook handling before there's anything to show a status FOR. Recommended to stay deferred as its own real feature, not attempted as a partial UI-only stand-in.
+- **Customer 360 / Reports / Documents modules**: referenced in the original standards document as things to audit, but not confirmed to exist in this codebase in the form described. Skipped rather than building UI for a module that may not exist as assumed.
+
 ## Recommended path — phased, not all 34 sections at once
 
 Trying to apply the full original standards document everywhere at once is realistically months of work across 20+ modules. Here's a sequence that fixes the real, live problems first and treats the rest as deliberate follow-on phases:
@@ -96,7 +106,7 @@ Bring FAQs onto the same toast pattern as everywhere else (or formally decide in
 **Phase 4 — ✅ SHIPPED, see above — the "no changes made" detection:**
 Build one reusable dirty-check helper, pilot it on FAQs (the case that started this), then extend to Products/Delivery/Drivers.
 
-**Phase 5 — deferred, real but lower priority for a first client demo:**
+**Phase 5 — 🟡 PARTIALLY SHIPPED, see above — real but lower priority for a first client demo:**
 Unsaved-changes navigation warnings (genuinely fiddly with Next.js client-side routing, needs its own implementation plan), granular WhatsApp delivery-state UI, and anything referencing modules not yet confirmed to exist in their described form (Customer 360, Reports, Documents) — revisit once those modules are real and once Phase 1-4 prove out the pattern.
 
 ## Test matrix (kept from the original document — this part holds up well as-is)
