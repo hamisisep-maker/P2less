@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { PERMISSIONS } from "@/lib/permissions";
 import { revokeApiKeyAction, deleteWebhookAction } from "@/lib/actions";
 import { Card, PageHeader, Badge } from "@/components/ui";
+import { ConfirmActionButton } from "@/components/confirm-action-button";
 import { ApiKeyForm } from "./api-key-form";
 import { WebhookForm } from "./webhook-form";
 
@@ -37,10 +38,13 @@ export default async function DevelopersPage() {
               <div className="flex items-center gap-2">
                 {k.revokedAt ? <Badge tone="rose">revoked</Badge> : <Badge tone="green">active</Badge>}
                 {canManage && !k.revokedAt && (
-                  <form action={revokeApiKeyAction}>
-                    <input type="hidden" name="id" value={k.id} />
-                    <button className="text-xs text-rose hover:underline">Revoke</button>
-                  </form>
+                  <ConfirmActionButton
+                    id={k.id}
+                    label="Revoke"
+                    confirmMessage={`Revoke "${k.name}"? Any integration using this key will stop working immediately — this can't be undone.`}
+                    successMessage="API key revoked"
+                    action={revokeApiKeyAction}
+                  />
                 )}
               </div>
             </div>
@@ -64,10 +68,13 @@ export default async function DevelopersPage() {
                 </div>
               </div>
               {canManage && (
-                <form action={deleteWebhookAction}>
-                  <input type="hidden" name="id" value={h.id} />
-                  <button className="text-xs text-rose hover:underline">Delete</button>
-                </form>
+                <ConfirmActionButton
+                  id={h.id}
+                  label="Delete"
+                  confirmMessage={`Delete this webhook endpoint (${h.url})? It will stop receiving events immediately — this can't be undone.`}
+                  successMessage="Webhook deleted"
+                  action={deleteWebhookAction}
+                />
               )}
             </div>
           ))}

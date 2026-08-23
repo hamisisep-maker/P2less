@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState, useEffect } from "react";
+import { toast } from "sonner";
 import { saveFaqsAction, crawlWebsiteAction } from "@/lib/actions";
 import { Card } from "@/components/ui";
 
@@ -26,6 +27,19 @@ export function FaqsEditor({ initial, canManage }: { initial: Faq[]; canManage: 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [crawlState]);
+
+  // Real bug fixed in a UX audit, 2026-08-23 (Phase 3): success previously
+  // only showed as an inline banner, easy to miss if the page had scrolled.
+  // Moved to a toast (matching the pattern used everywhere else in the
+  // dashboard/admin apps) while keeping the error banner inline, right next
+  // to the form — errors benefit from staying anchored and visible longer
+  // than a toast's auto-dismiss window. The crawl action's own inline
+  // banner (below) is deliberately left as-is, not converted: it needs to
+  // stay visible while the admin reviews the draft rows it adds, which a
+  // transient toast wouldn't serve as well.
+  useEffect(() => {
+    if (state?.ok) toast.success(`Saved — your assistant now uses ${state.count} approved answer${state.count === 1 ? "" : "s"}.`);
+  }, [state]);
 
   const update = (i: number, key: keyof Faq, value: string) =>
     setRows((r) => r.map((row, idx) => (idx === i ? { ...row, [key]: value } : row)));
@@ -63,12 +77,7 @@ export function FaqsEditor({ initial, canManage }: { initial: Faq[]; canManage: 
       <form action={action}>
         <input type="hidden" name="faqs" value={payload} />
 
-        {state?.ok && (
-        <div className="mb-3 rounded-xl border border-green/30 bg-green-soft p-3 text-sm text-green">
-          Saved — your assistant now uses {state.count} approved answer{state.count === 1 ? "" : "s"}.
-        </div>
-      )}
-      {state?.error && <div className="mb-3 rounded-xl border border-rose/30 bg-rose-soft p-3 text-sm text-rose">{state.error}</div>}
+        {state?.error && <div className="mb-3 rounded-xl border border-rose/30 bg-rose-soft p-3 text-sm text-rose">{state.error}</div>}
 
       <div className="space-y-3">
         {rows.map((row, i) => (

@@ -435,9 +435,10 @@ export async function createApiKeyAction(_prev: unknown, formData: FormData) {
 
 export async function revokeApiKeyAction(formData: FormData) {
   const user = await requireTenantUser();
-  if (!userPermissions(user).includes(PERMISSIONS.DEVELOPER_MANAGE)) return;
+  if (!userPermissions(user).includes(PERMISSIONS.DEVELOPER_MANAGE)) return { error: "You don't have permission to manage API keys." };
   await db.apiKey.updateMany({ where: { id: String(formData.get("id")), tenantId: user.tenantId! }, data: { revokedAt: new Date() } });
   revalidatePath("/dashboard/developers");
+  return { ok: true as const };
 }
 
 // ── Universal Platform roadmap Phase 8e (2026-08-20): embeddable website
@@ -492,9 +493,10 @@ export async function addWebhookAction(_prev: unknown, formData: FormData) {
 
 export async function deleteWebhookAction(formData: FormData) {
   const user = await requireTenantUser();
-  if (!userPermissions(user).includes(PERMISSIONS.DEVELOPER_MANAGE)) return;
+  if (!userPermissions(user).includes(PERMISSIONS.DEVELOPER_MANAGE)) return { error: "You don't have permission to manage webhooks." };
   await db.webhook.deleteMany({ where: { id: String(formData.get("id")), tenantId: user.tenantId! } });
   revalidatePath("/dashboard/developers");
+  return { ok: true as const };
 }
 
 // ── Assistant FAQs — org-approved answers the AI may give verbatim ──────────
