@@ -4,6 +4,7 @@ import { Card, PageHeader } from "@/components/ui";
 import { RoleCard } from "./role-card";
 import { AdminRow } from "./admin-row";
 import { CreateRoleModal } from "./create-role-modal";
+import { InviteAdminModal } from "./invite-admin-modal";
 
 export default async function AdminRolesPage() {
   const me = await requireAdminPermission("roles.manage");
@@ -42,8 +43,11 @@ export default async function AdminRolesPage() {
       </Card>
 
       <Card className="mt-4 p-5">
-        <h2 className="mb-1 font-display font-semibold">Platform admins</h2>
-        <p className="mb-3 text-xs text-muted">Every account with access to /admin. New admin accounts are provisioned outside this UI today; this page controls which role and tenant scope an existing account holds.</p>
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-display font-semibold">Platform admins</h2>
+          <InviteAdminModal roles={roleOptions} tenants={tenants} />
+        </div>
+        <p className="mb-3 text-xs text-muted">Every account with access to /admin — add one, or change an existing account&apos;s role and tenant scope below.</p>
         <div className="space-y-2">
           {admins.map((a) => (
             <AdminRow

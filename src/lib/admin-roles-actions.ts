@@ -132,6 +132,77 @@ export async function deleteAdminRoleAction(roleId: string, reason: string) {
   return { ok: true };
 }
 
+const inviteSchema = z.object({
+  name: z.string().min(1, "Name is required."),
+  email: z.string().email("Enter a valid email address."),
+  roleId: z.string().min(1, "Pick a role."),
+  reason: z.string().min(1, "A reason is required."),
+});
+
+export type InviteAdminResult = { ok: true; email: string; password: string; emailSent: boolean } | { error: string };
+
+// Real gap found 2026-08-23, asked directly ("is there a place... registration
+// of new admins"): this page's own copy already said "New admin accounts are
+// provisioned outside this UI today" — true until now. Reaching this at all
+// requires roles.manage, hard-restricted to super_admin (see
+// assignAdminRoleAction's own comment) — creating a platform admin is at
+// least as sensitive as reassigning one, so it gets the same structural
+// floor, not just a permission-list check. Mirrors inviteUserAction's
+// (tenant-side) credential pattern exactly — randomToken(6), shown once,
+// real email if configured — rather than a separate scheme for admins.
+export async function inviteAdminAction(_prev: unknown, formData: FormData): Promise<InviteAdminResult> {
+  let admin;
+  try {
+    admin = await assertAdminPermission("roles.manage");
+  } catch (e) {
+    if (isForbidden(e)) return { error: e.message };
+    throw e;
+  }
+
+  const parsed = inviteSchema.safeParse({
+    name: formData.get("name"), email: formData.get("email"), roleId: formData.get("roleId"), reason: formData.get("reason"),
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  const { name, roleId, reason } = parsed.data;
+  const email = parsed.data.email.trim().toLowerCase();
+
+  const role = await db.adminRole.findUnique({ where: { id: roleId } });
+  if (!role) return { error: "Role not found." };
+
+  const existing = await db.user.findUnique({ where: { email } });
+  if (existing) return { error: `Someone already has an account with ${email}.` };
+
+  const scopeIds = formData.getAll("scope").map(String).filter(Boolean);
+  const isSuperAdmin = role.key === "super_admin";
+
+  const { randomToken } = await import("./crypto");
+  const { hashPassword } = await import("./auth");
+  const password = randomToken(6);
+  const created = await db.user.create({
+    data: {
+      name, email, passwordHash: await hashPassword(password),
+      adminRoleId: role.id, isSuperAdmin,
+      adminScope: scopeIds.length > 0 ? (scopeIds as Prisma.InputJsonValue) : Prisma.JsonNull,
+    },
+  });
+
+  await logPrivilegedAction({ admin, permission: "roles.manage", action: "admin.invited", target: created.email, reason, newState: { roleId: role.id, roleName: role.name, isSuperAdmin, scopeIds } });
+
+  const { isEmailConfigured, sendEmail } = await import("./notification-channels");
+  let emailSent = false;
+  if (isEmailConfigured()) {
+    const res = await sendEmail({
+      to: email,
+      subject: "You've been added as a P2Less platform admin",
+      text: `Hi ${name},\n\n${admin.name} added you as a platform admin (${role.name}) on P2Less.\n\nSign in at ${(process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "")}/login with:\nEmail: ${email}\nPassword: ${password}\n\nYou can change your password after signing in.`,
+    });
+    emailSent = res.ok;
+  }
+
+  revalidatePath("/admin/roles");
+  return { ok: true, email, password, emailSent };
+}
+
 const assignSchema = z.object({
   userId: z.string().min(1),
   roleId: z.string().min(1),

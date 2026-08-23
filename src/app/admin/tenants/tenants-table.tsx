@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ShieldOff, ShieldCheck, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
+import { ShieldOff, ShieldCheck, ChevronUp, ChevronDown, ChevronsUpDown, Search } from "lucide-react";
 import {
-  useReactTable, getCoreRowModel, getSortedRowModel, getPaginationRowModel,
+  useReactTable, getCoreRowModel, getSortedRowModel, getPaginationRowModel, getFilteredRowModel,
   flexRender, type ColumnDef, type SortingState,
 } from "@tanstack/react-table";
 import { Badge } from "@/components/ui";
@@ -15,6 +15,7 @@ import { ReasonAction } from "@/components/admin/reason-action";
 export type AdminTenantRow = {
   id: string; name: string; industry: string; plan: string; status: string;
   users: number; connectors: number; contacts: number; totalPaidKes: number; lastPaymentAt: Date | null;
+  ownerName: string | null; ownerEmail: string | null;
 };
 
 function ActionCell({ tenant }: { tenant: AdminTenantRow }) {
@@ -48,6 +49,13 @@ const columns: ColumnDef<AdminTenantRow, unknown>[] = [
       </Link>
     ),
   },
+  {
+    accessorKey: "ownerEmail",
+    header: "Owner",
+    cell: ({ row }) => row.original.ownerEmail
+      ? <a href={`mailto:${row.original.ownerEmail}`} className="text-xs text-muted hover:text-accent hover:underline">{row.original.ownerName ? `${row.original.ownerName} · ` : ""}{row.original.ownerEmail}</a>
+      : <span className="text-xs text-faint">No staff yet</span>,
+  },
   { accessorKey: "industry", header: "Industry", cell: ({ getValue }) => <span className="capitalize text-muted">{getValue() as string}</span> },
   { accessorKey: "plan", header: "Plan", cell: ({ getValue }) => <Badge tone="indigo">{getValue() as string}</Badge> },
   { accessorKey: "status", header: "Status", cell: ({ getValue }) => { const s = getValue() as string; return <Badge tone={s === "active" ? "green" : s === "suspended" ? "rose" : "amber"} dot>{s}</Badge>; } },
@@ -57,13 +65,26 @@ const columns: ColumnDef<AdminTenantRow, unknown>[] = [
 
 export function TenantsAdminTable({ data }: { data: AdminTenantRow[] }) {
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [globalFilter, setGlobalFilter] = useState("");
   const table = useReactTable({
-    data, columns, state: { sorting }, onSortingChange: setSorting,
-    getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel(), getPaginationRowModel: getPaginationRowModel(),
+    data, columns, state: { sorting, globalFilter }, onSortingChange: setSorting, onGlobalFilterChange: setGlobalFilter,
+    getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel(), getFilteredRowModel: getFilteredRowModel(), getPaginationRowModel: getPaginationRowModel(),
     initialState: { pagination: { pageSize: 10 } },
   });
   return (
-    <div className="overflow-x-auto">
+    <div>
+      {data.length > 0 && (
+        <div className="relative mb-3 max-w-xs">
+          <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
+          <input
+            value={globalFilter}
+            onChange={(e) => setGlobalFilter(e.target.value)}
+            placeholder="Search by organization, owner, or industry…"
+            className="w-full rounded-xl border border-line bg-surface py-1.5 pl-8 pr-3 text-sm outline-none focus:border-accent"
+          />
+        </div>
+      )}
+      <div className="overflow-x-auto">
       <table className="w-full border-collapse text-sm">
         <thead>
           {table.getHeaderGroups().map((hg) => (
@@ -84,6 +105,9 @@ export function TenantsAdminTable({ data }: { data: AdminTenantRow[] }) {
           ))}
         </thead>
         <tbody>
+          {table.getRowModel().rows.length === 0 && (
+            <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-sm text-muted">{globalFilter ? "No results match your search." : "No tenants yet."}</td></tr>
+          )}
           {table.getRowModel().rows.map((r) => (
             <tr key={r.id} className="border-b border-line-soft last:border-0 hover:bg-surface-2">
               {r.getVisibleCells().map((c) => <td key={c.id} className="px-3 py-2.5">{flexRender(c.column.columnDef.cell, c.getContext())}</td>)}
@@ -91,6 +115,7 @@ export function TenantsAdminTable({ data }: { data: AdminTenantRow[] }) {
           ))}
         </tbody>
       </table>
+      </div>
       {table.getPageCount() > 1 && (
         <div className="mt-3 flex items-center justify-end gap-1 text-xs">
           <button onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()} className="rounded-lg border border-line px-2 py-1 disabled:opacity-30">Prev</button>

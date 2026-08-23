@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { createConnectorAction } from "@/lib/actions";
 import { Card } from "@/components/ui";
+import { PasswordInput } from "@/components/password-input";
 
 const field = "mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent";
 const label = "text-xs font-medium text-muted";
@@ -37,14 +38,14 @@ export function ConnectorForm() {
         {authType === "api_key" && (
           <div className="grid gap-4 sm:grid-cols-2">
             <div><label className={label}>Header name</label><input name="apiKeyHeader" defaultValue="x-api-key" className={field} /></div>
-            <div><label className={label}>Key value</label><input name="apiKeyValue" type="password" className={field} /></div>
+            <div><label className={label}>Key value</label><PasswordInput name="apiKeyValue" className={field} /></div>
           </div>
         )}
-        {authType === "bearer" && <div><label className={label}>Token</label><input name="bearerToken" type="password" className={field} /></div>}
+        {authType === "bearer" && <div><label className={label}>Token</label><PasswordInput name="bearerToken" className={field} /></div>}
         {authType === "basic" && (
           <div className="grid gap-4 sm:grid-cols-2">
             <div><label className={label}>Username</label><input name="basicUser" className={field} /></div>
-            <div><label className={label}>Password</label><input name="basicPass" type="password" className={field} /></div>
+            <div><label className={label}>Password</label><PasswordInput name="basicPass" className={field} /></div>
           </div>
         )}
       </Card>
