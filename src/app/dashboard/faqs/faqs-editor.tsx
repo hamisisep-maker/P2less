@@ -50,6 +50,29 @@ export function FaqsEditor({ initial, canManage }: { initial: Faq[]; canManage: 
 
   const payload = JSON.stringify(rows.map((r) => ({ q: r.q.trim(), a: r.a.trim() })).filter((r) => r.q && r.a));
 
+  // Unsaved-changes warning, 2026-08-23 (Phase 5) — piloted here first since
+  // this editor already tracks `rows` as controlled state, so "is this
+  // dirty" is a comparison against what's actually saved (`initial`, which
+  // Next.js refreshes via revalidatePath after a real save, so this
+  // correctly clears itself once saved). Deliberately NOT the same
+  // comparison `payload` uses for submission — `payload` only counts
+  // COMPLETE q+a pairs, so a question typed with no answer yet wouldn't
+  // register as dirty there, but that partial typing is still real,
+  // losable work worth warning about. Only excludes rows that are fully
+  // blank on both sides, so the always-present empty starter row on a
+  // fresh page never falsely triggers this. Only the browser-level case
+  // (closing the tab, refreshing, typing a new URL) — intercepting in-app
+  // client-side navigation would need its own separate mechanism,
+  // deliberately not attempted here.
+  useEffect(() => {
+    const touched = JSON.stringify(rows.map((r) => ({ q: r.q.trim(), a: r.a.trim() })).filter((r) => r.q || r.a));
+    const dirty = canManage && touched !== JSON.stringify(initial);
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [rows, initial, canManage]);
+
   return (
     <>
       {/* A genuinely separate <form>, not nested inside the Save FAQs form
