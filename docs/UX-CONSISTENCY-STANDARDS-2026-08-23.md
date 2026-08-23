@@ -66,6 +66,14 @@ The highest client-risk gap from the audit: `dashboard/widget/widget-key-row.tsx
 
 Live-verified all three paths in a real browser session against a real test tenant: Save domains persisted with a toast caught in the DOM; Deactivate + cancel correctly left the key untouched (confirmed via DB); Deactivate + confirm correctly flipped it inactive (confirmed via DB) and the page correctly re-rendered showing the "deactivated" badge with the row's controls gone.
 
+## Phase 3 — ✅ SHIPPED 2026-08-23 (commit `9296f41`, Railway `7ae39e66`)
+
+FAQs' save success moved from an inline banner (easy to miss after scrolling) to a toast, matching the rest of the app — the crawl action's own inline banner is deliberately left as-is, since it needs to stay visible while reviewing draft rows, unlike a quick save confirmation.
+
+**Scoping this surfaced a real correction to the original plan.** The plan called for "generalize `ReasonAction` for the tenant dashboard" — but rechecking, Phase 1+2 had already covered every tenant-dashboard destructive action the original audit found (Products/Delivery/Drivers deactivate, widget key deactivate). There was no remaining target for that item as originally scoped. A fresh grep turned up two the audit had missed, though: **API key Revoke and webhook Delete** on `/dashboard/developers` — both bare form actions with zero feedback, and webhook Delete is a genuine permanent hard delete, not a soft toggle. Fixed both with a new `ConfirmActionButton` component — a lighter, tenant-scoped sibling to admin's `ReasonAction` that skips the required-typed-reason friction on purpose (proportionate for a tenant managing their own resources vs. an admin action affecting other tenants).
+
+Live-verified all three flows in a real browser session: FAQ save toast caught in the DOM; API key Revoke confirmed with the exact right message, correctly aborted on cancel, correctly persisted `revokedAt` on confirm; webhook Delete confirmed with the exact right message, correctly aborted on cancel, confirmed genuinely gone from the database (not just hidden) on confirm. All test data cleaned up afterward.
+
 ## Recommended path — phased, not all 34 sections at once
 
 Trying to apply the full original standards document everywhere at once is realistically months of work across 20+ modules. Here's a sequence that fixes the real, live problems first and treats the rest as deliberate follow-on phases:
@@ -76,7 +84,7 @@ Products/Delivery/Drivers silent success → add `toast.success`, matching the 2
 **Phase 2 — ✅ SHIPPED, see above — the highest-risk gap:**
 Widget key Deactivate gets a real confirmation step + toast feedback. This is the one place a client could genuinely hurt themselves with one misclick.
 
-**Phase 3 — consistency pass:**
+**Phase 3 — ✅ SHIPPED, see above — consistency pass:**
 Bring FAQs onto the same toast pattern as everywhere else (or formally decide inline-banner is the intended pattern for form-heavy editors and standardize *that* — worth a real decision, not just copying whichever is more common). Generalize `ReasonAction` (or a lighter variant) for use in the tenant dashboard, not just admin.
 
 **Phase 4 — the "no changes made" detection:**
