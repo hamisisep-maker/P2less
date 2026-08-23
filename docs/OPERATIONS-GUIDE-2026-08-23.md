@@ -254,3 +254,22 @@ Proposed by the user 2026-08-23: does every message know its channel, is there a
 - Channel-level reports ("WhatsApp had 7 quality findings in August," "channel → quality" breakdowns) — computable in principle (the join exists), but not built, and would report on almost nothing at current volume (177 conversations total, 1–2 real quality tickets).
 
 Same staging as everything else in this document: real data foundation confirmed and one cheap, high-signal piece shipped (the channel badge); the bigger Messages/Reports build waits for real pilot volume, same principle-6 discipline as the rest of Evidence & Assurance.
+
+## 35. Ownership and communication flow
+
+Proposed by the user 2026-08-23: every report needs a clear chain of who reported it, who owns it, who's investigating, who verified it, and who told the customer.
+
+**Already real, more of this than it might look like:**
+- Internal vs. customer-visible communication (proposal's point 4) — already exactly this. `addInternalNoteAction` and `addCustomerResponseAction` write to the same `TicketEvent` stream but with different `visibility`, and a customer response genuinely delivers over the real channel (WhatsApp `deliver()`), not just a DB row.
+- Single-assignee ownership with notification — `assignTicketAction` sets `assignedAdminId` and sends `ticket_assigned` straight to that admin's email, not the general team pool.
+- The full activity timeline (proposal's point 9 mockup) — `TicketEvent` already records every action chronologically with an actor (`created`, `assigned`, `quality_classified`, `linked_message`, `action_decided`, `internal_note`, `customer_response`, `resolved`, `reopened`). The data for "who did what when" already exists; it isn't yet rendered in the explicit "X → Y, via which channel" directional format proposed — a presentational improvement worth doing later, not a backend gap.
+- Two origins converging on one record (point 6) — the `source` field + the Testing-vs-Feedback split in the design doc already cover this, ahead of `TestExercise` existing.
+
+**✅ Real gap, fixed 2026-08-23** — point 8's "every owner must have an actionable queue" wasn't true: `/admin/tickets` showed every open ticket flat, with no way to see "what's assigned to me." Added a **"My queue"** section (tickets where `assignedAdminId` = the current admin) and an **"Unassigned"** section, both above the full list. Live-verified: correctly empty when nothing's assigned to you, correctly populates on assignment.
+
+**🔮 Genuinely vision, needs concepts that don't exist yet:**
+- Category-based auto-routing to a team/owner ("AI issue → Engineering," "connector issue → integration owner") — assignment today is manual, any-admin-to-any-admin, no concept of teams or routing rules.
+- Severity-based incident escalation with notification fan-out (critical finding → auto-`Incident` → notify Operations/Security/Management) — `relatedIncidentId` linking exists, but nothing creates that link or decides who to notify automatically.
+- A distinct "engineering task" object with its own notify-on-fix/notify-on-verify chain, separate from the ticket itself — deliberately not built when `actionRequired`/`actionReason` shipped (documented then as a heavier, unproven addition to defer).
+
+None of these are worth building ahead of real ticket volume — with 4 real tickets total today, a routing-rules engine would have nothing to route.

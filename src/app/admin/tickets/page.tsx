@@ -29,6 +29,12 @@ export default async function AdminTicketsPage() {
     db.tenant.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
+  // "Every owner must have an actionable queue" — real gap found while
+  // checking the ownership/communication-flow proposal, 2026-08-23: nothing
+  // distinguished "assigned to me" from the flat list of every open ticket.
+  const mine = open.filter((t) => t.assignedAdminId === admin.id);
+  const unassigned = open.filter((t) => !t.assignedAdminId);
+
   const Row = ({ t }: { t: (typeof open)[number] }) => (
     <Link href={`/admin/tickets/${t.id}`} className="block rounded-xl border border-line-soft px-3.5 py-3 hover:bg-surface-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -55,6 +61,21 @@ export default async function AdminTicketsPage() {
         subtitle="A customer reporting a problem — distinct from an Incident (something wrong with the platform). Open a ticket to see everything the platform already knows about that tenant."
         action={canCreate ? <NewTicketModal tenants={tenants} /> : undefined}
       />
+
+      {mine.length > 0 && (
+        <Card className="mb-4 border-accent/30 bg-accent-soft/10 p-5">
+          <h2 className="mb-3 font-display font-semibold">My queue ({mine.length})</h2>
+          <div className="space-y-2">{mine.map((t) => <Row key={t.id} t={t} />)}</div>
+        </Card>
+      )}
+
+      {unassigned.length > 0 && (
+        <Card className="mb-4 p-5">
+          <h2 className="mb-3 font-display font-semibold">Unassigned ({unassigned.length})</h2>
+          <p className="mb-2 text-xs text-muted">Nobody owns these yet — the actionable-queue gap this fixes only helps once someone actually claims them.</p>
+          <div className="space-y-2">{unassigned.map((t) => <Row key={t.id} t={t} />)}</div>
+        </Card>
+      )}
 
       <Card className="p-5">
         <h2 className="mb-3 font-display font-semibold">Open ({open.length})</h2>
