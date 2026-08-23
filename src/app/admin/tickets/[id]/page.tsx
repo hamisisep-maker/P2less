@@ -46,6 +46,7 @@ export default async function AdminTicketDetailPage({ params }: { params: Promis
             slaDeadlineAt: ticket.slaDeadlineAt, slaBreached: ticket.slaBreached,
             resolution: ticket.resolution, resolutionReason: ticket.resolutionReason, resolvedAt: ticket.resolvedAt,
             createdAt: ticket.createdAt, source: ticket.source, qualityCategory: ticket.qualityCategory,
+            actionRequired: ticket.actionRequired, actionReason: ticket.actionReason,
           }}
           events={events.map((e) => ({ id: e.id, type: e.type, actorName: e.actorId ? actorNameById.get(e.actorId) ?? "Unknown admin" : "System", visibility: e.visibility, body: e.body, detail: e.detail, createdAt: e.createdAt }))}
           admins={admins}

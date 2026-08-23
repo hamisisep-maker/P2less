@@ -8,7 +8,7 @@ import { computeSlaDeadline } from "./ticket-sla";
 import { storeTicketAttachment } from "./documents";
 import { deliver } from "./transport";
 import { queueNotification } from "./notifications";
-import { QUALITY_CATEGORIES, TICKET_SOURCES } from "./quality-taxonomy";
+import { QUALITY_CATEGORIES, TICKET_SOURCES, ACTION_DECISIONS } from "./quality-taxonomy";
 
 function isForbidden(e: unknown): e is ForbiddenError {
   return e instanceof ForbiddenError;
@@ -316,6 +316,36 @@ export async function setQualityCategoryAction(ticketId: string, qualityCategory
   await db.supportTicket.update({ where: { id: ticketId }, data: { qualityCategory: clean || null } });
   await db.ticketEvent.create({ data: { ticketId, type: "quality_classified", actorId: admin.id, detail: { qualityCategory: clean || null } } });
   await logPrivilegedAction({ admin, permission: "tickets.manage", tenantId: found.ticket.tenantId, action: "admin.ticket_quality_classified", target: found.ticket.number ?? ticketId, detail: { qualityCategory: clean || null } });
+  revalidateTicket(ticketId);
+  return { ok: true };
+}
+
+/** The action-decision step, deliberately separate from
+ *  setQualityCategoryAction above — root cause (what went wrong) and
+ *  corrective action (what to actually do about it) are different
+ *  decisions. A reason is REQUIRED alongside the decision, not optional:
+ *  the point (per the user's own framing, 2026-08-23) is an auditable
+ *  answer to "why this layer, not a cheaper one" — not just a label.
+ *  Answers the standing question this was built to address: is there
+ *  anything that reports whether a finding actually needs code, instead of
+ *  everything reflexively becoming a developer task. */
+export async function setActionDecisionAction(ticketId: string, actionRequired: string, actionReason: string) {
+  const clean = actionRequired.trim();
+  if (clean && !ACTION_DECISIONS.some((a) => a.value === clean)) return { error: "Invalid action decision." };
+  if (clean && !actionReason.trim()) return { error: "A reason is required alongside the action decision." };
+  const found = await loadTicketOrError(ticketId);
+  if ("error" in found) return found;
+  let admin;
+  try {
+    admin = await assertAdminPermission("tickets.manage", { tenantId: found.ticket.tenantId });
+  } catch (e) {
+    if (isForbidden(e)) return { error: e.message };
+    throw e;
+  }
+  const reason = clean ? actionReason.trim() : null;
+  await db.supportTicket.update({ where: { id: ticketId }, data: { actionRequired: clean || null, actionReason: reason } });
+  await db.ticketEvent.create({ data: { ticketId, type: "action_decided", actorId: admin.id, detail: { actionRequired: clean || null, actionReason: reason } } });
+  await logPrivilegedAction({ admin, permission: "tickets.manage", tenantId: found.ticket.tenantId, action: "admin.ticket_action_decided", target: found.ticket.number ?? ticketId, detail: { actionRequired: clean || null } });
   revalidateTicket(ticketId);
   return { ok: true };
 }

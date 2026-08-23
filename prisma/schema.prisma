@@ -1399,6 +1399,13 @@ model SupportTicket {
   // waterfall, which is a subset of all tickets.
   source          String  @default("internal") // internal | tenant | public_report — who originated this ticket
   qualityCategory String? // null = not a quality-programme ticket yet. One of: bug | ai_hallucination | knowledge_gap | incorrect_source_data | incorrect_connector_result | intent_classification_error | authorization_error | integration_failure | conversation_context_failure | correct_user_misunderstanding | unknown_investigating
+  // Root cause (qualityCategory above) and corrective action are DELIBERATELY
+  // separate decisions — a category doesn't imply "needs a developer". Set
+  // together, after qualityCategory, never defaulted: forces the reviewer to
+  // actually decide the cheapest-appropriate layer (principle 6's correction-
+  // routing ladder) instead of reflexively filing everything as a code task.
+  actionRequired String? // null = not decided yet. One of: no_action | knowledge_update | configuration_change | prompt_change | connector_data_fix | ai_model_change | operational_procedure | user_training | monitoring_change | documentation_change | ux_change | code_change
+  actionReason   String? // required alongside actionRequired — why this layer, not a cheaper one. Makes the decision auditable, not just a label.
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -1411,6 +1418,7 @@ model SupportTicket {
   @@index([relatedIncidentId])
   @@index([relatedPaymentId])
   @@index([qualityCategory])
+  @@index([actionRequired])
 }
 
 /// Timeline entry for a SupportTicket — internal notes AND customer-visible

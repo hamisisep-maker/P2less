@@ -22,3 +22,26 @@ export const TICKET_SOURCES = [
   { value: "tenant", label: "Tenant — a tenant's own staff or contact reported it" },
   { value: "public_report", label: "Public — reported through the public feedback programme" },
 ] as const;
+
+/** The corrective-action decision — deliberately a SEPARATE choice from
+ *  QUALITY_CATEGORIES above (root cause). A category doesn't imply a fix
+ *  layer: "knowledge_gap" might mean updating an FAQ, not touching code.
+ *  Ordered cheapest-appropriate-layer first, matching the correction-
+ *  routing ladder in docs/PUBLIC-FEEDBACK-QUALITY-CENTRE-2026-08-23.md
+ *  (config/knowledge → code → provider/model → fine-tuning) — "requires
+ *  code" is meant to be the exception a reviewer actively decides on, with
+ *  a stated reason, never the reflexive default. */
+export const ACTION_DECISIONS = [
+  { value: "no_action", label: "🟢 No action required" },
+  { value: "knowledge_update", label: "🟡 Knowledge/content update" },
+  { value: "configuration_change", label: "🟡 Configuration change" },
+  { value: "prompt_change", label: "🟡 Prompt/instruction change" },
+  { value: "connector_data_fix", label: "🟠 Connector/data correction" },
+  { value: "ai_model_change", label: "🟠 AI provider/model change" },
+  { value: "operational_procedure", label: "🟠 Operational procedure" },
+  { value: "user_training", label: "🔵 User training" },
+  { value: "documentation_change", label: "🔵 Documentation change" },
+  { value: "ux_change", label: "🔵 UX/content improvement" },
+  { value: "monitoring_change", label: "🔵 Monitoring/alert change" },
+  { value: "code_change", label: "🔴 Engineering/code change" },
+] as const;

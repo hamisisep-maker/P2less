@@ -8,9 +8,9 @@ import { EvidencePanel } from "@/components/evidence-panel";
 import {
   assignTicketAction, updateTicketStatusAction, addInternalNoteAction, addCustomerResponseAction,
   linkIncidentAction, linkPaymentAction, resolveTicketAction, reopenTicketAction, addTicketAttachmentAction,
-  setQualityCategoryAction, linkMessageAction,
+  setQualityCategoryAction, linkMessageAction, setActionDecisionAction,
 } from "@/lib/ticket-actions";
-import { QUALITY_CATEGORIES, TICKET_SOURCES } from "@/lib/quality-taxonomy";
+import { QUALITY_CATEGORIES, TICKET_SOURCES, ACTION_DECISIONS } from "@/lib/quality-taxonomy";
 
 type Ticket = {
   id: string; number: string | null; tenantId: string; tenantName: string;
@@ -19,6 +19,7 @@ type Ticket = {
   slaDeadlineAt: Date | null; slaBreached: boolean;
   resolution: string | null; resolutionReason: string | null; resolvedAt: Date | null;
   createdAt: Date; source: string; qualityCategory: string | null;
+  actionRequired: string | null; actionReason: string | null;
 };
 type TicketEventRow = { id: string; type: string; actorName: string; visibility: string; body: string | null; detail: unknown; createdAt: Date };
 type AdminOption = { id: string; name: string; email: string };
@@ -45,6 +46,7 @@ const EVENT_LABELS: Record<string, string> = {
   customer_response: "Customer response", attachment_added: "Attachment added", linked_incident: "Linked to incident",
   linked_payment: "Linked to payment", resolved: "Resolved", reopened: "Reopened",
   quality_classified: "Quality category set", linked_message: "Linked to message",
+  action_decided: "Action decision recorded",
 };
 const SOURCE_TONE: Record<string, "neutral" | "indigo" | "green"> = { internal: "neutral", tenant: "indigo", public_report: "green" };
 
@@ -66,6 +68,8 @@ export function TicketWorkspace({ ticket, events, admins, relatedIncident, relat
   const [showResolve, setShowResolve] = useState(false);
   const [showReopen, setShowReopen] = useState(false);
   const [messagePick, setMessagePick] = useState("");
+  const [actionPick, setActionPick] = useState(ticket.actionRequired ?? "");
+  const [actionReasonDraft, setActionReasonDraft] = useState(ticket.actionReason ?? "");
 
   const isTerminal = ticket.status === "resolved" || ticket.status === "closed";
 
@@ -86,6 +90,7 @@ export function TicketWorkspace({ ticket, events, admins, relatedIncident, relat
         <Badge tone="neutral">{ticket.category}</Badge>
         <Badge tone={SOURCE_TONE[ticket.source] ?? "neutral"} dot>{TICKET_SOURCES.find((s) => s.value === ticket.source)?.label.split(" — ")[0] ?? ticket.source}</Badge>
         {ticket.qualityCategory && <Badge tone="amber">{QUALITY_CATEGORIES.find((c) => c.value === ticket.qualityCategory)?.label ?? ticket.qualityCategory}</Badge>}
+        {ticket.actionRequired && <Badge tone={ticket.actionRequired === "code_change" ? "rose" : ticket.actionRequired === "no_action" ? "green" : "indigo"}>{ACTION_DECISIONS.find((a) => a.value === ticket.actionRequired)?.label ?? ticket.actionRequired}</Badge>}
         {ticket.slaBreached && <Badge tone="rose">SLA breached</Badge>}
         {!ticket.slaBreached && ticket.slaDeadlineAt && <Badge tone="neutral">{dueIn(ticket.slaDeadlineAt)}</Badge>}
         <span className="text-xs text-muted">created <span suppressHydrationWarning>{timeAgo(ticket.createdAt)}</span> · {ticket.assignedAdminName ? `assigned to ${ticket.assignedAdminName}` : "unassigned"}</span>
@@ -172,6 +177,49 @@ export function TicketWorkspace({ ticket, events, admins, relatedIncident, relat
               <p className="mt-1 text-xs text-faint">No conversation linked to this ticket yet.</p>
             )}
           </div>
+
+          {/* Action decision — deliberately a SEPARATE step from the category
+              above: root cause doesn't imply "needs a developer". Gated on
+              a category already being set, enforcing Finding → Root Cause →
+              Action Decision in that order, never skipped. A reason is
+              required alongside the decision (enforced server-side too) —
+              the point is an auditable "why this layer, not a cheaper one",
+              not just a label. */}
+          {ticket.qualityCategory && (
+            <div className="mt-2.5 border-t border-line-soft pt-2.5">
+              <div className="text-xs font-medium uppercase tracking-wide text-faint">Action required</div>
+              {permissions.canManage ? (
+                <div className="mt-1.5 space-y-1.5">
+                  <select value={actionPick} onChange={(e) => setActionPick(e.target.value)} className="w-full rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs outline-none focus:border-accent">
+                    <option value="">Not decided yet</option>
+                    {ACTION_DECISIONS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+                  </select>
+                  {actionPick && (
+                    <>
+                      <textarea
+                        value={actionReasonDraft}
+                        onChange={(e) => setActionReasonDraft(e.target.value)}
+                        rows={2}
+                        placeholder="Why this layer, not a cheaper one? (required)"
+                        className="w-full rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs outline-none focus:border-accent"
+                      />
+                      <button
+                        disabled={pending || !actionReasonDraft.trim()}
+                        onClick={() => run(() => setActionDecisionAction(ticket.id, actionPick, actionReasonDraft), "Action decision recorded")}
+                        className="rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium hover:bg-surface-2"
+                      >
+                        Save decision
+                      </button>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <p className="mt-1 text-xs text-muted">
+                  {ticket.actionRequired ? `${ACTION_DECISIONS.find((a) => a.value === ticket.actionRequired)?.label} — ${ticket.actionReason}` : "Not decided yet."}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
 

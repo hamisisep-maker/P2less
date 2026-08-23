@@ -1368,7 +1368,11 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     // notification could be misdirected to reply on the wrong channel for a
     // Telegram/Messenger/email escalation.
     await queueNotification("ticket_created", `New ${getCurrentChannelLabel()} escalation ${ticket.number ?? ticket.id} from ${tenant.name}: ${ticket.subject}`).catch(() => {});
-    return emit([{ body: "I've created a support request and notified the team. Someone will get back to you shortly." }], "escalated", { lastResource: ctx.lastResource });
+    // Real gap found writing docs/OPERATIONS-GUIDE-2026-08-23.md: the user
+    // was never told their own ticket number, even though it's generated
+    // right here — nothing to reference if they follow up later.
+    const ref = ticket.number ? ` Your reference is ${ticket.number}.` : "";
+    return emit([{ body: `I've created a support request and notified the team.${ref} Someone will get back to you shortly.` }], "escalated", { lastResource: ctx.lastResource });
   }
   const isEscalationRequest = /(speak|talk).*(human|someone|agent|person)|human agent|customer care/.test(lower);
 
