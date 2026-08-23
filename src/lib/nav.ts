@@ -28,6 +28,7 @@ export const NAV: { href: string; label: string; icon: NavIconName; group?: NavG
   { href: "/dashboard/developers", label: "Developers", icon: "Code2", group: "developer" },
   { href: "/dashboard/widget", label: "Website Widget", icon: "Globe", group: "widget" },
   { href: "/dashboard/billing", label: "Billing", icon: "CreditCard" },
+  { href: "/dashboard/settings", label: "Settings", icon: "Settings" },
 ];
 
 /** What a tenant told us at signup (self-report) plus what's actually real

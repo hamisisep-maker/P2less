@@ -243,7 +243,16 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     const numBranding = (num.branding as { assistantName?: string; welcome?: string } | null) ?? {};
     const tenantBranding = (tenant.branding as { assistantName?: string; welcome?: string; poweredBy?: string } | null) ?? {};
     branding = { ...tenantBranding, ...numBranding };
-    assistant = num.displayName; // e.g. "Hamzone Technologies"
+    // Real bug found live-testing the new /dashboard/settings page,
+    // 2026-08-23: this used to unconditionally read num.displayName,
+    // completely bypassing the branding merge one line above — editing
+    // "Assistant name" in Settings had zero effect on WhatsApp/webchat
+    // (the majority real channel), only on the widget/direct-tenantId path
+    // above, which correctly did `branding.assistantName ?? tenant.name`.
+    // Fixed to respect the same merge (per-number branding, then tenant
+    // branding, matching the comment's own stated intent), falling back to
+    // the number's own displayName only when neither branding source set one.
+    assistant = branding.assistantName ?? num.displayName; // e.g. "Hamzone Technologies"
     fromIdentity = { number: num.phoneNumber, name: num.displayName };
     branchLookup = { branchId: num.branchId, tenantId: tenant.id };
   }

@@ -999,3 +999,42 @@ export async function changePasswordAction(_prev: unknown, formData: FormData) {
   await db.user.update({ where: { id: user.id }, data: { passwordHash: await hashPassword(parsed.data.newPassword), passwordChangedAt: new Date() } });
   return { ok: true, message: "Password updated." };
 }
+
+// ── Settings — real gap found 2026-08-23: Tenant.name/industry/branding are
+// all live-consumed (conversation greetings, generated PDFs, the widget
+// embed snippet) but were writable exactly once, at signup, with zero edit
+// path anywhere afterward (confirmed: db.tenant.update across the whole
+// codebase only ever touches faqs or status, never these fields). ─────────
+type TenantSettingsInput = {
+  name: string; industry: string;
+  assistantName?: string; logoText?: string; primaryColor?: string; welcome?: string; poweredBy?: string; pdfFooter?: string;
+};
+
+export async function updateTenantSettingsAction(_prev: unknown, formData: FormData): Promise<{ ok?: boolean; unchanged?: boolean; error?: string }> {
+  const user = await requireTenantUser();
+  if (!userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE)) return { error: "You don't have permission to edit organization settings." };
+
+  const name = String(formData.get("name") ?? "").trim();
+  const industry = String(formData.get("industry") ?? "").trim();
+  if (!name) return { error: "Organization name is required." };
+  if (!industry) return { error: "Industry is required." };
+
+  const branding: TenantSettingsInput = { name, industry };
+  for (const key of ["assistantName", "logoText", "primaryColor", "welcome", "poweredBy", "pdfFooter"] as const) {
+    const v = String(formData.get(key) ?? "").trim();
+    if (v) branding[key] = v;
+  }
+  const newBranding = { assistantName: branding.assistantName, logoText: branding.logoText, primaryColor: branding.primaryColor, welcome: branding.welcome, poweredBy: branding.poweredBy, pdfFooter: branding.pdfFooter };
+
+  const current = await db.tenant.findUnique({ where: { id: user.tenantId! }, select: { name: true, industry: true, branding: true } });
+  const currentBranding = (current?.branding as Record<string, string | undefined> | null) ?? {};
+  const unchanged = current?.name === name && current?.industry === industry
+    && JSON.stringify(currentBranding) === JSON.stringify(newBranding);
+  if (unchanged) return { ok: true, unchanged: true };
+
+  await db.tenant.update({ where: { id: user.tenantId! }, data: { name, industry, branding: newBranding } });
+  revalidatePath("/dashboard/settings");
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/widget");
+  return { ok: true };
+}
