@@ -284,3 +284,46 @@ Proposed by the user 2026-08-23: every report needs a clear chain of who reporte
 None of these are worth building ahead of real ticket volume — with 4 real tickets total today, a routing-rules engine would have nothing to route.
 
 **One precise design constraint for whenever routing does get built, worth preserving now so it isn't reinvented later**: assignment (who owns this ticket) and routing (which team a finding's action decision sends it to) are different mechanisms — "My Queue" is the former, real today; a rules engine would be the latter, not yet justified. When it is built, it must route from the **verified finding**, never the raw complaint text — concretely, from `ticket.actionRequired` (set only after investigation) rather than from `ticket.subject`/`description` (the user's original words). This isn't a future retrofit: because `actionRequired` already can't be set until `qualityCategory` is, the system is already structurally shaped to route from a verified conclusion rather than an allegation — routing just needs to key off a field that already exists and already means the right thing.
+
+## 36. Engineering Confidence — a real quality bar, tested against this actual session
+
+Proposed by the user 2026-08-23, reframed from a narrower question ("would a developer like the UI?") into a sharper one worth keeping verbatim:
+
+> Can an experienced engineer investigate P2Less and understand how it works, why it behaves the way it does, and trust the evidence it provides?
+
+Not "is P2Less bug-free" — nothing is. The real test is: **when something's wrong, can you find out why, fix the right layer, and prove the fix worked, without the system fighting you.** That's the standing quality dimension recorded here, and unlike most sections in this document, it's graded against what actually happened in this session, not a hypothetical.
+
+### What a specialist would look for
+
+| Engineer | What would earn confidence |
+|---|---|
+| Frontend | Predictable navigation, real feedback on every action, useful error/empty states |
+| Backend | Consistent server actions, real data integrity, no silent failures |
+| Full-stack | Everything connects end-to-end, not feature-by-feature islands |
+| DevOps/SRE | Observability, health status, incidents, auditability |
+| Security | RBAC, tenant isolation, a real audit trail |
+| QA | Reproducible testing, evidence, regression tracking |
+| AI/ML | Traceable AI behavior, evaluation, a real feedback→improvement loop |
+| Data | Reliable data, provenance, no silent schema drift |
+| Developer/Integrator | Clear APIs, documentation that matches the actual product |
+| Architect | Clean boundaries, coherent design, not accumulated one-offs |
+
+The concrete version of "traceable": given a wrong AI answer, can you actually walk `User → Channel → Message → Conversation → Intent → AI request → Provider/model → Connector → Response → Finding → Investigation → Fix → Regression test → Verification` end to end, or does the trail go cold partway through? That exact chain is what the System Trace panel (§2, §19) exists to make real, not aspirational — built specifically because the trail *did* go cold at the `Message → what actually happened` step before 2026-08-23.
+
+### Where this session actually earned confidence — specific, not generic
+
+- **A real bug, traced to its exact cause, not guessed at.** The bot-honesty bug (§ the `smallTalk()` fix) wasn't found by inspection — it was found by adversarially asking the AI "are you a bot?", then traced to one literal line in the system prompt (`"never say or imply you are a bot, AI, or automated"`) and fixed at that exact line. A backend/AI engineer reading that fix would see a real root cause, not a patch over a symptom.
+- **The System Trace panel took under an hour to build** because the correlation it needed (`AuditLog`/`AiRequestLog`, both already keyed by `requestId`) already existed before anyone asked for a trace view — a sign the underlying architecture was reasoned about ahead of the feature, not that the feature got lucky.
+- **Tenant isolation** (`AsyncLocalStorage` + a Prisma extension that auto-scopes every query, see the roadmap doc's tenant-isolation section) is real defense-in-depth at the ORM layer, the kind of thing a security engineer checks for specifically because most apps don't have it.
+- **The regression suite is real, not decorative** — 73 HTTP-driven tests that have caught actual crashes (a real compound-unique-key crash during the tenant-isolation work) and were run dozens of times this session with honestly-distinguished results (same failure twice = real bug; a different failure each run = provider-load flake, confirmed by reading the actual assertion every time, never assumed).
+
+### Where this session found real inconsistency — stated honestly, not smoothed over
+
+- **Two schema fields that were never actually wired**: `Conversation.channelId`/`Channel.type` are defined but 0 of 177 real conversation rows use them (§34) — exactly the kind of drift a data engineer flags on sight, and nobody had caught it before this session.
+- **A stale schema comment**: `Message.meta` was documented as carrying "intent, action, latency" — no code path ever wrote that. Fixed as part of the `Message.requestId` change (§2), but it was there, misleading, until checked.
+- **The bot-honesty bug shipped to production and sat there** until it was adversarially tested — the regression suite didn't catch it because nothing was testing for it. Real coverage of known risks; real gaps in undiscovered ones. Worth being honest that this is a general limitation of any regression suite, not specific to this one.
+- **A large gap between the vision documents and shipped reality** — an engineer reading the roadmap/design docs cover to cover would correctly conclude: ambitious direction, real but comparatively small shipped surface. That's true, and stated as true throughout these three documents by design (principle 6) — whether that reads as a strength (honest) or a concern (early) depends on what stage the reader expects, but it should never be the *documentation's* job to hide which one it is.
+
+### The standing rule this section adds
+
+**An experienced software engineer should be able to use, inspect, test, troubleshoot, and understand P2Less without encountering unexplained inconsistencies or unsupported claims.** Not a marketing bar — an operational one, sitting directly on top of everything else in this document: the System Trace panel, the real-vs-vision status legend, the regression-suite discipline, and the "describe what actually protects the system" rule (§1) are the concrete mechanisms that make this bar achievable rather than aspirational.
