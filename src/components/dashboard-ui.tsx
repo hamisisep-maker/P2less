@@ -7,7 +7,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as DropdownPrimitive from "@radix-ui/react-dropdown-menu";
 import {
   Bell, X, ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight,
-  LogOut, CheckCheck, Info, Clock,
+  LogOut, CheckCheck, Info, Clock, UserCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -222,7 +222,7 @@ export function NotificationBell({ items }: { items: NotifItem[] }) {
 }
 
 // ── User menu ─────────────────────────────────────────────────────────────
-export function UserMenu({ name, orgName, logoutAction }: { name: string; orgName: string; logoutAction: () => Promise<void> }) {
+export function UserMenu({ name, orgName, profileHref, logoutAction }: { name: string; orgName: string; profileHref: string; logoutAction: () => Promise<void> }) {
   return (
     <DropdownPrimitive.Root>
       <DropdownPrimitive.Trigger asChild>
@@ -240,6 +240,10 @@ export function UserMenu({ name, orgName, logoutAction }: { name: string; orgNam
             <div className="text-sm font-medium">{name}</div>
             <div className="text-xs text-faint">{orgName}</div>
           </div>
+          <div className="my-1 h-px bg-line" />
+          <Link href={profileHref} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-surface-2">
+            <UserCircle size={15} /> My profile
+          </Link>
           <div className="my-1 h-px bg-line" />
           <form action={logoutAction}>
             <button type="submit" className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-rose hover:bg-rose-soft">

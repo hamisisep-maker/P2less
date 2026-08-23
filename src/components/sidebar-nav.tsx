@@ -24,8 +24,10 @@ type NavItem = { href: string; label: string; icon: NavIconName };
 
 /** Shared sidebar nav — used by both the tenant dashboard and the super-admin
  *  area. `exactRoot` marks the one item (e.g. "/dashboard" or "/admin") that
- *  should only be "active" on an exact match, not for every sub-route. */
-export function SidebarNav({ items = NAV, exactRoot }: { items?: readonly NavItem[]; exactRoot?: string }) {
+ *  should only be "active" on an exact match, not for every sub-route.
+ *  `collapsed` (set by SidebarShell) hides labels and shows an icon-only
+ *  rail with the label as a hover title instead. */
+export function SidebarNav({ items = NAV, exactRoot, collapsed = false }: { items?: readonly NavItem[]; exactRoot?: string; collapsed?: boolean }) {
   const pathname = usePathname();
   return (
     <nav className="flex flex-row gap-1 overflow-x-auto px-3 pb-3 lg:flex-col lg:overflow-visible">
@@ -36,8 +38,10 @@ export function SidebarNav({ items = NAV, exactRoot }: { items?: readonly NavIte
           <Link
             key={href}
             href={href}
+            title={collapsed ? label : undefined}
             className={clsx(
               "group relative flex items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+              collapsed && "lg:justify-center lg:px-2.5",
               active
                 ? "bg-white/[0.08] text-side-text-active"
                 : "text-side-text hover:bg-white/[0.05] hover:text-side-text-active",
@@ -45,7 +49,7 @@ export function SidebarNav({ items = NAV, exactRoot }: { items?: readonly NavIte
           >
             {active && <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-[linear-gradient(180deg,var(--color-accent),var(--color-accent-2))]" />}
             <Icon size={17} className={clsx("shrink-0 transition-colors", active ? "text-accent" : "text-side-text/70 group-hover:text-side-text-active")} strokeWidth={2} />
-            {label}
+            <span className={clsx(collapsed && "lg:hidden")}>{label}</span>
           </Link>
         );
       })}

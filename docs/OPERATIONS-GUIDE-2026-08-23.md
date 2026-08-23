@@ -4,6 +4,15 @@ Companion to `docs/PUBLIC-FEEDBACK-QUALITY-CENTRE-2026-08-23.md` (the *why it's 
 
 **Discipline carried over from the other two docs, non-negotiable here too**: every step below is marked either **✅ real, works today** (verified against the actual code and, where marked, live-tested) or **🔮 vision, not built** (the user's original proposal included several capabilities — an interactive "report a problem" button, a 10-stage ticket status flow, a full system-trace view — that don't exist yet). Teaching an admin a workflow that doesn't actually exist is exactly the kind of overclaim principle 6 exists to prevent. Where the real system is coarser than the ideal, this guide says so and shows how to work with what's actually there.
 
+**Status legend, refined 2026-08-23** — the ✅/🔮 shorthand above collapses five real distinctions into two; adopted going forward (new sections below use it; existing ✅/🔮 markers stay valid but coarser, refined opportunistically rather than in one retroactive pass):
+- **REAL — verified**: implemented and actually live-tested (browser/API), not just read in the source.
+- **REAL — needs verification**: implemented, confirmed by reading the code, not yet exercised live.
+- **PARTIAL**: part of the journey works, part doesn't — say exactly which part.
+- **VISION**: designed/agreed as direction, nothing built.
+- **DEFERRED**: could be built now, deliberately not yet (distinct from VISION — the blocker is a staging decision, not missing infrastructure).
+
+**One more standing rule, stated explicitly 2026-08-23 because it's easy to violate by accident**: document what actually protects the system, never a hypothetical control as if it were the real mechanism. Concrete example already true in this codebase: secrets/API keys are never disclosable by the AI not because of a prompt rule telling it not to, but structurally — they're never included in its context at all. Document that as the real, current protection. A future defense-in-depth control (an explicit rule, a filter) gets documented separately, when and if it's actually added — never merged into the same sentence as if it were already there.
+
 ## 1. Purpose
 
 How P2Less is operated while real users are actively using it. Not a feature list — the operational flow:

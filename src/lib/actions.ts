@@ -979,3 +979,23 @@ export async function activateEmailChannelAction(_prev: unknown, _formData: Form
   revalidatePath("/dashboard/channels");
   return { ok: true as const, address: result.address };
 }
+
+// ── Profile — self-service password change (real gap found 2026-08-23: the
+// tenant dashboard had no profile page at all, unlike /admin/settings which
+// already had this for platform admins) ────────────────────────────────────
+const dashboardPasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8, "New password must be at least 8 characters."),
+});
+
+export async function changePasswordAction(_prev: unknown, formData: FormData) {
+  const user = await requireTenantUser();
+  const parsed = dashboardPasswordSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  const fullUser = await db.user.findUnique({ where: { id: user.id } });
+  if (!fullUser || !(await verifyPassword(parsed.data.currentPassword, fullUser.passwordHash))) {
+    return { error: "Current password is incorrect." };
+  }
+  await db.user.update({ where: { id: user.id }, data: { passwordHash: await hashPassword(parsed.data.newPassword), passwordChangedAt: new Date() } });
+  return { ok: true, message: "Password updated." };
+}
