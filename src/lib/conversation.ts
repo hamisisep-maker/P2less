@@ -1329,6 +1329,49 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     }
   }
 
+  // Factored out, 2026-08-23 — real bug found live-testing the pilot
+  // recruiting flow on the widget: an unrecognized contact's very FIRST
+  // message ("I want to talk to a human") was being swallowed whole by the
+  // "unknown contact → warm welcome" block right below (it used to return
+  // before ever reaching the escalation check that originally lived much
+  // further down), so the AI answered it as small talk instead — and
+  // fabricated "You're chatting with a real person right now!", a real
+  // invented-claim violation of the exact "never invent whether something
+  // happened" rule this whole Evidence & Assurance effort is about.
+  // Escalation is now checked (via this same helper) from BOTH the
+  // unrecognized-first-message branch below and the original later check,
+  // so it fires regardless of whether this is someone's first message or
+  // their fifth.
+  // contact/conversation passed explicitly rather than closed over — TS
+  // narrows them to non-null at each call site (both plain, synchronous
+  // spots in the main function body) but can't carry that narrowing through
+  // a nested function's closure over the mutable `let` bindings.
+  async function escalateToHuman(escalatingContact: NonNullable<typeof contact>, escalatingConversation: NonNullable<typeof conversation>) {
+    const ticket = await db.supportTicket.create({
+      data: {
+        number: await nextTicketNumber(),
+        tenantId: tenant.id, conversationId: escalatingConversation.id, contactId: escalatingContact.id,
+        subject: `Escalation from ${escalatingContact.displayName ?? input.fromNumber}`,
+        // "tenant" per the 3-way source split (docs/PUBLIC-FEEDBACK-QUALITY-
+        // CENTRE-2026-08-23.md) — this is the exact "already happens
+        // informally today" precedent that split was written around.
+        source: "tenant",
+        slaDeadlineAt: await computeSlaDeadline("normal"),
+      },
+    });
+    await db.ticketEvent.create({ data: { ticketId: ticket.id, type: "created", visibility: "internal", detail: { source: "conversation_escalation" } } });
+    await audit({ tenantId: tenant.id, requestId: reqId, actorType: "contact", actorId: escalatingContact.id, action: "escalate", success: true, detail: { ticketNumber: ticket.number } });
+    // The reply below promises "notified the team" — this is what actually
+    // makes that true, instead of the promise being backed by nothing.
+    // Real bug found in a code-review pass, 2026-08-22: this hardcoded
+    // "WhatsApp" regardless of the actual channel — staff reading this
+    // notification could be misdirected to reply on the wrong channel for a
+    // Telegram/Messenger/email escalation.
+    await queueNotification("ticket_created", `New ${getCurrentChannelLabel()} escalation ${ticket.number ?? ticket.id} from ${tenant.name}: ${ticket.subject}`).catch(() => {});
+    return emit([{ body: "I've created a support request and notified the team. Someone will get back to you shortly." }], "escalated", { lastResource: ctx.lastResource });
+  }
+  const isEscalationRequest = /(speak|talk).*(human|someone|agent|person)|human agent|customer care/.test(lower);
+
   // ── Unknown contact → warm welcome + self-service linking, never a cold "no" ─
   // Gated on history.length === 0 (genuinely the FIRST message ever in this
   // conversation — `history` already excludes the current inbound message),
@@ -1343,6 +1386,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // out of the identify flow and then asks something else previously hit
   // this same block again instead of just being answered.
   if (contact.contactRoles.length === 0 && history.length === 0) {
+    if (isEscalationRequest) return escalateToHuman(contact, conversation);
     const ob = onboardingFor(tenant.industry);
     const identify = await db.connectorAction.findFirst({ where: { key: "IDENTIFY", connector: { tenantId: tenant.id, status: "active" } } });
     const actionsNow0 = await loadActions(tenant.id);
@@ -1412,30 +1456,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     const hi = aiHi?.trim() || (first ? `Good ${partOfDay()}, ${first}! 👋 Welcome back to ${assistant}.` : `Good ${partOfDay()}! 👋 ${branding.welcome ?? `Welcome to ${assistant}.`}`);
     return emit([{ body: `${hi}${menuPrompt(menu)}` }], "open", { lastResource: ctx.lastResource, menu: menu.ids });
   }
-  if (/(speak|talk).*(human|someone|agent|person)|human agent|customer care/.test(lower)) {
-    const ticket = await db.supportTicket.create({
-      data: {
-        number: await nextTicketNumber(),
-        tenantId: tenant.id, conversationId: conversation.id, contactId: contact.id,
-        subject: `Escalation from ${contact.displayName ?? input.fromNumber}`,
-        // "tenant" per the 3-way source split (docs/PUBLIC-FEEDBACK-QUALITY-
-        // CENTRE-2026-08-23.md) — this is the exact "already happens
-        // informally today" precedent that split was written around.
-        source: "tenant",
-        slaDeadlineAt: await computeSlaDeadline("normal"),
-      },
-    });
-    await db.ticketEvent.create({ data: { ticketId: ticket.id, type: "created", visibility: "internal", detail: { source: "conversation_escalation" } } });
-    await audit({ tenantId: tenant.id, requestId: reqId, actorType: "contact", actorId: contact.id, action: "escalate", success: true, detail: { ticketNumber: ticket.number } });
-    // The reply below promises "notified the team" — this is what actually
-    // makes that true, instead of the promise being backed by nothing.
-    // Real bug found in a code-review pass, 2026-08-22: this hardcoded
-    // "WhatsApp" regardless of the actual channel — staff reading this
-    // notification could be misdirected to reply on the wrong channel for a
-    // Telegram/Messenger/email escalation.
-    await queueNotification("ticket_created", `New ${getCurrentChannelLabel()} escalation ${ticket.number ?? ticket.id} from ${tenant.name}: ${ticket.subject}`).catch(() => {});
-    return emit([{ body: "I've created a support request and notified the team. Someone will get back to you shortly." }], "escalated", { lastResource: ctx.lastResource });
-  }
+  if (isEscalationRequest) return escalateToHuman(contact, conversation);
 
   const dispatchBase: CollectBase = { tenantId: tenant.id, reqId, contact, permissions, grants, assistant, channelType: input.channelType, contactName: contact.displayName ?? undefined, userText: text, history };
 
