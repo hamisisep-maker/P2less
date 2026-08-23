@@ -314,7 +314,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
 
   // Record inbound + meter (enforce message limits).
   const limit = await checkLimit(tenant.id, "message_in");
-  await db.message.create({ data: { tenantId: tenant.id, conversationId: conversation.id, direction: "in", body: input.text } });
+  await db.message.create({ data: { tenantId: tenant.id, conversationId: conversation.id, direction: "in", body: input.text, requestId: reqId } });
   await meter(tenant.id, "message_in");
   void dispatchWebhook(tenant.id, "message.received", { conversationId: conversation.id, from: input.fromNumber, to: input.toNumber, text: input.text }).catch(() => {});
   if (!limit.ok) {

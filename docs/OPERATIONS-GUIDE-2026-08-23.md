@@ -12,7 +12,7 @@ How P2Less is operated while real users are actively using it. Not a feature lis
 
 ## 2. Core operating principle
 
-An admin should never have to manually reconstruct what happened from scratch. **✅ Real today, partially**: a ticket carries `tenantId`/`contactId`/`conversationId`, and the reviewer can now pin it to the exact `Message` it's about (Phase A, shipped 2026-08-23). **🔮 Not yet**: the ticket view doesn't show the deeper trace — which intent matched, which connector ran, what it returned, which AI provider answered. Today a reviewer gets there by opening the linked message/conversation and, if needed, checking `AiRequestLog` directly (no UI for this yet) — not the one-screen trace the user's original proposal describes. Worth building once Phase A proves the workflow is used enough to justify it.
+An admin should never have to manually reconstruct what happened from scratch. **✅ Real today**: a ticket carries `tenantId`/`contactId`/`conversationId`, the reviewer can pin it to the exact `Message` it's about (Phase A, shipped 2026-08-23), and — **shipped the same day, correcting the "not yet" this section originally said** — the ticket workspace now has a real **System Trace panel** showing exactly what the platform did while handling that message: every `AuditLog` row (connector calls with latency/status, authorization checks, OTP events) and `AiRequestLog` row (provider/model/cost/tokens) sharing that message's `requestId`. Not a mockup — built entirely from data that already existed (`AuditLog`/`AiRequestLog` were already correlated by `requestId`); the only new piece was adding `requestId` to `Message` itself so a specific message could be joined back to its own trace. Live-verified against a real leave-balance query: the panel correctly showed `connector.execute → GET_MY_LEAVE_BALANCE, 2263ms, status 200`. Only gap left: messages created before 2026-08-23 have no `requestId` and honestly show "no trace available" rather than a fabricated one.
 
 ## 2a. Three systems, connected — not one giant model
 
@@ -124,9 +124,9 @@ The `/admin/quality` dashboard now shows a live "Actions" breakdown — real cou
 
 ## 19. Ticket detail view — real vs. proposed
 
-**✅ Real sections**: status/priority/category/source/quality badges, related payment/incident, quality-investigation panel + message picker, attachments, interleaved timeline, internal-note/customer-response composer.
+**✅ Real sections**: status/priority/category/source/quality badges, related payment/incident, quality-investigation panel + message picker, **System Trace panel** (shipped 2026-08-23 — see §2 above), attachments, interleaved timeline, internal-note/customer-response composer.
 
-**🔮 Proposed, not built**: a dedicated "System Trace" panel (message → intent → authorization → resource → connector → AI request → response, one screen). Right now that trace is reconstructed by hand from the linked message plus (if needed) direct DB/log access — a real gap, not a documentation gap, worth prioritizing once Phase A shows real usage volume.
+**🔮 Still not built**: the trace doesn't show intent-match or authorization-check rows yet for every path (only what a given request actually wrote to `AuditLog` — e.g. `authz.deny` shows up when it happens, but there's no explicit "intent matched: X" row today since intent-matching itself isn't audited as its own event). Expanding what `handleInbound()` writes to `AuditLog` would make the trace richer without changing the panel itself.
 
 ## 20. Don't duplicate the system timeline
 
@@ -204,7 +204,7 @@ Steps 10–14 are exactly the loop this session has run for every fix shipped to
 
 - **SEE** — the ticket's subject/description/timeline
 - **UNDERSTAND** — the linked message + conversation
-- **TRACE** — today, manual (read the message; no one-screen trace yet)
+- **TRACE** — the System Trace panel on the ticket (real, shipped 2026-08-23; honestly empty for messages older than that)
 - **CLASSIFY** — the Quality investigation panel's category select
 - **ACT** — the actual code/config/prompt fix, off-dashboard
 - **VERIFY** — typecheck + regression suite + live re-check against production
@@ -217,4 +217,40 @@ Steps 10–14 are exactly the loop this session has run for every fix shipped to
 
 ## 32. Recommended immediate fix, found while writing this guide
 
-Section 5 above flags a real, small, valuable gap: the escalation reply never tells the user their ticket number, even though `ticket.number` (e.g. `"TCK-7"`) is generated and available at the exact point the reply is constructed. Fixing this is in scope for "make everything work" and is tracked as a follow-up in this session — see the roadmap doc for whether it's shipped yet.
+**✅ Fixed, shipped 2026-08-23.** The gap this section originally flagged — the escalation reply never told the user their ticket number — is fixed. `escalateToHuman()`'s reply now reads "...Your reference is TCK-7. Someone will get back to you shortly," live-verified on production.
+
+## 33. Visualization — four levels, not "lots of charts"
+
+Proposed by the user 2026-08-23. The organizing rule, worth keeping verbatim as it governs everything below: **every visualization must answer an operational question and be traceable to underlying system records — never built merely because the dashboard has empty space.** Same discipline as every number on `/admin/quality` already.
+
+Four levels, each a different audience and question:
+
+- 🟢 **Level 1 — Operations**: "Is the system healthy right now?" (system health, channels, traffic, failures, incidents, queues)
+- 🔵 **Level 2 — Quality Centre**: "What's going wrong?" (feedback, findings, root causes, action types, recurring issues, resolution pipeline)
+- 🟣 **Level 3 — AI Evaluation**: "Is the AI actually improving?" (baseline, current, evaluation dimensions, regression, modality performance, cost vs. quality)
+- 🟠 **Level 4 — Assurance**: "Can we prove it's been tested and improved?" (testing history, pilot results, verified findings, before/after, evidence, reports)
+
+**Where each real proposal item actually stands:**
+
+- **✅ Real, shipped 2026-08-23 — the single-message System Trace** (Level 1/2 boundary). The highest-leverage item in the original proposal, and the one worth having prioritized: turns the whole system into a readable story for one message — user → channel → message → (audit trail of what happened) → outcome. Built entirely from `AuditLog`/`AiRequestLog`, both already correlated by `requestId`; the only new piece was `Message.requestId` itself. See §2/§19 above.
+- **✅ Real, just not charted — category and action breakdowns** (Level 2). `/admin/quality`'s "Origin" and "Actions" cards already show exactly this composition, as live counts/badges rather than bar charts. Recharts is already a dependency in this codebase (loads on every admin page) — charting isn't new infrastructure if a visual treatment is wanted later. Not converted to charts yet because there are only 1–2 real classified tickets right now; a bar chart at that sample size would be more misleading than helpful. Revisit once the pilot produces real volume.
+- **🔮 Vision, needs the Evaluation layer** (Level 3, all of it): improvement-over-time, evaluation-dimension percentages, the AI-pipeline stage-success view (`Understanding 98.2%` etc.). None of this can be built honestly until the evaluation methodology itself exists and is validated — see the design doc's "Evaluation & ROI layer," still not started.
+- **🔮 Vision, needs new instrumentation that doesn't exist today** (Level 1, most of it): a computed "system health" score, per-channel success-rate definitions, a full report→review→verified→action→fixed→regression→production funnel (today's real funnel is the much smaller `classified → action-decided → resolved`, fully computable now — a smaller honest version worth building before the elaborate one).
+- **🔮 Vision, the whole of Level 4**: the Assurance Dashboard / tiered client-government presentation — see the design doc's "Presentation tiers," explicitly gated behind `Finding`/`TestExercise` holding real data.
+
+The guiding rule bears repeating because it's the difference between this section and a generic BI-dashboard wishlist: a chart is only added once there's a real, traceable, non-trivial answer for it to show.
+
+## 34. Messages, channels, and reports — what's real today
+
+Proposed by the user 2026-08-23: does every message know its channel, is there a unified Messages view, and is there a Reports Centre?
+
+**A real, concrete correction found while checking**: the schema *looks* like it tracks channel on `Conversation` (`channelId` → `Channel.type`), but **0 of 177 real conversations in the database have `channelId` set** — that relation is defined but never actually wired into conversation creation. The real, reliable source of truth is **`Contact.channelType`** (set correctly at contact-creation time; a `Contact` is unique per `tenantId + channelType`, so every message in a conversation shares one channel via its contact). So: **✅ every message's channel is genuinely knowable today**, just via a different join than the schema's own field names suggest — `Message → Conversation → Contact.channelType`, not `Conversation.channelId`.
+
+**✅ Shipped 2026-08-23, small and cheap**: the ticket workspace now shows a channel badge (e.g. "Widget," "WhatsApp") next to the other ticket badges, computed from exactly that join. Live-verified — correctly showed "Widget" for a ticket whose linked conversation turned out to be on the widget, not WhatsApp, even though the same contact also has a separate WhatsApp identity (accurate, not an assumption).
+
+**🔮 Not built at all — genuinely new work, not a small gap**:
+- A unified `/admin/messages` view (search/filter across every channel, one operational inbox) — doesn't exist. Every message today is only viewable one conversation at a time.
+- A Reports Centre (`Operational` / `Quality` / `AI` / `Assurance` report sections) — doesn't exist in any form.
+- Channel-level reports ("WhatsApp had 7 quality findings in August," "channel → quality" breakdowns) — computable in principle (the join exists), but not built, and would report on almost nothing at current volume (177 conversations total, 1–2 real quality tickets).
+
+Same staging as everything else in this document: real data foundation confirmed and one cheap, high-signal piece shipped (the channel badge); the bigger Messages/Reports build waits for real pilot volume, same principle-6 discipline as the rest of Evidence & Assurance.

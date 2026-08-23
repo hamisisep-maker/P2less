@@ -27,6 +27,27 @@ export default async function AdminTicketDetailPage({ params }: { params: Promis
     ticket.relatedMessageId ? db.message.findUnique({ where: { id: ticket.relatedMessageId } }) : null,
   ]);
 
+  // Every message in a conversation shares its contact's channelType (a
+  // Contact is unique per tenant+channel, so a conversation's messages never
+  // span more than one channel) — Contact.channelType is the real source of
+  // truth here, NOT Conversation.channelId/Channel.type, which are defined
+  // in the schema but never actually get set on conversation creation
+  // (confirmed: 0 of 177 real conversations have channelId populated).
+  const conversationChannel = ticket.conversationId
+    ? (await db.conversation.findUnique({ where: { id: ticket.conversationId }, select: { contact: { select: { channelType: true } } } }))?.contact.channelType ?? null
+    : null;
+
+  // System Trace (design doc's visualization proposal §8 — the highest-
+  // leverage view). Only real if the linked message was created after
+  // 2026-08-23 and actually has a requestId — older messages honestly show
+  // "no trace available" rather than a fabricated one.
+  const [traceAudit, traceAi] = relatedMessage?.requestId
+    ? await Promise.all([
+        db.auditLog.findMany({ where: { tenantId: ticket.tenantId, requestId: relatedMessage.requestId }, orderBy: { createdAt: "asc" } }),
+        db.aiRequestLog.findMany({ where: { requestId: relatedMessage.requestId }, orderBy: { createdAt: "asc" } }),
+      ])
+    : [[], []];
+
   const actorIds = [...new Set(events.map((e) => e.actorId).filter((x): x is string => !!x))];
   const actors = actorIds.length ? await db.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } }) : [];
   const actorNameById = new Map(actors.map((a) => [a.id, a.name]));
@@ -55,6 +76,9 @@ export default async function AdminTicketDetailPage({ params }: { params: Promis
           attachments={attachments.map((a) => ({ id: a.id, filename: a.filename, token: a.token, createdAt: a.createdAt }))}
           conversationMessages={conversationMessages.map((m) => ({ id: m.id, direction: m.direction, body: m.body, createdAt: m.createdAt }))}
           relatedMessage={relatedMessage ? { id: relatedMessage.id, direction: relatedMessage.direction, body: relatedMessage.body, createdAt: relatedMessage.createdAt } : null}
+          conversationChannel={conversationChannel}
+          traceAudit={traceAudit.map((a) => ({ id: a.id, action: a.action, target: a.target, success: a.success, detail: a.detail, createdAt: a.createdAt }))}
+          traceAi={traceAi.map((r) => ({ id: r.id, provider: r.provider, model: r.model, feature: r.feature, costKes: r.costKes, totalTokens: r.totalTokens, success: r.success, createdAt: r.createdAt }))}
           permissions={{
             canManage: hasAdminPermission(admin, "tickets.manage"),
             canInternalNotes: hasAdminPermission(admin, "tickets.internal_notes"),

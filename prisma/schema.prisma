@@ -1231,12 +1231,24 @@ model Message {
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   direction      String // in | out
   body           String
-  // Diagnostic metadata (intent, action, latency) — never raw credentials.
+  // Small structured extras (credit/cost lines, document/image URLs) —
+  // never raw credentials. Corrected 2026-08-23: this was previously
+  // commented as carrying "intent, action, latency" but nothing in the
+  // codebase ever actually wrote that — the real per-step trace data lives
+  // in AuditLog/AiRequestLog (below), joined via requestId instead.
   meta           Json?
+  // Set only on the INBOUND message, from the same requestId every
+  // AuditLog/AiRequestLog row from that handleInbound() call shares — the
+  // join key that makes a real "what did the system actually do for this
+  // one message" trace possible (see the ticket workspace's System Trace
+  // panel, docs/OPERATIONS-GUIDE-2026-08-23.md §8). Null on older messages
+  // created before this field existed, and on outbound replies (v1 scope).
+  requestId      String?
   createdAt      DateTime @default(now())
 
   @@index([conversationId])
   @@index([tenantId])
+  @@index([requestId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

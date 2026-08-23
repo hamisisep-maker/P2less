@@ -5,6 +5,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { Badge, timeAgo } from "@/components/ui";
 import { EvidencePanel } from "@/components/evidence-panel";
+import { SystemTracePanel } from "@/components/system-trace-panel";
 import {
   assignTicketAction, updateTicketStatusAction, addInternalNoteAction, addCustomerResponseAction,
   linkIncidentAction, linkPaymentAction, resolveTicketAction, reopenTicketAction, addTicketAttachmentAction,
@@ -27,6 +28,8 @@ type RelatedIncident = { id: string; number: string | null; title: string; statu
 type RelatedPayment = { id: string; reference: string; amount: number; status: string } | null;
 type Attachment = { id: string; filename: string; token: string; createdAt: Date };
 type MessageRow = { id: string; direction: string; body: string; createdAt: Date };
+type TraceAuditRow = { id: string; action: string; target: string | null; success: boolean; detail: unknown; createdAt: Date };
+type TraceAiRow = { id: string; provider: string; model: string; feature: string; costKes: number; totalTokens: number | null; success: boolean; createdAt: Date };
 
 const STATUS_TONE: Record<string, "rose" | "amber" | "indigo" | "green" | "neutral"> = {
   open: "rose", assigned: "amber", in_progress: "indigo", waiting_on_customer: "amber",
@@ -49,11 +52,18 @@ const EVENT_LABELS: Record<string, string> = {
   action_decided: "Action decision recorded",
 };
 const SOURCE_TONE: Record<string, "neutral" | "indigo" | "green"> = { internal: "neutral", tenant: "indigo", public_report: "green" };
+const CHANNEL_LABELS: Record<string, string> = { whatsapp: "WhatsApp", widget: "Widget", webchat: "Widget", messenger: "Messenger", telegram: "Telegram", email: "Email", sms: "SMS" };
+const CHANNEL_ICONS: Record<string, string> = { whatsapp: "📱", widget: "🌐", webchat: "🌐", messenger: "💬", telegram: "✈️", email: "✉️", sms: "📟" };
+function channelTag(channel: string | null): string {
+  if (!channel) return "";
+  return `${CHANNEL_ICONS[channel] ?? ""} ${CHANNEL_LABELS[channel] ?? channel}`.trim();
+}
 
-export function TicketWorkspace({ ticket, events, admins, relatedIncident, relatedPayment, attachments, conversationMessages, relatedMessage, permissions }: {
+export function TicketWorkspace({ ticket, events, admins, relatedIncident, relatedPayment, attachments, conversationMessages, relatedMessage, conversationChannel, traceAudit, traceAi, permissions }: {
   ticket: Ticket; events: TicketEventRow[]; admins: AdminOption[];
   relatedIncident: RelatedIncident; relatedPayment: RelatedPayment; attachments: Attachment[];
-  conversationMessages: MessageRow[]; relatedMessage: MessageRow | null;
+  conversationMessages: MessageRow[]; relatedMessage: MessageRow | null; conversationChannel: string | null;
+  traceAudit: TraceAuditRow[]; traceAi: TraceAiRow[];
   permissions: { canManage: boolean; canInternalNotes: boolean; canResolve: boolean };
 }) {
   const [pending, startTransition] = useTransition();
@@ -91,6 +101,7 @@ export function TicketWorkspace({ ticket, events, admins, relatedIncident, relat
         <Badge tone={SOURCE_TONE[ticket.source] ?? "neutral"} dot>{TICKET_SOURCES.find((s) => s.value === ticket.source)?.label.split(" — ")[0] ?? ticket.source}</Badge>
         {ticket.qualityCategory && <Badge tone="amber">{QUALITY_CATEGORIES.find((c) => c.value === ticket.qualityCategory)?.label ?? ticket.qualityCategory}</Badge>}
         {ticket.actionRequired && <Badge tone={ticket.actionRequired === "code_change" ? "rose" : ticket.actionRequired === "no_action" ? "green" : "indigo"}>{ACTION_DECISIONS.find((a) => a.value === ticket.actionRequired)?.label ?? ticket.actionRequired}</Badge>}
+        {conversationChannel && <Badge tone="neutral" dot>{CHANNEL_LABELS[conversationChannel] ?? conversationChannel}</Badge>}
         {ticket.slaBreached && <Badge tone="rose">SLA breached</Badge>}
         {!ticket.slaBreached && ticket.slaDeadlineAt && <Badge tone="neutral">{dueIn(ticket.slaDeadlineAt)}</Badge>}
         <span className="text-xs text-muted">created <span suppressHydrationWarning>{timeAgo(ticket.createdAt)}</span> · {ticket.assignedAdminName ? `assigned to ${ticket.assignedAdminName}` : "unassigned"}</span>
@@ -155,10 +166,14 @@ export function TicketWorkspace({ ticket, events, admins, relatedIncident, relat
           <div className="mt-2.5 border-t border-line-soft pt-2.5">
             <div className="text-xs font-medium uppercase tracking-wide text-faint">Message this is about</div>
             {relatedMessage ? (
-              <p className="mt-1 text-xs text-muted">
-                <Badge tone={relatedMessage.direction === "in" ? "indigo" : "neutral"}>{relatedMessage.direction === "in" ? "from contact" : "from P2Less"}</Badge>
-                <span className="ml-1.5" suppressHydrationWarning>{timeAgo(relatedMessage.createdAt)}</span> — “{relatedMessage.body.slice(0, 160)}”
-              </p>
+              <div className="mt-1 text-xs text-muted">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {conversationChannel && <Badge tone="neutral" dot>{channelTag(conversationChannel)}</Badge>}
+                  <Badge tone={relatedMessage.direction === "in" ? "indigo" : "neutral"}>{relatedMessage.direction === "in" ? "from contact" : "from P2Less"}</Badge>
+                  <span suppressHydrationWarning>{timeAgo(relatedMessage.createdAt)}</span>
+                </div>
+                <p className="mt-1">“{relatedMessage.body.slice(0, 160)}”</p>
+              </div>
             ) : (
               <p className="mt-1 text-xs text-faint">None linked yet.</p>
             )}
@@ -167,7 +182,7 @@ export function TicketWorkspace({ ticket, events, admins, relatedIncident, relat
                 <select value={messagePick} onChange={(e) => setMessagePick(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-1 text-xs outline-none focus:border-accent">
                   <option value="">Pick a message from this conversation…</option>
                   {conversationMessages.map((m) => (
-                    <option key={m.id} value={m.id}>{m.direction === "in" ? "← " : "→ "}{m.body.slice(0, 70)}</option>
+                    <option key={m.id} value={m.id}>{conversationChannel ? `${channelTag(conversationChannel)} · ` : ""}{m.direction === "in" ? "← " : "→ "}{m.body.slice(0, 70)}</option>
                   ))}
                 </select>
                 <button disabled={pending || !messagePick} onClick={() => run(() => linkMessageAction(ticket.id, messagePick), "Message linked", () => setMessagePick(""))} className="rounded-lg border border-line px-2 py-1 text-xs font-medium hover:bg-surface-2">Link</button>
@@ -177,6 +192,18 @@ export function TicketWorkspace({ ticket, events, admins, relatedIncident, relat
               <p className="mt-1 text-xs text-faint">No conversation linked to this ticket yet.</p>
             )}
           </div>
+
+          {/* System Trace — what did the platform actually do while handling
+              the linked message: intent/auth/connector steps (AuditLog) and
+              any AI calls (AiRequestLog), both joined via requestId. Real
+              data, not a mockup — only empty for messages that predate
+              requestId being recorded (2026-08-23) or have nothing to link. */}
+          {relatedMessage && (
+            <div className="mt-2.5 border-t border-line-soft pt-2.5">
+              <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-faint">System trace</div>
+              <SystemTracePanel auditRows={traceAudit} aiRows={traceAi} />
+            </div>
+          )}
 
           {/* Action decision — deliberately a SEPARATE step from the category
               above: root cause doesn't imply "needs a developer". Gated on
