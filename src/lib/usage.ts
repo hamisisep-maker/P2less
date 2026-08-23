@@ -59,3 +59,26 @@ export async function checkLimit(
   const used = await monthlyUsage(tenantId, type);
   return { ok: used < limit, limit, used };
 }
+
+/**
+ * Same shape as checkLimit(), but for the two plan limits that are real
+ * standing COUNTS (how many exist right now), not a monthly flow — "users"
+ * and "connectors" were configurable in the plan editor but never actually
+ * checked anywhere before this (Gap-002, found auditing the plan/entitlement
+ * model 2026-08-23): a Free-tier tenant could invite unlimited staff or
+ * connect unlimited external systems regardless of the plan's stated limit.
+ */
+export async function checkSeatLimit(
+  tenantId: string,
+  type: "users" | "connectors",
+): Promise<{ ok: boolean; limit: number | null; used: number }> {
+  const sub = await db.subscription.findUnique({
+    where: { tenantId },
+    include: { plan: true },
+  });
+  const limits = (sub?.plan.limits as PlanLimits | undefined) ?? {};
+  const limit = limits[type];
+  if (!limit || limit <= 0) return { ok: true, limit: null, used: 0 };
+  const used = type === "users" ? await db.user.count({ where: { tenantId } }) : await db.connector.count({ where: { tenantId } });
+  return { ok: used < limit, limit, used };
+}

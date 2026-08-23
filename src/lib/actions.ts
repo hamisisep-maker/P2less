@@ -787,6 +787,13 @@ export async function createConnectorAction(_prev: unknown, formData: FormData) 
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   const d = parsed.data;
 
+  // Gap-002, fixed 2026-08-23 — same seat-limit fix as inviteUserAction,
+  // applied to the other plan limit that was configurable but never
+  // enforced: a tenant's connector count.
+  const { checkSeatLimit } = await import("./usage");
+  const connectorSeatCheck = await checkSeatLimit(user.tenantId!, "connectors");
+  if (!connectorSeatCheck.ok) return { error: `Your plan allows up to ${connectorSeatCheck.limit} connected system${connectorSeatCheck.limit === 1 ? "" : "s"} — you're already at that limit. Upgrade your plan to connect more.` };
+
   let authConfig: unknown = { type: "none" };
   if (d.authType === "api_key") authConfig = { type: "api_key", header: d.apiKeyHeader || "x-api-key", value: d.apiKeyValue || "" };
   else if (d.authType === "bearer") authConfig = { type: "bearer", token: d.bearerToken || "" };
@@ -894,6 +901,13 @@ export async function createConnectorFromDraftAction(_prev: unknown, formData: F
   }
   const actionsParsed = z.array(draftActionSchema).min(1, "Select at least one capability.").safeParse(draftActions);
   if (!actionsParsed.success) return { error: actionsParsed.error.issues[0]?.message ?? "Invalid capability data." };
+
+  // Gap-002 — same connector seat-limit check as createConnectorAction;
+  // this path (OpenAPI import + marketplace install) creates a Connector
+  // too and must not bypass the limit the manual form now enforces.
+  const { checkSeatLimit } = await import("./usage");
+  const connectorSeatCheck = await checkSeatLimit(user.tenantId!, "connectors");
+  if (!connectorSeatCheck.ok) return { error: `Your plan allows up to ${connectorSeatCheck.limit} connected system${connectorSeatCheck.limit === 1 ? "" : "s"} — you're already at that limit. Upgrade your plan to connect more.` };
 
   let authConfig: unknown = { type: "none" };
   if (d.authType === "api_key") authConfig = { type: "api_key", header: d.apiKeyHeader || "x-api-key", value: d.apiKeyValue || "" };
@@ -1046,6 +1060,15 @@ export async function inviteUserAction(_prev: unknown, formData: FormData): Prom
   // rather than surfacing a raw P2002.
   const existing = await db.user.findUnique({ where: { email } });
   if (existing) return { error: `Someone already has an account with ${email}.` };
+
+  // Gap-002, fixed 2026-08-23: the plan editor lets an admin configure a
+  // "users" seat limit, but nothing enforced it — a Free-tier tenant could
+  // invite unlimited staff. checkSeatLimit is a real live count (how many
+  // Users this tenant has right now), not a monthly UsageEvent flow like
+  // checkLimit() — a seat is a standing fact, not something that resets.
+  const { checkSeatLimit } = await import("./usage");
+  const seatCheck = await checkSeatLimit(user.tenantId!, "users");
+  if (!seatCheck.ok) return { error: `Your plan allows up to ${seatCheck.limit} staff account${seatCheck.limit === 1 ? "" : "s"} — you're already at that limit. Upgrade your plan to add more.` };
 
   const password = randomToken(6);
   const tenant = await db.tenant.findUnique({ where: { id: user.tenantId! }, select: { name: true } });
