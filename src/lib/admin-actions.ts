@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { db } from "./db";
 import { verifyPassword, hashPassword } from "./auth";
 import { setSetting, setAiProviderCost, SETTING_DEFAULTS, type SettingKey } from "./platform-settings";
@@ -327,6 +328,41 @@ export async function clearReconciliationAction(tenantId: string, resolution: "p
   });
   revalidatePath("/admin/tenants");
   revalidatePath("/admin/billing/automation");
+  return { ok: true };
+}
+
+/** Real gap found in a schema-drift audit, 2026-08-23: `Subscription.
+ *  paybillReference` is read by the real C2B PayBill confirmation webhook
+ *  (src/app/api/payments/mpesa/c2b/confirmation/route.ts) to auto-match a
+ *  direct PayBill deposit to a tenant, but nothing anywhere ever set it —
+ *  confirmed 0 of 10 real subscriptions had a value. Every direct PayBill
+ *  payment was silently falling through to the manual reconciliation queue
+ *  instead of auto-matching. This is the missing write side: an admin
+ *  assigns the reference per tenant, same as the schema comment always
+ *  said was the intended flow. Empty string clears it. */
+export async function setPaybillReferenceAction(tenantId: string, paybillReference: string) {
+  const clean = paybillReference.trim();
+  let admin;
+  try {
+    admin = await assertAdminPermission("billing.confirm_payment", { tenantId });
+  } catch (e) {
+    if (isForbidden(e)) return { error: e.message };
+    throw e;
+  }
+  try {
+    await db.subscription.update({ where: { tenantId }, data: { paybillReference: clean || null } });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return { error: "That PayBill reference is already assigned to a different tenant." };
+    }
+    throw e;
+  }
+  await logPrivilegedAction({
+    admin, permission: "billing.confirm_payment", tenantId, action: "admin.paybill_reference_set",
+    target: tenantId, newState: { paybillReference: clean || null },
+  });
+  revalidatePath("/admin/tenants");
+  revalidatePath(`/admin/tenants/${tenantId}`);
   return { ok: true };
 }
 

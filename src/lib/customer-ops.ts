@@ -90,6 +90,7 @@ export async function getTenantOperationalSummary(tenantId: string) {
           graceEndsAt: tenant.subscription.graceEndsAt, paymentAttemptCount: tenant.subscription.paymentAttemptCount,
           paymentFailureReason: tenant.subscription.paymentFailureReason, reconciliationNeeded: tenant.subscription.reconciliationNeeded,
           billingPhone: tenant.subscription.billingPhone, autoRenew: tenant.subscription.autoRenew,
+          paybillReference: tenant.subscription.paybillReference,
         }
       : null,
     usage: {

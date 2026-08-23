@@ -5,6 +5,7 @@ import { getTenantOperationalSummary, getPaymentEvidence, getCustomerTimeline } 
 import { Card, PageHeader, Badge, Stat, timeAgo } from "@/components/ui";
 import { UnknownPaymentRow } from "@/app/admin/reconciliation/unknown-payment-row";
 import { NewTicketModal } from "@/app/admin/tickets/new-ticket-modal";
+import { PaybillReferenceField } from "./paybill-reference-field";
 
 const STATUS_TONE: Record<string, "rose" | "amber" | "indigo" | "green" | "neutral"> = {
   active: "green", trial: "indigo", suspended: "rose", renewal_due: "amber", payment_pending: "amber", grace_period: "amber", cancelled: "neutral",
@@ -46,6 +47,9 @@ export default async function TenantOperationsPage({ params }: { params: Promise
             <div>Renews {timeAgo(summary.subscription.renewsAt)}{summary.subscription.graceEndsAt ? ` · grace ends ${timeAgo(summary.subscription.graceEndsAt)}` : ""}</div>
             <div>Auto-renew: {summary.subscription.autoRenew ? "on" : "off"} · billing phone: {summary.subscription.billingPhone ?? "not set"}</div>
             <div>Payment attempts: {summary.subscription.paymentAttemptCount}{summary.subscription.paymentFailureReason ? ` · last failure: ${summary.subscription.paymentFailureReason}` : ""}</div>
+            <div className="sm:col-span-2">
+              <PaybillReferenceField tenantId={summary.tenant.id} initial={summary.subscription.paybillReference} canManage={hasAdminPermission(admin, "billing.confirm_payment")} />
+            </div>
             {summary.subscription.reconciliationNeeded && <div className="sm:col-span-2"><Badge tone="amber">Reconciliation needed</Badge></div>}
           </div>
         ) : <p className="text-sm text-muted">No subscription.</p>}
