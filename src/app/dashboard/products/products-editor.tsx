@@ -20,7 +20,7 @@ type Product = {
   options: string | null;
   stockQuantity: number | null;
 };
-type State = { ok?: boolean; error?: string; editedId?: string } | null;
+type State = { ok?: boolean; error?: string; editedId?: string; unchanged?: boolean } | null;
 
 export function ProductsEditor({ initial, canManage }: { initial: Product[]; canManage: boolean }) {
   const [editing, setEditing] = useState<Product | null>(null);
@@ -29,7 +29,8 @@ export function ProductsEditor({ initial, canManage }: { initial: Product[]; can
 
   useEffect(() => {
     if (state?.ok) {
-      toast.success(state.editedId ? "Product updated" : "Product added");
+      if (state.unchanged) toast("No changes were made");
+      else toast.success(state.editedId ? "Product updated" : "Product added");
       setEditing(null);
       setFormKey((k) => k + 1);
     }

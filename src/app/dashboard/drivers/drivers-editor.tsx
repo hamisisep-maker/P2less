@@ -16,7 +16,7 @@ type Driver = {
   availableFrom: string | null;
   availableUntil: string | null;
 };
-type State = { ok?: boolean; error?: string; editedId?: string } | null;
+type State = { ok?: boolean; error?: string; editedId?: string; unchanged?: boolean } | null;
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -40,7 +40,8 @@ export function DriversEditor({ initial, canManage }: { initial: Driver[]; canMa
 
   useEffect(() => {
     if (state?.ok) {
-      toast.success(state.editedId ? "Driver updated" : "Driver added");
+      if (state.unchanged) toast("No changes were made");
+      else toast.success(state.editedId ? "Driver updated" : "Driver added");
       setEditing(null);
       setFormKey((k) => k + 1);
     }

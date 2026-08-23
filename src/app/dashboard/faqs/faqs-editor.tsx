@@ -6,7 +6,7 @@ import { saveFaqsAction, crawlWebsiteAction } from "@/lib/actions";
 import { Card } from "@/components/ui";
 
 type Faq = { q: string; a: string };
-type State = { ok?: boolean; count?: number; error?: string } | null;
+type State = { ok?: boolean; count?: number; error?: string; unchanged?: boolean } | null;
 type CrawlState = { ok?: boolean; draft?: Faq[]; pagesScanned?: number; error?: string } | null;
 
 export function FaqsEditor({ initial, canManage }: { initial: Faq[]; canManage: boolean }) {
@@ -38,7 +38,9 @@ export function FaqsEditor({ initial, canManage }: { initial: Faq[]; canManage: 
   // stay visible while the admin reviews the draft rows it adds, which a
   // transient toast wouldn't serve as well.
   useEffect(() => {
-    if (state?.ok) toast.success(`Saved — your assistant now uses ${state.count} approved answer${state.count === 1 ? "" : "s"}.`);
+    if (!state?.ok) return;
+    if (state.unchanged) toast("No changes were made");
+    else toast.success(`Saved — your assistant now uses ${state.count} approved answer${state.count === 1 ? "" : "s"}.`);
   }, [state]);
 
   const update = (i: number, key: keyof Faq, value: string) =>

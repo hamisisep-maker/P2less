@@ -515,6 +515,14 @@ export async function saveFaqsAction(_prev: unknown, formData: FormData) {
     .map((f) => ({ q: String(f.q ?? "").trim().slice(0, 200), a: String(f.a ?? "").trim().slice(0, 600) }))
     .filter((f) => f.q && f.a)
     .slice(0, 40);
+  // "No changes made" detection, 2026-08-23 (Phase 4 of the UX audit) —
+  // backend-authoritative per the standard: compare against what's actually
+  // stored, not just what the client last loaded, before writing/revalidating.
+  const tenant = await db.tenant.findUnique({ where: { id: user.tenantId! }, select: { faqs: true } });
+  const current = (tenant?.faqs as { q: string; a: string }[] | null) ?? [];
+  if (JSON.stringify(current) === JSON.stringify(clean)) {
+    return { ok: true, count: clean.length, unchanged: true as const };
+  }
   await db.tenant.update({ where: { id: user.tenantId! }, data: { faqs: clean as object } });
   revalidatePath("/dashboard/faqs");
   return { ok: true, count: clean.length };
@@ -596,6 +604,20 @@ export async function saveProductAction(_prev: unknown, formData: FormData) {
   }
 
   if (id) {
+    // "No changes made" detection, 2026-08-23 (Phase 4) — skip when a new
+    // photo was uploaded (data.imageUrl set), since that's always a real,
+    // intentional change regardless of the other fields.
+    if (!("imageUrl" in data)) {
+      const current = await db.product.findFirst({ where: { id, tenantId: user.tenantId! } });
+      if (
+        current &&
+        current.name === data.name && current.description === data.description && current.price === data.price &&
+        current.currency === data.currency && current.category === data.category && current.sku === data.sku &&
+        current.options === data.options && current.stockQuantity === data.stockQuantity && current.inStock === data.inStock
+      ) {
+        return { ok: true, editedId: id, unchanged: true as const };
+      }
+    }
     await db.product.updateMany({ where: { id, tenantId: user.tenantId! }, data });
   } else {
     const created = await db.product.create({ data: { tenantId: user.tenantId!, ...data } });
@@ -653,6 +675,11 @@ export async function saveDeliveryZoneAction(_prev: unknown, formData: FormData)
   const id = String(formData.get("id") ?? "");
   const data = { name: d.name, description: d.description || null, fee: d.fee };
   if (id) {
+    // "No changes made" detection, 2026-08-23 (Phase 4).
+    const current = await db.deliveryZone.findFirst({ where: { id, tenantId: user.tenantId! } });
+    if (current && current.name === data.name && current.description === data.description && current.fee === data.fee) {
+      return { ok: true, editedId: id, unchanged: true as const };
+    }
     await db.deliveryZone.updateMany({ where: { id, tenantId: user.tenantId! }, data });
   } else {
     await db.deliveryZone.create({ data: { tenantId: user.tenantId!, ...data } });
@@ -690,6 +717,11 @@ export async function saveDriverAction(_prev: unknown, formData: FormData) {
   const phone = normalizePhone(d.phone);
   const data = { name: d.name, phone };
   if (id) {
+    // "No changes made" detection, 2026-08-23 (Phase 4).
+    const current = await db.driver.findFirst({ where: { id, tenantId: user.tenantId! } });
+    if (current && current.name === data.name && current.phone === data.phone) {
+      return { ok: true, editedId: id, unchanged: true as const };
+    }
     await db.driver.updateMany({ where: { id, tenantId: user.tenantId! }, data });
   } else {
     const existing = await db.driver.findFirst({ where: { tenantId: user.tenantId!, phone } });

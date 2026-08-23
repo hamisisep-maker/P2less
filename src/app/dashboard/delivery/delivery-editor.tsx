@@ -7,7 +7,7 @@ import { Card, Badge } from "@/components/ui";
 import { ToggleActiveButton } from "@/components/toggle-active-button";
 
 type Zone = { id: string; name: string; description: string | null; fee: number; active: boolean };
-type State = { ok?: boolean; error?: string; editedId?: string } | null;
+type State = { ok?: boolean; error?: string; editedId?: string; unchanged?: boolean } | null;
 
 export function DeliveryZonesEditor({ initial, canManage }: { initial: Zone[]; canManage: boolean }) {
   const [editing, setEditing] = useState<Zone | null>(null);
@@ -16,7 +16,8 @@ export function DeliveryZonesEditor({ initial, canManage }: { initial: Zone[]; c
 
   useEffect(() => {
     if (state?.ok) {
-      toast.success(state.editedId ? "Delivery zone updated" : "Delivery zone added");
+      if (state.unchanged) toast("No changes were made");
+      else toast.success(state.editedId ? "Delivery zone updated" : "Delivery zone added");
       setEditing(null);
       setFormKey((k) => k + 1);
     }
