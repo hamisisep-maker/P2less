@@ -8,10 +8,31 @@ import { updateTenantSettingsAction } from "@/lib/actions";
 type Initial = {
   name: string; industry: string;
   assistantName: string; logoText: string; primaryColor: string; welcome: string; poweredBy: string; pdfFooter: string;
+  useCases: string[]; channelsNeeded: string[];
 };
 type State = { ok?: boolean; unchanged?: boolean; error?: string } | null;
 
 const INDUSTRIES = ["school", "hospital", "sacco", "business", "ngo", "government"];
+
+// Same options and copy as /onboard's form (src/app/onboard/onboard-form.tsx)
+// — this is the same self-report, just editable after signup instead of
+// locked in at it. Keep both lists in sync if either changes.
+const USE_CASE_OPTIONS: { value: string; label: string }[] = [
+  { value: "automate_conversations", label: "Automate WhatsApp conversations for my customers" },
+  { value: "sell_products", label: "Sell products & manage orders/delivery" },
+  { value: "connect_systems", label: "Connect my existing software/systems" },
+  { value: "developer_api", label: "I'm a developer — building on the API" },
+  { value: "exploring", label: "Just exploring" },
+];
+const CHANNEL_OPTIONS: { value: string; label: string }[] = [
+  { value: "whatsapp", label: "WhatsApp" },
+  { value: "messenger", label: "Facebook Messenger" },
+  { value: "telegram", label: "Telegram" },
+  { value: "web_chat", label: "Our website (chat widget)" },
+  { value: "sms_interested", label: "SMS (coming soon — let us know you need it)" },
+  { value: "instagram_interested", label: "Instagram (coming soon — let us know you need it)" },
+  { value: "email_interested", label: "Email (coming soon — let us know you need it)" },
+];
 
 export function SettingsForm({ initial, canManage }: { initial: Initial; canManage: boolean }) {
   const [state, action, pending] = useActionState<State, FormData>(updateTenantSettingsAction, null);
@@ -70,6 +91,32 @@ export function SettingsForm({ initial, canManage }: { initial: Initial; canMana
             <span className="text-xs font-medium text-muted">PDF document footer</span>
             <input name="pdfFooter" defaultValue={initial.pdfFooter} disabled={!canManage} placeholder="e.g. official document, contact us at..." className="mt-1 w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent disabled:opacity-60" />
           </label>
+        </div>
+      </Card>
+
+      <Card className="mb-4 p-5">
+        <h2 className="mb-1 font-display font-semibold">What you use P2Less for</h2>
+        <p className="mb-3 text-xs text-muted">Controls which sections show in your sidebar — check anything relevant so that section becomes visible. Unchecking never deletes existing data, it only hides a section you're not using yet.</p>
+        <div className="mt-1 space-y-1.5">
+          {USE_CASE_OPTIONS.map((opt) => (
+            <label key={opt.value} className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="useCases" value={opt.value} defaultChecked={initial.useCases.includes(opt.value)} disabled={!canManage} className="rounded border-line disabled:opacity-60" />
+              {opt.label}
+            </label>
+          ))}
+        </div>
+      </Card>
+
+      <Card className="mb-4 p-5">
+        <h2 className="mb-1 font-display font-semibold">Channels your customers use</h2>
+        <p className="mb-3 text-xs text-muted">Check &quot;Our website (chat widget)&quot; to reveal the Website Widget section in your sidebar so you can set one up.</p>
+        <div className="mt-1 space-y-1.5">
+          {CHANNEL_OPTIONS.map((opt) => (
+            <label key={opt.value} className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="channelsNeeded" value={opt.value} defaultChecked={initial.channelsNeeded.includes(opt.value)} disabled={!canManage} className="rounded border-line disabled:opacity-60" />
+              {opt.label}
+            </label>
+          ))}
         </div>
       </Card>
 

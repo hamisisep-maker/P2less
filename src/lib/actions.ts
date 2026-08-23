@@ -1034,13 +1034,25 @@ export async function updateTenantSettingsAction(_prev: unknown, formData: FormD
   }
   const newBranding = { assistantName: branding.assistantName, logoText: branding.logoText, primaryColor: branding.primaryColor, welcome: branding.welcome, poweredBy: branding.poweredBy, pdfFooter: branding.pdfFooter };
 
-  const current = await db.tenant.findUnique({ where: { id: user.tenantId! }, select: { name: true, industry: true, branding: true } });
+  // Real gap found 2026-08-23 (nav.ts gates Commerce/Integrations/Developer/
+  // Widget nav groups on these, and a tenant that under-selected — or, like
+  // every pre-existing tenant, signed up before this question existed —
+  // had no edit path at all). Sorted before comparing so a re-save of the
+  // exact same set in a different DOM order never reads as "changed".
+  const useCases = formData.getAll("useCases").map(String);
+  const channelsNeeded = formData.getAll("channelsNeeded").map(String);
+
+  const current = await db.tenant.findUnique({ where: { id: user.tenantId! }, select: { name: true, industry: true, branding: true, useCases: true, channelsNeeded: true } });
   const currentBranding = (current?.branding as Record<string, string | undefined> | null) ?? {};
+  const currentUseCases = ((current?.useCases as string[] | null) ?? []).slice().sort();
+  const currentChannels = ((current?.channelsNeeded as string[] | null) ?? []).slice().sort();
   const unchanged = current?.name === name && current?.industry === industry
-    && JSON.stringify(currentBranding) === JSON.stringify(newBranding);
+    && JSON.stringify(currentBranding) === JSON.stringify(newBranding)
+    && JSON.stringify(currentUseCases) === JSON.stringify(useCases.slice().sort())
+    && JSON.stringify(currentChannels) === JSON.stringify(channelsNeeded.slice().sort());
   if (unchanged) return { ok: true, unchanged: true };
 
-  await db.tenant.update({ where: { id: user.tenantId! }, data: { name, industry, branding: newBranding } });
+  await db.tenant.update({ where: { id: user.tenantId! }, data: { name, industry, branding: newBranding, useCases, channelsNeeded } });
   revalidatePath("/dashboard/settings");
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/widget");

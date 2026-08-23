@@ -65,6 +65,20 @@ export async function computeBill(tenantId: string): Promise<Bill> {
 
   // Conversations ≈ inbound messages (WhatsApp bills per 24h conversation window;
   // we approximate here). AI + documents are metered directly.
+  //
+  // Real gap found 2026-08-23, asked directly ("is WhatsApp the only channel
+  // or are others considered"): "message_in" is metered inside
+  // handleInbound(), the single entry point EVERY channel route calls
+  // (WhatsApp, Messenger, Telegram, widget, webchat, email) — so `convos`
+  // here is genuinely all-channel, not WhatsApp-only, despite the line
+  // label below previously claiming otherwise. Relabeled to be accurate.
+  // Deliberately NOT fixed in the same round: PRICE.conversation/
+  // COST.conversation are a single flat rate applied to this same
+  // all-channel count — meaning Messenger/Telegram/widget/email messages
+  // are billed and cost-estimated at Meta's WhatsApp-specific rate, which
+  // they don't actually incur. A real pricing-accuracy gap for any
+  // multi-channel tenant, worth fixing, but a genuine per-channel pricing
+  // design decision — not a label fix — so it's recorded, not rushed.
   const [convos, ai, docs, { PRICE, COST }] = await Promise.all([
     monthlyUsage(tenantId, "message_in"),
     monthlyUsage(tenantId, "ai_request"),
@@ -73,7 +87,7 @@ export async function computeBill(tenantId: string): Promise<Bill> {
   ]);
 
   const lines: BillLine[] = [
-    { label: "WhatsApp conversations", qty: convos, unit: PRICE.conversation, amount: convos * PRICE.conversation },
+    { label: "Conversations (all channels)", qty: convos, unit: PRICE.conversation, amount: convos * PRICE.conversation },
     { label: "AI understanding requests", qty: ai, unit: PRICE.ai, amount: ai * PRICE.ai },
     { label: "Documents generated (PDF)", qty: docs, unit: PRICE.document, amount: docs * PRICE.document },
   ];

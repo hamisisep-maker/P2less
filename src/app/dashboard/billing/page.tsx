@@ -38,7 +38,7 @@ export default async function BillingPage() {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Stat label="This month" value={kes(bill.total)} sub={`${bill.planName} plan + usage`} />
-        <Stat label="Conversations" value={bill.lines[0]?.qty.toLocaleString("en-US") ?? "0"} sub="WhatsApp messages this month" />
+        <Stat label="Conversations" value={bill.lines[0]?.qty.toLocaleString("en-US") ?? "0"} sub="Across all connected channels" />
         <Stat label="Plan fee" value={kes(bill.planFee)} sub="per month" />
       </div>
 
