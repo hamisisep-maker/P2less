@@ -60,6 +60,12 @@ All four confirmed bugs from the audit fixed, live-verified in a real browser se
 
 Live-verified, not just typechecked: reproduced the exact save/toggle flows against a real tenant (Kilimani Retail), caught the real `"Product updated"` toast rendering in the DOM via a polling script (two earlier attempts missed it purely on tool round-trip timing, not a real bug — confirmed by checking the underlying DB write succeeded both times), confirmed the `confirm()` dialog fires with the intended message, confirmed zero console errors across all three affected pages, confirmed all test data and temporarily-granted permissions were fully reverted afterward.
 
+## Phase 2 — ✅ SHIPPED 2026-08-23 (commit `1144967`, Railway `8b64bfca`)
+
+The highest client-risk gap from the audit: `dashboard/widget/widget-key-row.tsx`'s "Save domains" and "Deactivate" were bare form actions with zero feedback — a client could kill their own live, publicly embedded widget with one misclick. Rewrote it with `useTransition`-driven handlers: Save domains now toasts success/error; Deactivate now confirms first with an honest message (there's no self-service reactivate for that exact key — the row simply stops rendering once deactivated). Both server actions (`updateWidgetOriginsAction`, `deactivateWidgetKeyAction`) now return a real result instead of `void`.
+
+Live-verified all three paths in a real browser session against a real test tenant: Save domains persisted with a toast caught in the DOM; Deactivate + cancel correctly left the key untouched (confirmed via DB); Deactivate + confirm correctly flipped it inactive (confirmed via DB) and the page correctly re-rendered showing the "deactivated" badge with the row's controls gone.
+
 ## Recommended path — phased, not all 34 sections at once
 
 Trying to apply the full original standards document everywhere at once is realistically months of work across 20+ modules. Here's a sequence that fixes the real, live problems first and treats the rest as deliberate follow-on phases:
@@ -67,7 +73,7 @@ Trying to apply the full original standards document everywhere at once is reali
 **Phase 1 — ✅ SHIPPED, see above — fix the confirmed bugs (small, safe, no new patterns needed):**
 Products/Delivery/Drivers silent success → add `toast.success`, matching the 28 files that already do this correctly. Same three files' Deactivate/Reactivate → wrap in the existing `ReasonAction` pattern (or a lighter dashboard-side variant) instead of a bare form. Fix the two false-success toasts and the unhandled promise — these are just bugs, unrelated to any bigger design decision.
 
-**Phase 2 — the highest-risk gap:**
+**Phase 2 — ✅ SHIPPED, see above — the highest-risk gap:**
 Widget key Deactivate gets a real confirmation step + toast feedback. This is the one place a client could genuinely hurt themselves with one misclick.
 
 **Phase 3 — consistency pass:**
