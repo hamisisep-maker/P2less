@@ -462,17 +462,19 @@ export async function createWidgetKeyAction(_prev: unknown, formData: FormData) 
 
 export async function updateWidgetOriginsAction(formData: FormData) {
   const user = await requireTenantUser();
-  if (!userPermissions(user).includes(PERMISSIONS.DEVELOPER_MANAGE)) return;
+  if (!userPermissions(user).includes(PERMISSIONS.DEVELOPER_MANAGE)) return { error: "You don't have permission to manage the widget." };
   const origins = parseOrigins(String(formData.get("origins") ?? ""));
   await db.widgetKey.updateMany({ where: { id: String(formData.get("id")), tenantId: user.tenantId! }, data: { allowedOrigins: origins } });
   revalidatePath("/dashboard/widget");
+  return { ok: true as const };
 }
 
 export async function deactivateWidgetKeyAction(formData: FormData) {
   const user = await requireTenantUser();
-  if (!userPermissions(user).includes(PERMISSIONS.DEVELOPER_MANAGE)) return;
+  if (!userPermissions(user).includes(PERMISSIONS.DEVELOPER_MANAGE)) return { error: "You don't have permission to manage the widget." };
   await db.widgetKey.updateMany({ where: { id: String(formData.get("id")), tenantId: user.tenantId! }, data: { active: false } });
   revalidatePath("/dashboard/widget");
+  return { ok: true as const };
 }
 
 export async function addWebhookAction(_prev: unknown, formData: FormData) {
