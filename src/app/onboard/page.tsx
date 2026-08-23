@@ -3,6 +3,14 @@ import { Logo, Card } from "@/components/ui";
 import { getSetting } from "@/lib/platform-settings";
 import { OnboardForm } from "./onboard-form";
 
+// Was static (○) — now reads a live setting per request, so it must be
+// forced dynamic. Without this, Next tries to prerender it AT BUILD TIME,
+// when there's no database file yet (it's only mounted at runtime), and the
+// build fails outright. Real failure, not a hypothetical: this broke the
+// 2026-08-23 production deploy the first time this page went from static
+// markup to a getSetting() call.
+export const dynamic = "force-dynamic";
+
 export default async function OnboardPage() {
   const registrationEnabled = (await getSetting("public_registration_enabled")) === "1";
   return (
