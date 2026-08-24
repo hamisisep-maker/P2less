@@ -260,9 +260,34 @@ async function checkStkFailureRateAnomaly(): Promise<void> {
   });
 }
 
+/** 6th check, added 2026-08-24 alongside the real live token-validity probe
+ *  in system-health.ts's checkWhatsAppHealth() — reads that check's cached
+ *  verdict (refreshed every 2 minutes by integration_health_sweep) rather
+ *  than re-calling Meta's API a second time per tick. WhatsApp today is a
+ *  single platform-wide shared token (Phase 9's per-tenant tokens aren't
+ *  live yet), so a dead token is P2Less's OWN infrastructure breaking for
+ *  every tenant at once — a real platform Incident, not a per-tenant
+ *  Notification (the same "shared credential = Incident, tenant's own
+ *  credential = Notification" distinction runSocialTokenHealthSweep's own
+ *  comment already draws, just landing on the other side of it correctly
+ *  here). Resolution stays a human action, the default for every check
+ *  except the STK rate anomaly — a dead token going valid again only
+ *  happens because someone actually fixed it, worth a deliberate close-out. */
+async function checkWhatsAppTokenHealth(): Promise<void> {
+  const integration = await db.integration.findUnique({ where: { key: "whatsapp_cloud_api" } });
+  if (!integration || integration.lastCheckOk !== false) return;
+  await openOrBumpIncident({
+    severity: "critical",
+    source: "whatsapp_cloud_api_token",
+    title: `WhatsApp Cloud API — ${integration.lastCheckDetail ?? "access token is no longer valid"}`,
+    relatedIntegrationKey: "whatsapp_cloud_api",
+    detail: { lastCheckedAt: integration.lastCheckedAt },
+  });
+}
+
 export async function runIncidentSweep(): Promise<{ checksRun: number }> {
-  await Promise.all([checkOverdueJobs(), checkAiErrorRates(), checkMpesaCallbackSilence(), checkReconciliationBacklog(), checkStkFailureRateAnomaly()]);
-  return { checksRun: 5 };
+  await Promise.all([checkOverdueJobs(), checkAiErrorRates(), checkMpesaCallbackSilence(), checkReconciliationBacklog(), checkStkFailureRateAnomaly(), checkWhatsAppTokenHealth()]);
+  return { checksRun: 6 };
 }
 
 // A rough, explainable heuristic (not ML) mapping an incident's integration

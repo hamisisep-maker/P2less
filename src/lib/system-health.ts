@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "./db";
 import { isConfigured as mpesaConfigured } from "./mpesa";
 import { isEmailConfigured } from "./notification-channels";
+import { checkMetaAccessTokenValidity } from "./meta-token-health";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Real health computation per integration — never "API key exists = healthy".
@@ -45,14 +46,32 @@ async function checkAiProviderHealth(provider: string): Promise<HealthVerdict> {
   return { ok: true, detail: `${stat.successes} successful call(s) today` };
 }
 
+/** Real gap this closes (SYSTEM-DISCOVERY-2026-08-19.md, line 53): before
+ *  2026-08-24 this function could NEVER return `ok: false` — it only ever
+ *  inferred health from recent message activity, which stays "true" even
+ *  after the token dies, as long as OLDER messages exist. A silently
+ *  revoked/expired WHATSAPP_ACCESS_TOKEN (the one platform-wide token every
+ *  tenant's number currently shares — real per-tenant tokens are Phase 9,
+ *  still paused) had zero operator-visible signal beyond raw logs. Now does
+ *  a real live check via Meta's debug_token endpoint (the same proven
+ *  implementation Messenger's Page-token health check uses, shared via
+ *  meta-token-health.ts) — token validity is authoritative for ok/false;
+ *  message recency stays as a secondary, honest detail when the token is
+ *  fine. */
 async function checkWhatsAppHealth(): Promise<HealthVerdict> {
   if (!process.env.WHATSAPP_ACCESS_TOKEN) return { ok: null, detail: "No access token configured (using local web-chat simulator)" };
+
+  const tokenHealth = await checkMetaAccessTokenValidity(process.env.WHATSAPP_ACCESS_TOKEN);
+  if (!tokenHealth.valid) {
+    return { ok: false, detail: `WhatsApp access token is no longer valid (${tokenHealth.error ?? "rejected by Meta"}) — outbound/inbound messaging for every tenant on this shared token has stopped working.` };
+  }
+
   const lastIn = await db.message.findFirst({ where: { direction: "in" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } });
   const lastOut = await db.message.findFirst({ where: { direction: "out" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } });
-  if (!lastIn && !lastOut) return { ok: null, detail: "No messages sent or received yet" };
+  if (!lastIn && !lastOut) return { ok: true, detail: "Token valid; no messages sent or received yet" };
   const mostRecent = [lastIn?.createdAt, lastOut?.createdAt].filter((d): d is Date => !!d).sort((a, b) => b.getTime() - a.getTime())[0]!;
   const ageHours = (Date.now() - mostRecent.getTime()) / 3_600_000;
-  return { ok: true, detail: `Last message activity ${ageHours < 1 ? "under an hour" : Math.round(ageHours) + "h"} ago` };
+  return { ok: true, detail: `Token valid; last message activity ${ageHours < 1 ? "under an hour" : Math.round(ageHours) + "h"} ago` };
 }
 
 async function checkEmailProviderHealth(): Promise<HealthVerdict> {

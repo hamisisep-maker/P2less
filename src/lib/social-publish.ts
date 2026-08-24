@@ -3,6 +3,7 @@ import { db } from "./db";
 import { decryptJSON } from "./crypto";
 import { queueNotification } from "./notifications";
 import { runWithTenant } from "./tenant-context";
+import { checkMetaAccessTokenValidity } from "./meta-token-health";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Universal Platform roadmap Phase 8c — auto-publish new products to the
@@ -124,25 +125,6 @@ export async function setAutoPublishEnabled(tenantId: string, enabled: boolean):
 // human ever needs to log back in and check" point of this feature.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Real Graph API debug_token endpoint, confirmed against Meta's own docs
- *  before writing this: {app-id}|{app-secret} is the documented "app access
- *  token" format, valid as the caller credential for inspecting ANY token
- *  issued to this same app — no per-tenant admin credential needed to check. */
-async function checkPageTokenHealth(pageToken: string): Promise<{ valid: boolean; error?: string }> {
-  const appId = process.env.WHATSAPP_APP_ID;
-  const appSecret = process.env.WHATSAPP_APP_SECRET; // same shared Meta App as WhatsApp/Messenger
-  if (!appId || !appSecret) return { valid: true }; // can't check without app credentials — don't false-alarm every tenant for our own config gap
-  try {
-    const appToken = `${appId}|${appSecret}`;
-    const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/debug_token?input_token=${encodeURIComponent(pageToken)}&access_token=${encodeURIComponent(appToken)}`);
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok || !body?.data) return { valid: false, error: body?.error?.message || `debug_token failed (${res.status})` };
-    return { valid: !!body.data.is_valid, error: body.data.error?.message };
-  } catch (e) {
-    return { valid: true, error: e instanceof Error ? e.message : "network error" }; // a network hiccup isn't evidence the token is bad — don't false-alarm on our own connectivity issue
-  }
-}
-
 /** Registered as social_token_health_sweep in instrumentation.ts. Checks
  *  every tenant's connected Facebook Page token (Messenger replies AND, if
  *  enabled, product auto-publish both depend on the same token) and queues a
@@ -166,7 +148,7 @@ export async function runSocialTokenHealthSweep(): Promise<{ checked: number; in
     // extension (not yet enabled in the current pilot, Contact-only) — wired
     // now so it's ready the moment Channel joins the scoped-model set.
     const invalidHere = await runWithTenant(channel.tenantId, async () => {
-      const health = await checkPageTokenHealth(token);
+      const health = await checkMetaAccessTokenValidity(token);
       await db.channel.update({
         where: { id: channel.id },
         data: { config: { ...cfg, tokenValid: health.valid, tokenHealthLastCheckedAt: new Date().toISOString() } },
