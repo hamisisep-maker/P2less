@@ -4,6 +4,7 @@ import { computeBill } from "@/lib/billing";
 import { Card, Stat, PageHeader, Badge } from "@/components/ui";
 import { PayButton } from "./pay-button";
 import { AutoRenewForm } from "./auto-renew-form";
+import { UpgradePlanButton } from "./upgrade-plan-button";
 
 const kes = (n: number) => `KES ${n.toLocaleString("en-US")}`;
 const STATUS_TONE: Record<string, "green" | "amber" | "rose" | "neutral" | "accent"> = {
@@ -13,11 +14,17 @@ const STATUS_TONE: Record<string, "green" | "amber" | "rose" | "neutral" | "acce
 export default async function BillingPage() {
   return withTenantUser(async (user) => {
     const tenantId = user.tenantId!;
-    const [bill, payments, sub] = await Promise.all([
+    const [bill, payments, sub, allPlans] = await Promise.all([
       computeBill(tenantId),
       db.payment.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" }, take: 12 }),
-      db.subscription.findUnique({ where: { tenantId } }),
+      db.subscription.findUnique({ where: { tenantId }, include: { plan: true } }),
+      db.plan.findMany({ where: { active: true }, orderBy: { sort: "asc" } }),
     ]);
+    // Downgrades are read from Plan.sort, not priceMonthly — see
+    // upgradeSubscriptionPlanAction's comment (Enterprise prices at 0, same
+    // as Free, but is the top tier).
+    const upgradeOptions = sub ? allPlans.filter((p) => p.sort > sub.plan.sort) : [];
+    const pendingPlan = sub?.pendingPlanId ? allPlans.find((p) => p.id === sub.pendingPlanId) : null;
 
     return (
       <div>
@@ -37,6 +44,11 @@ export default async function BillingPage() {
                 )}
               </div>
             </div>
+            {pendingPlan && (
+              <p className="mt-2 text-xs text-amber">
+                Switching to {pendingPlan.name} on {sub!.renewsAt.toLocaleDateString("en-GB", { day: "numeric", month: "long" })} — this cycle finishes on your current plan.
+              </p>
+            )}
           </Card>
         )}
 
@@ -85,12 +97,26 @@ export default async function BillingPage() {
           </Card>
 
           <Card className="p-5">
-            <h2 className="mb-2 font-display font-semibold">What&apos;s included</h2>
-            <ul className="space-y-2 text-sm text-muted">
-              <li>One simple bill covering your plan and usage — nothing else to set up or manage separately.</li>
-              <li>Fully managed, end to end — no other accounts, vendors, or invoices for you to track.</li>
-              <li>Payments are confirmed automatically — no manual reconciliation on your side.</li>
-            </ul>
+            {upgradeOptions.length > 0 ? (
+              <>
+                <h2 className="mb-1 font-display font-semibold">Upgrade your plan</h2>
+                <p className="mb-3 text-xs text-muted">Takes effect immediately — this month's bill switches to the new rate right away. Want to downgrade instead? Contact us.</p>
+                <div className="space-y-2">
+                  {upgradeOptions.map((p) => (
+                    <UpgradePlanButton key={p.id} planId={p.id} planName={p.name} priceMonthly={p.priceMonthly} />
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="mb-2 font-display font-semibold">What&apos;s included</h2>
+                <ul className="space-y-2 text-sm text-muted">
+                  <li>One simple bill covering your plan and usage — nothing else to set up or manage separately.</li>
+                  <li>Fully managed, end to end — no other accounts, vendors, or invoices for you to track.</li>
+                  <li>Payments are confirmed automatically — no manual reconciliation on your side.</li>
+                </ul>
+              </>
+            )}
           </Card>
         </div>
 

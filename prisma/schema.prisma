@@ -553,6 +553,17 @@ model Subscription {
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   planId    String
   plan      Plan     @relation(fields: [planId], references: [id])
+  // Downgrade requested but deliberately not applied yet — see
+  // changeTenantPlanAction (admin-actions.ts). Applied at the NEXT renewal
+  // (runBillingCycle, billing-lifecycle.ts), never immediately: computeBill()
+  // reads plan.priceMonthly fresh against usage counted since the start of
+  // the CALENDAR month, with no record of which plan was active on which
+  // days — an immediate downgrade would silently apply the lower fee
+  // retroactively to usage already incurred at the higher rate. Upgrades
+  // don't need this field; they apply immediately (planId itself changes),
+  // an explicit, honest "new rate for the whole current bill" rule, safe
+  // because it only ever increases what's charged.
+  pendingPlanId String?
   period    String   @default("monthly") // monthly | half_yearly | yearly
   status    String   @default("active") // trial | active | renewal_due | payment_pending | grace_period | suspended | cancelled
   startedAt DateTime @default(now())

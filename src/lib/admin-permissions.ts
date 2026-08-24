@@ -14,6 +14,7 @@ export const ADMIN_PERMISSIONS = [
   "tenants.suspend",
   "tenants.reactivate",
   "tenants.cancel", // permanently cancel a subscription (self-service was deliberately rejected — see admin-actions.ts's cancelTenantSubscriptionAction) — kept separate from suspend/reactivate: those are reversible access toggles, this ends the subscription and settles a final bill
+  "tenants.change_plan", // assign a tenant to a different plan (upgrade or downgrade) — distinct from plans.edit, which edits the GLOBAL plan definition, not which plan a specific tenant is on. Tenants can self-service upgrade themselves (see actions.ts's upgradeSubscriptionPlanAction, gated by billing.manage instead); this permission covers admin-initiated changes either direction, including downgrades (deliberately not self-service — see changeTenantPlanAction)
   "billing.view",
   "billing.confirm_payment",
   "billing.refund",
@@ -66,6 +67,7 @@ export const PERMISSION_LABELS: Record<AdminPermission, string> = {
   "tenants.suspend": "Suspend tenants",
   "tenants.reactivate": "Reactivate tenants",
   "tenants.cancel": "Cancel a tenant's subscription (permanent, stops the assistant immediately)",
+  "tenants.change_plan": "Change which plan a tenant is assigned to (upgrade or downgrade)",
   "billing.view": "View billing & revenue",
   "billing.confirm_payment": "Manually confirm/resolve payments",
   "billing.refund": "Issue refunds",
@@ -114,14 +116,14 @@ export const BUILT_IN_ROLES: Record<BuiltInRoleKey, { name: string; permissions:
     name: "Finance Admin",
     permissions: [
       "billing.view", "billing.confirm_payment", "billing.refund", "billing.manage_pricing", "billing.manage_automation",
-      "plans.view", "plans.edit", "audit.view",
+      "plans.view", "plans.edit", "tenants.view", "tenants.change_plan", "audit.view",
       "integrations.view", "reconciliation.view", "reconciliation.match", "tickets.view", "notifications.view", "notifications.manage",
     ],
   },
   operations_admin: {
     name: "Operations Admin",
     permissions: [
-      "tenants.view", "tenants.suspend", "tenants.reactivate", "tenants.cancel",
+      "tenants.view", "tenants.suspend", "tenants.reactivate", "tenants.cancel", "tenants.change_plan",
       "models.view", "models.change_primary", "models.edit_pricing",
       "providers.view", "providers.manage", "audit.view",
       "integrations.view", "integrations.manage", "system_health.view", "incidents.view", "incidents.manage", "webhooks.view",

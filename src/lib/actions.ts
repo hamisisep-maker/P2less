@@ -129,6 +129,43 @@ export async function startPaymentAction(_prev: unknown, formData: FormData) {
   });
 }
 
+/** Tenant self-service — UPGRADE only, enforced server-side (never trust a
+ *  client-submitted planId's direction). Applies immediately: an explicit,
+ *  honest "the whole current month bills at the new plan's rate, no
+ *  partial-month credit" rule, safe because it only ever increases what's
+ *  charged. Downgrades are deliberately NOT self-service — direct user
+ *  decision, see admin-actions.ts's changeTenantPlanAction for why (real
+ *  gaming risk: changing plan right before the bill is computed could
+ *  otherwise shrink what's owed for usage already incurred at the higher
+ *  rate). Direction is read from Plan.sort, not priceMonthly — checked the
+ *  real seed data first: Enterprise prices at 0, same as Free, but is
+ *  obviously the top tier. */
+export async function upgradeSubscriptionPlanAction(_prev: unknown, formData: FormData) {
+  return withTenantUser(async (user) => {
+    if (!userPermissions(user).includes(PERMISSIONS.BILLING_MANAGE)) return { error: "You don't have billing permission." };
+    const tenantId = user.tenantId!;
+    const newPlanId = String(formData.get("planId") ?? "");
+    const [sub, newPlan] = await Promise.all([
+      db.subscription.findUnique({ where: { tenantId }, include: { plan: true } }),
+      db.plan.findUnique({ where: { id: newPlanId } }),
+    ]);
+    if (!sub) return { error: "No subscription found." };
+    if (!newPlan || !newPlan.active) return { error: "That plan isn't available." };
+    if (newPlan.sort <= sub.plan.sort) return { error: "Downgrading isn't self-service — contact us and we'll take care of it." };
+
+    await db.subscription.update({ where: { tenantId }, data: { planId: newPlan.id, pendingPlanId: null } });
+    const { audit } = await import("./audit");
+    const { requestId: newRequestId } = await import("./crypto");
+    await audit({
+      tenantId, requestId: newRequestId(), actorType: "user", actorId: user.id,
+      action: "subscription.plan_upgraded", target: newPlan.id, success: true,
+      detail: { fromPlan: sub.plan.name, toPlan: newPlan.name },
+    });
+    revalidatePath("/dashboard/billing");
+    return { ok: true, planName: newPlan.name };
+  });
+}
+
 // ── Self-serve onboarding (Embedded-Signup style) ─────────────────────────────
 // Provisions a tenant + number WITHOUT the org touching the Meta dashboard. In
 // production the WhatsApp number + WABA + token come back from Meta's Embedded

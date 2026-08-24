@@ -6,6 +6,8 @@ import { Card, PageHeader, Badge, Stat, timeAgo } from "@/components/ui";
 import { UnknownPaymentRow } from "@/app/admin/reconciliation/unknown-payment-row";
 import { NewTicketModal } from "@/app/admin/tickets/new-ticket-modal";
 import { PaybillReferenceField } from "./paybill-reference-field";
+import { PlanChangePicker } from "./plan-change-picker";
+import { db } from "@/lib/db";
 
 const STATUS_TONE: Record<string, "rose" | "amber" | "indigo" | "green" | "neutral"> = {
   active: "green", trial: "indigo", suspended: "rose", renewal_due: "amber", payment_pending: "amber", grace_period: "amber", cancelled: "neutral",
@@ -17,9 +19,10 @@ export default async function TenantOperationsPage({ params }: { params: Promise
     const summary = await getTenantOperationalSummary(id);
     if (!summary) notFound();
 
-    const [evidenceRows, timeline] = await Promise.all([
+    const [evidenceRows, timeline, activePlans] = await Promise.all([
       Promise.all([...summary.billing.pendingPayments, ...summary.billing.unknownPayments].map((p) => getPaymentEvidence(p.id))),
       getCustomerTimeline(id),
+      db.plan.findMany({ where: { active: true }, orderBy: { sort: "asc" }, select: { id: true, name: true, sort: true, priceMonthly: true } }),
     ]);
 
     return (
@@ -42,8 +45,23 @@ export default async function TenantOperationsPage({ params }: { params: Promise
           <h2 className="mb-3 font-display font-semibold">Subscription &amp; plan</h2>
           {summary.subscription ? (
             <div className="grid gap-2 text-sm sm:grid-cols-2">
-              <div><Badge tone={STATUS_TONE[summary.subscription.status] ?? "neutral"}>{summary.subscription.status.replace(/_/g, " ")}</Badge> · {summary.subscription.planName}</div>
-              <div>Renews {timeAgo(summary.subscription.renewsAt)}{summary.subscription.graceEndsAt ? ` · grace ends ${timeAgo(summary.subscription.graceEndsAt)}` : ""}</div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone={STATUS_TONE[summary.subscription.status] ?? "neutral"}>{summary.subscription.status.replace(/_/g, " ")}</Badge>
+                <span>{summary.subscription.planName}</span>
+                <PlanChangePicker
+                  tenantId={summary.tenant.id}
+                  currentPlanId={summary.subscription.planId}
+                  currentSort={summary.subscription.planSort}
+                  plans={activePlans}
+                  canManage={hasAdminPermission(admin, "tenants.change_plan")}
+                />
+              </div>
+              <div>
+                Renews {timeAgo(summary.subscription.renewsAt)}{summary.subscription.graceEndsAt ? ` · grace ends ${timeAgo(summary.subscription.graceEndsAt)}` : ""}
+                {summary.subscription.pendingPlanId && (
+                  <span className="text-amber"> · switching to {activePlans.find((p) => p.id === summary.subscription!.pendingPlanId)?.name ?? "a new plan"} then</span>
+                )}
+              </div>
               <div>Auto-renew: {summary.subscription.autoRenew ? "on" : "off"} · billing phone: {summary.subscription.billingPhone ?? "not set"}</div>
               <div>Payment attempts: {summary.subscription.paymentAttemptCount}{summary.subscription.paymentFailureReason ? ` · last failure: ${summary.subscription.paymentFailureReason}` : ""}</div>
               <div className="sm:col-span-2">

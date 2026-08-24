@@ -107,7 +107,8 @@ export async function getTenantOperationalSummary(tenantId: string) {
     tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug, industry: tenant.industry, status: tenant.status, createdAt: tenant.createdAt },
     subscription: tenant.subscription
       ? {
-          status: tenant.subscription.status, planName: tenant.subscription.plan.name, renewsAt: tenant.subscription.renewsAt,
+          status: tenant.subscription.status, planId: tenant.subscription.planId, planName: tenant.subscription.plan.name, planSort: tenant.subscription.plan.sort,
+          pendingPlanId: tenant.subscription.pendingPlanId, renewsAt: tenant.subscription.renewsAt,
           graceEndsAt: tenant.subscription.graceEndsAt, paymentAttemptCount: tenant.subscription.paymentAttemptCount,
           paymentFailureReason: tenant.subscription.paymentFailureReason, reconciliationNeeded: tenant.subscription.reconciliationNeeded,
           billingPhone: tenant.subscription.billingPhone, autoRenew: tenant.subscription.autoRenew,

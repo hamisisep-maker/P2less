@@ -287,7 +287,19 @@ export async function runBillingCycle(): Promise<{ reminders: number; renewalsAt
     // auto-renew is off / no billing phone on file — manual "Pay Now" still
     // works either way, see /dashboard/billing).
     if (sub.status === "active" && sub.renewsAt <= now) {
-      await db.subscription.update({ where: { tenantId: sub.tenantId }, data: { status: "renewal_due" } });
+      // A downgrade requested via changeTenantPlanAction (admin-actions.ts)
+      // takes effect HERE — the old cycle has just ended, a fresh one is
+      // about to start, so applying the new (lower) plan now means
+      // computeBill() below will already read the correct rate for this
+      // new cycle's usage, with nothing retroactively recomputed for usage
+      // already incurred under the old plan.
+      const planUpdate: { status: string; planId?: string; pendingPlanId?: null } = { status: "renewal_due" };
+      if (sub.pendingPlanId) {
+        planUpdate.planId = sub.pendingPlanId;
+        planUpdate.pendingPlanId = null;
+        await billingAudit(sub.tenantId, "plan_downgrade_applied", { newPlanId: sub.pendingPlanId });
+      }
+      await db.subscription.update({ where: { tenantId: sub.tenantId }, data: planUpdate });
       await billingAudit(sub.tenantId, "renewal_due");
       sub.status = "renewal_due";
     }

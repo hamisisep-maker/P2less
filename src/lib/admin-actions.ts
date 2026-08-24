@@ -128,6 +128,64 @@ export async function cancelTenantSubscriptionAction(tenantId: string, reason: s
   }, { tenantId });
 }
 
+/** DANGEROUS: assigns a tenant to a different plan — admin side, handles
+ *  BOTH directions. Distinct from updatePlanAction below, which edits the
+ *  GLOBAL plan definition (price, limits), not which plan a tenant is on —
+ *  the exact confusion this Gap Register item started from (grepped for
+ *  every planId write and found none, anywhere, outside signup).
+ *
+ *  Direction is read from Plan.sort (the field that exists specifically for
+ *  tier ordering), NOT priceMonthly — checked the real seed data first:
+ *  Enterprise is priced at 0, same as Free, but is obviously the top tier,
+ *  so comparing by price alone would have gotten this backwards.
+ *
+ *  Upgrade (new sort > current): applied IMMEDIATELY — planId changes right
+ *  away. Explicit, honest rule: the CURRENT month's bill (computeBill()
+ *  reads plan.priceMonthly fresh against usage counted since the start of
+ *  the calendar month, no per-day plan history) will charge the new,
+ *  higher rate for the whole month, no partial-month credit — safe because
+ *  it only ever increases revenue, never something a tenant could use to
+ *  reduce what they owe.
+ *
+ *  Downgrade (new sort < current): NEVER immediate — sets
+ *  Subscription.pendingPlanId instead, applied by runBillingCycle() at the
+ *  next real renewal (billing-lifecycle.ts). Applying a downgrade
+ *  immediately would retroactively apply the LOWER rate to usage already
+ *  incurred this cycle at the higher one — exactly the "change plan right
+ *  before the bill" gaming risk this was designed to close. This is also
+ *  why downgrades are admin-only, not self-service (see
+ *  upgradeSubscriptionPlanAction in actions.ts for the tenant-facing half). */
+export async function changeTenantPlanAction(tenantId: string, newPlanId: string, reason: string) {
+  if (!reason?.trim()) return { error: "A reason is required." };
+  return withAssertAdminPermission("tenants.change_plan", async (admin) => {
+    const [tenant, sub, newPlan] = await Promise.all([
+      db.tenant.findUnique({ where: { id: tenantId } }),
+      db.subscription.findUnique({ where: { tenantId }, include: { plan: true } }),
+      db.plan.findUnique({ where: { id: newPlanId } }),
+    ]);
+    if (!tenant || !sub) return { error: "Tenant or subscription not found." };
+    if (!newPlan || !newPlan.active) return { error: "That plan isn't available." };
+    if (newPlan.id === sub.planId) return { error: `Already on ${newPlan.name}.` };
+
+    const isUpgrade = newPlan.sort > sub.plan.sort;
+    if (isUpgrade) {
+      await db.subscription.update({ where: { tenantId }, data: { planId: newPlan.id, pendingPlanId: null } });
+    } else {
+      await db.subscription.update({ where: { tenantId }, data: { pendingPlanId: newPlan.id } });
+    }
+
+    await logPrivilegedAction({
+      admin, permission: "tenants.change_plan", tenantId,
+      action: isUpgrade ? "admin.tenant_plan_upgraded" : "admin.tenant_plan_downgrade_scheduled",
+      target: tenant.name, reason,
+      previousState: { plan: sub.plan.name }, newState: { plan: newPlan.name, effective: isUpgrade ? "immediate" : "next renewal" },
+    });
+    revalidatePath("/admin/tenants");
+    revalidatePath(`/admin/tenants/${tenantId}`);
+    return { ok: true, isUpgrade, effective: isUpgrade ? "immediate" : "next renewal", planName: newPlan.name };
+  }, { tenantId });
+}
+
 const planSchema = z.object({
   planId: z.string().min(1),
   priceMonthly: z.coerce.number().int().min(0),
