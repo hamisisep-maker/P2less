@@ -39,6 +39,13 @@ import { getCurrentTenantId, isCrossTenantContext } from "./tenant-context";
 //   context (driver routing) and the payment webhooks above.
 // ─────────────────────────────────────────────────────────────────────────────
 
+export class TenantContextMissingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TenantContextMissingError";
+  }
+}
+
 const TENANT_SCOPED_MODELS = new Set([
   "Contact", "Conversation", "Message", "Document", "AuthSession",
   "Product", "Order", "SupportTicket", "ApiKey", "Webhook",
@@ -68,23 +75,40 @@ function buildClient() {
           if (!model || !TENANT_SCOPED_MODELS.has(model)) return query(args);
           const tenantId = getCurrentTenantId();
           if (!tenantId) {
-            // REVERTED TO WARN-ONLY, 2026-08-23, same day as the fail-closed
-            // attempt above. The hard-throw version broke production
-            // (landing page, /demo, admin pages) — traced to React Server
-            // Component page renders NOT reliably propagating this
-            // AsyncLocalStorage context the way Route Handlers and Server
-            // Actions do (both of those DID work, confirmed live via an
-            // isolated test route) — likely a distinct RSC rendering
-            // realm/module-graph under this Next.js/Turbopack setup that
-            // doesn't share continuation with the rest of the request the
-            // way a plain function-call chain does. Fixing that properly
-            // needs a different propagation mechanism for page renders
-            // (e.g. Next.js's own request-scoped primitives), not another
-            // patch on top of this one — real follow-up work, not attempted
-            // today. Logs loudly instead of throwing, so the visibility this
-            // audit was for isn't lost, without repeating the outage.
+            // FAIL CLOSED, 2026-08-24 — second attempt, after finding and
+            // fixing the REAL root cause of the 2026-08-23 outage. That
+            // day's write-up blamed "RSC page renders don't propagate
+            // AsyncLocalStorage" — wrong, disproved by direct isolated
+            // testing (same-function reads, reads after await, and
+            // parent→child component rendering all work fine). The actual
+            // mechanism, found by reproducing the failure against a real
+            // `next build && next start` (the 08-23 fix was only ever
+            // verified under `next dev`, which hides this): a guard function
+            // that calls enterTenantContext()/enterCrossTenantContext() and
+            // then RETURNS a value for its caller to keep using loses that
+            // context the instant it returns — even one line later, even in
+            // a plain Route Handler, not RSC-specific at all. Every real
+            // entry point (auth.ts's withTenantUser, admin-authz.ts's
+            // withAdminPermission/withAssertAdminPermission/withAnyAdmin)
+            // now sets context and synchronously invokes the caller's
+            // remaining logic as a callback instead — see tenant-context.ts.
+            //
+            // Verified before re-enabling this throw, not assumed: rebuilt
+            // with this exact throw temporarily in place, clicked through
+            // every dashboard page as a real tenant and every admin page as
+            // the real seeded super admin under `next start` — zero
+            // context-missing errors. Deployed with this still warn-only
+            // first and watched real production traffic for ~8 minutes —
+            // zero [TENANT-CONTEXT-MISSING] hits — before flipping this back
+            // to a throw in a separate, later change, exactly as planned.
+            //
+            // If this ever fires again in production: it means a NEW call
+            // site was added that does tenant-scoped db.ts work without
+            // going through one of the withXxx() wrappers above — find it
+            // via the digest/stack in the log, fix that call site the same
+            // way, do NOT revert this back to warn-only as the fix.
             if (!isCrossTenantContext()) {
-              console.error(`[TENANT-CONTEXT-MISSING] ${model}.${operation} ran with no tenant context established — would have been blocked under the (reverted) fail-closed policy. See db.ts's 2026-08-23 comment.`);
+              throw new TenantContextMissingError(`${model}.${operation} ran with no tenant context established.`);
             }
             return query(args);
           }
