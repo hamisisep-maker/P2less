@@ -1053,9 +1053,22 @@ model Channel {
 
   conversations Conversation[]
 
+  // 2026-08-24: a real production bug found live — Hamzone Technologies'
+  // actual Facebook Page (address 828105030394804) had been bound to the
+  // WRONG tenant (Riverside Academy) with nothing in the schema to prevent
+  // it. @@unique([tenantId, type]) only ever stopped ONE tenant from having
+  // two Messenger channels; `address` itself had no uniqueness constraint
+  // at all, so any two tenants could freely claim the same real external
+  // Page/bot/number and the webhook would nondeterministically route
+  // between them (findFirst with no tiebreaker). This is the structural
+  // fix, not just removing the one bad row: the database itself now
+  // refuses a second tenant claiming an address already owned by another.
+  // SQLite (like most databases) treats NULL as distinct from every other
+  // NULL in a unique index, so multiple not-yet-connected channels
+  // (address: null) remain unaffected.
   @@unique([tenantId, type])
+  @@unique([type, address])
   @@index([tenantId])
-  @@index([type, address])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
