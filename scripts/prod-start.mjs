@@ -3,6 +3,17 @@
 // so there's no separate migration step to run by hand — this does it on boot:
 //   1. Sync the schema (safe/idempotent for additive changes; Prisma refuses and
 //      exits non-zero on anything genuinely destructive, rather than guessing).
+//      Real incident, 2026-08-24: this refusal ALSO fires on a genuinely-safe
+//      change if it's the *type* of change Prisma statically can't prove safe
+//      (e.g. adding ANY new unique constraint, even to a column with zero real
+//      duplicates today) -- caused a real boot crash-loop when a new
+//      Channel @@unique constraint shipped. If this ever happens again:
+//      independently verify no real duplicates exist first (a debug route
+//      querying the actual column, not a guess), THEN temporarily add
+//      `--accept-data-loss` to the line below for exactly one deploy, confirm
+//      the boot log shows a clean sync, and revert it in the very next commit.
+//      Never leave the flag in permanently -- that would silently wave
+//      through a future change that's genuinely destructive.
 //   2. Seed demo data ONLY if the database is empty (first deploy) — never on a
 //      redeploy, so live data is never touched or duplicated.
 //   3. Start Next.js in the foreground, forwarding signals for clean shutdowns.
@@ -14,16 +25,7 @@ function run(cmd) {
   execSync(cmd, { stdio: "inherit" });
 }
 
-// TEMPORARY, 2026-08-24: --accept-data-loss for exactly ONE boot, to apply
-// the new Channel @@unique([type, address]) constraint. Prisma's static
-// check flags ANY new unique constraint as "could cause data loss" without
-// actually knowing whether real duplicates exist -- already independently
-// verified zero duplicates exist in production before this shipped. This
-// line gets reverted back to the safety-net version (no flag) in the very
-// next commit, once this boot confirms the schema is in sync -- this is
-// not meant to become permanent, since removing it entirely would also
-// silently wave through a genuinely destructive future change.
-run("npx prisma db push --skip-generate --accept-data-loss");
+run("npx prisma db push --skip-generate");
 
 const db = new PrismaClient();
 const tenantCount = await db.tenant.count();
