@@ -28,7 +28,7 @@ Everything below is real information that needs to appear somewhere on the page,
 
 **What P2Less is**: Organizations already have a WhatsApp number, a Facebook Page, a Telegram bot, an email address, or a website — P2Less sits behind whichever one they already use, verifies who's messaging, calls their real backend systems, and replies as them. Their customers never see or know about P2Less; they just get a fast, accurate answer from the organization itself. Nobody meets P2Less. They meet the organization, just faster.
 
-**A real example exchange** (useful as a hero visual, a proof moment, or wherever it lands best):
+**A real example exchange**:
 User: "Send me my payslip." → Assistant: "Sure — I'll need to verify it's you first. I've sent a 6-digit code to your registered number." → User: "482913" → Assistant: "Verified. Here's your payslip for August 2026 📄 — anything else?" This same assistant is genuinely live in the corner of the real page.
 
 **The problem, without P2Less**: Callers wait on hold for a question answered the same way every time. Staff retype the same answer dozens of times a day. After 5pm and weekends: silence. Sensitive records shared over insecure channels, or not at all. Every new system means another login for the team.
@@ -41,7 +41,7 @@ User: "Send me my payslip." → Assistant: "Sure — I'll need to verify it's yo
 
 **It takes real actions, not just answers** — genuine examples: a patient asks "Can I get an appointment this week?" and P2Less checks the hospital's real schedule, books the open slot, confirms it, no receptionist involved. An employee asks for two days off and it submits the real HR request and confirms the remaining balance. A customer asks "where's my order?" and gets the real retail-system status instantly, any time. An employee asks for their payslip, verifies with a one-time code, and gets the real document generated and sent. An organization adds a product and — once Meta's own approval for this specific integration clears (a real, built capability, currently pending that approval, not yet live for every org) — it can auto-post to their Facebook Page and Instagram.
 
-**Who actually uses it, and what matters to each** (five real segments — feel free to present these as a unified idea with examples rather than five identical repeated blocks, if that reads better):
+**Who actually uses it, and what matters to each** (five real segments):
 - *Retail & business*: tired of answering "where's my order" all day, and of a new product meaning a manual social post. Gets real order status instantly, product-adds that can auto-publish once connected, M-Pesa-aware payment conversations, delivery dispatch that offers a trip to a real driver.
 - *Schools & hospitals*: parents/patients calling for the same handful of answers, silence after hours. Gets grounded FAQ answers staff actually approved, real records (results, appointments, payslips) released only after verification, multiple branches/campuses correctly routed under one number.
 - *SACCOs & cooperatives*: members across branches needing the same self-service, a core system not built for chat. Gets one number spanning many correctly-scoped branches, connects to the existing core system rather than replacing it, member self-service for balances/statements, every action logged for the board.
@@ -56,11 +56,15 @@ User: "Send me my payslip." → Assistant: "Sure — I'll need to verify it's yo
 
 **Navigation and CTAs that need to exist somewhere**: a way to reach the demo ("Message a live organization" / "Open the demo"), a way to sign up ("Start free — it's yours in minutes"), a link to the dashboard/login for existing customers, and the footer needs Privacy/Terms/Demo/Start-free links plus: "P2Less is a product of Hamzone Technologies, a registered Kenyan company."
 
-### What NOT to build
+### You can go further than the list above — genuinely
 
-- No real backend, database, or API calls — this is a static, standalone design. Where the real product has live/dynamic data (the industries count, the chat widget), just design the visual space for it — I'll wire the real functionality back in myself during the merge.
-- Don't invent new feature claims, new pricing numbers, or new sections beyond what's listed above.
-- Don't fabricate customer logos, testimonials, or review scores — this product is honestly newly launched and doesn't have those yet; don't paper over that.
+The content above is the floor, not the ceiling. If you have a better idea for a section, a moment, an interaction, an illustration, a way of explaining something that isn't in the list at all — add it. New sections, new visual metaphors, new micro-interactions, new ways of demonstrating the product, anything you think makes this a stronger, more memorable page. This is a real creative brief, not a fill-in-the-blanks template. Nothing here is purely visual/static-only in a way that limits you — treat it as a genuine open canvas.
+
+Two real rules, not creative limits, just honesty ones:
+1. **Don't remove or contradict the real facts already given** (the pricing numbers, the security claims, what's live vs. coming soon, the honest "newly launched, no track record yet" tone). Add to this, don't erase it.
+2. **If you invent a new feature or capability that doesn't exist yet**, that's genuinely welcome as a creative/product idea — just don't present it as something that already works today (no "10,000 happy customers," no fabricated stats, no claiming a new feature is live). Frame new ideas as new ideas. We'll look at everything you propose and decide what's worth actually building for real — a good idea here can become a real, shipped feature, not just a mockup.
+
+There's no real backend behind this build (it's a standalone design in your own sandbox) — so nothing you design can accidentally break anything; the riskiest thing that can happen is we love an idea and build it for real afterward. Design accordingly — be bold.
 
 ### Requirements
 
@@ -70,4 +74,4 @@ User: "Send me my payslip." → Assistant: "Sure — I'll need to verify it's yo
 
 ### Before you finish
 
-Write a clear summary of your design decisions — palette choice and why, typeface pairing and why, any layout patterns you're particularly proud of, and anything you'd want a developer to know before porting this into a real Next.js + Tailwind codebase (e.g. "the pricing cards use a CSS grid with X," "the FAQ accordion uses Y library/pattern"). This gets reviewed before anything is merged into the real app, so be specific and accurate.
+Write a clear summary of your design decisions — palette choice and why, typeface pairing and why, any layout patterns you're particularly proud of, and anything you'd want a developer to know before porting this into a real Next.js + Tailwind codebase (e.g. "the pricing cards use a CSS grid with X," "the FAQ accordion uses Y library/pattern"). Also call out specifically **anything you added that wasn't in the content list above** — new sections, new ideas, new copy angles — so it's easy to tell "from the brief" apart from "your own creative addition" during review. This gets reviewed before anything is merged into or built for the real app, so be specific and accurate.
