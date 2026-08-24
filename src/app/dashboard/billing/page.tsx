@@ -25,13 +25,17 @@ export default async function BillingPage() {
 
         {sub && (
           <Card className="mb-4 p-4">
-            <div className="flex flex-wrap items-center gap-3 text-sm">
-              <span className="text-muted">Subscription status:</span>
-              <Badge tone={STATUS_TONE[sub.status] ?? "neutral"} dot>{sub.status.replace(/_/g, " ")}</Badge>
-              <span className="text-muted">Renews {sub.renewsAt.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</span>
-              {sub.status === "grace_period" && sub.graceEndsAt && (
-                <span className="text-rose">— service pauses automatically on {sub.graceEndsAt.toLocaleDateString("en-GB", { day: "numeric", month: "long" })} unless paid</span>
-              )}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3 text-sm">
+                <span className="text-muted">Subscription status:</span>
+                <Badge tone={STATUS_TONE[sub.status] ?? "neutral"} dot>{sub.status.replace(/_/g, " ")}</Badge>
+                {sub.status !== "cancelled" && (
+                  <span className="text-muted">Renews {sub.renewsAt.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</span>
+                )}
+                {sub.status === "grace_period" && sub.graceEndsAt && (
+                  <span className="text-rose">— service pauses automatically on {sub.graceEndsAt.toLocaleDateString("en-GB", { day: "numeric", month: "long" })} unless paid</span>
+                )}
+              </div>
             </div>
           </Card>
         )}

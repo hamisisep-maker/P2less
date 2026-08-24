@@ -2,14 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ShieldOff, ShieldCheck, ChevronUp, ChevronDown, ChevronsUpDown, Search } from "lucide-react";
+import { ShieldOff, ShieldCheck, ChevronUp, ChevronDown, ChevronsUpDown, Search, XCircle } from "lucide-react";
 import {
   useReactTable, getCoreRowModel, getSortedRowModel, getPaginationRowModel, getFilteredRowModel,
   flexRender, type ColumnDef, type SortingState,
 } from "@tanstack/react-table";
 import { Badge } from "@/components/ui";
 import { Avatar } from "@/components/dashboard-ui";
-import { suspendTenantAction } from "@/lib/admin-actions";
+import { suspendTenantAction, cancelTenantSubscriptionAction } from "@/lib/admin-actions";
 import { ReasonAction } from "@/components/admin/reason-action";
 
 export type AdminTenantRow = {
@@ -20,21 +20,43 @@ export type AdminTenantRow = {
 
 function ActionCell({ tenant }: { tenant: AdminTenantRow }) {
   const suspended = tenant.status === "suspended";
+  const cancelled = tenant.status === "cancelled";
   return (
-    <ReasonAction
-      label={
-        <span className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
-          suspended ? "border-green/30 text-green hover:bg-green-soft" : "border-rose/30 text-rose hover:bg-rose-soft"
-        }`}>
-          {suspended ? <ShieldCheck size={13} /> : <ShieldOff size={13} />}
-          {suspended ? "Reactivate" : "Suspend"}
-        </span>
-      }
-      confirmLabel={suspended ? "Reactivate" : "Suspend"}
-      placeholder="Reason (required)…"
-      onConfirm={(reason) => suspendTenantAction(tenant.id, !suspended, reason)}
-      successMessage={suspended ? `${tenant.name} reactivated` : `${tenant.name} suspended`}
-    />
+    <div className="flex flex-wrap items-center gap-1.5">
+      {!cancelled && (
+        <ReasonAction
+          label={
+            <span className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+              suspended ? "border-green/30 text-green hover:bg-green-soft" : "border-rose/30 text-rose hover:bg-rose-soft"
+            }`}>
+              {suspended ? <ShieldCheck size={13} /> : <ShieldOff size={13} />}
+              {suspended ? "Reactivate" : "Suspend"}
+            </span>
+          }
+          confirmLabel={suspended ? "Reactivate" : "Suspend"}
+          placeholder="Reason (required)…"
+          onConfirm={(reason) => suspendTenantAction(tenant.id, !suspended, reason)}
+          successMessage={suspended ? `${tenant.name} reactivated` : `${tenant.name} suspended`}
+        />
+      )}
+      {/* Cancellation is admin-only and permanent, unlike suspend/reactivate
+          (a reversible access toggle) — deliberately hidden once already
+          cancelled rather than offering a no-op. */}
+      {!cancelled && (
+        <ReasonAction
+          label={
+            <span className="flex items-center gap-1.5 rounded-lg border border-rose/30 px-2.5 py-1.5 text-xs font-medium text-rose transition-colors hover:bg-rose-soft">
+              <XCircle size={13} />
+              Cancel
+            </span>
+          }
+          confirmLabel="Cancel subscription"
+          placeholder="Reason (required)…"
+          onConfirm={(reason) => cancelTenantSubscriptionAction(tenant.id, reason)}
+          successMessage={`${tenant.name}'s subscription cancelled — access stopped immediately.`}
+        />
+      )}
+    </div>
   );
 }
 

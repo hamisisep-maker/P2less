@@ -13,6 +13,7 @@ export const ADMIN_PERMISSIONS = [
   "tenants.view",
   "tenants.suspend",
   "tenants.reactivate",
+  "tenants.cancel", // permanently cancel a subscription (self-service was deliberately rejected — see admin-actions.ts's cancelTenantSubscriptionAction) — kept separate from suspend/reactivate: those are reversible access toggles, this ends the subscription and settles a final bill
   "billing.view",
   "billing.confirm_payment",
   "billing.refund",
@@ -64,6 +65,7 @@ export const PERMISSION_LABELS: Record<AdminPermission, string> = {
   "tenants.view": "View tenants",
   "tenants.suspend": "Suspend tenants",
   "tenants.reactivate": "Reactivate tenants",
+  "tenants.cancel": "Cancel a tenant's subscription (permanent, stops the assistant immediately)",
   "billing.view": "View billing & revenue",
   "billing.confirm_payment": "Manually confirm/resolve payments",
   "billing.refund": "Issue refunds",
@@ -119,7 +121,7 @@ export const BUILT_IN_ROLES: Record<BuiltInRoleKey, { name: string; permissions:
   operations_admin: {
     name: "Operations Admin",
     permissions: [
-      "tenants.view", "tenants.suspend", "tenants.reactivate",
+      "tenants.view", "tenants.suspend", "tenants.reactivate", "tenants.cancel",
       "models.view", "models.change_primary", "models.edit_pricing",
       "providers.view", "providers.manage", "audit.view",
       "integrations.view", "integrations.manage", "system_health.view", "incidents.view", "incidents.manage", "webhooks.view",

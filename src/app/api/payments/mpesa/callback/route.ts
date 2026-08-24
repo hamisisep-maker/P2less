@@ -82,6 +82,16 @@ export async function POST(req: Request) {
             amount: payment.amount, currency: payment.currency, method: payment.method, periodLabel: payment.periodLabel,
           }).catch((e) => console.error("[billing] handleSubscriptionPaymentConfirmed failed:", e));
         }
+        // Note: purpose "cancellation" payments (admin-actions.ts's
+        // cancelTenantSubscriptionAction) are deliberately NOT an automated
+        // STK push — they're billed and emailed, resolved manually by an
+        // admin once payment arrives by whatever channel — so there's
+        // nothing for this webhook to do for that purpose. If a future
+        // self-pay-an-old-invoice flow ever sends a real STK push for one,
+        // it needs its own branch here (never routed through the
+        // "subscription" branch above — that one reactivates the tenant,
+        // which would be wrong for a payment against an already-cancelled
+        // subscription).
         // Product order: mark it paid and let the customer know on WhatsApp —
         // this confirmation arrives asynchronously (the STK prompt already
         // returned before the customer even entered their PIN), so without this

@@ -482,7 +482,7 @@ model Tenant {
   // not built yet (SMS, Instagram) without pretending they're active —
   // e.g. ["whatsapp","messenger","sms_interested"].
   channelsNeeded Json?
-  status    String   @default("active") // active | suspended | trial
+  status    String   @default("active") // active | suspended | trial | cancelled
   // White-label branding. Free/basic tenants fall back to P2Less defaults.
   branding  Json? // { assistantName, logoText, primaryColor, welcome, poweredBy, pdfFooter }
   // Org-approved FAQs the assistant may answer verbatim (e.g. school hours, term

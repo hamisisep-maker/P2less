@@ -36,6 +36,8 @@ Everything below is shipped, live-verified (not just typechecked), and deployed 
 
 **Growth features**: auto-publish new products to Facebook/Instagram (zero ongoing human login), resume-on-refresh for every multi-step flow, real website-content crawling into draft FAQs.
 
+**Billing lifecycle**: subscription cancellation shipped 2026-08-24, admin-only by explicit direction — immediate cutoff (never gated behind a payment), final cycle's usage billed and emailed as an invoice rather than pushed for in real time. See [`GAP-REGISTER-2026-08-24.md`](GAP-REGISTER-2026-08-24.md) item 3 for the full design reasoning and live verification. Plan change (upgrade/downgrade) is the next open item in the same area — item 4.
+
 **Full detail and evidence for every item above**: [`ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md`](ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md) (the phase-by-phase build log) and [`OPERATIONS-GUIDE-2026-08-23.md`](OPERATIONS-GUIDE-2026-08-23.md) (security/ops hardening rounds, numbered §1-§65+).
 
 ---

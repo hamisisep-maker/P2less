@@ -11,7 +11,6 @@ import { encryptJSON, randomToken, sha256 } from "./crypto";
 import { rateLimit } from "./rate-limit";
 import { WEBHOOK_EVENTS } from "./webhooks";
 import { PERMISSIONS, DEFAULT_USER_ROLES, DEFAULT_CONTACT_ROLES } from "./permissions";
-import { computeBill } from "./billing";
 import { stkPush, isConfigured, classifyMpesaFailure } from "./mpesa";
 import { storeProductImage } from "./documents";
 import { normalizePhone } from "./conversation";

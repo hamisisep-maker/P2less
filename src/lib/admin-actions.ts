@@ -7,6 +7,11 @@ import { db } from "./db";
 import { verifyPassword, hashPassword, type CurrentUser } from "./auth";
 import { setSetting, setAiProviderCost, SETTING_DEFAULTS, type SettingKey } from "./platform-settings";
 import { withAssertAdminPermission, logPrivilegedAction, requireAdminPermission } from "./admin-authz";
+import { computeBill } from "./billing";
+import { finalizeCancellation } from "./billing-lifecycle";
+import { resolveTenantRecipientEmail } from "./notifications";
+import { sendEmail } from "./notification-channels";
+import { randomToken } from "./crypto";
 
 // re-exported so page.tsx guards (layout-level) can still import a single
 // "am I even a platform admin" check without pulling in the whole authz module
@@ -42,6 +47,84 @@ export async function suspendTenantAction(tenantId: string, suspend: boolean, re
     revalidatePath("/admin");
     revalidatePath("/admin/tenants");
     return { ok: true };
+  }, { tenantId });
+}
+
+/** DANGEROUS, PERMANENT: cancels a tenant's subscription. Admin-only by
+ *  explicit direction, 2026-08-24 (Gap Register item 3) — self-service was
+ *  built first, then deliberately rejected in favor of this. Two real
+ *  design points came out of building it the first time, both kept here:
+ *
+ *  1. Cutoff is unconditional and immediate (finalizeCancellation() runs
+ *     first, before anything about money). Waiting for a payment to clear
+ *     before cutting off access would leave a tenant who never pays fully
+ *     active — and still costing Hamzone real Meta/AI money — indefinitely.
+ *  2. No automated M-Pesa STK push at cancellation time — explicit direction:
+ *     pushing a real-time payment prompt to a tenant's phone at the exact
+ *     moment an admin is cancelling them isn't the right moment for that.
+ *     Instead: what's owed for this cycle is computed, recorded as a real
+ *     Payment row (status "pending", purpose "cancellation" — visible on the
+ *     tenant's own billing history and to admin billing/reconciliation
+ *     views, exactly like any other outstanding invoice), and emailed to the
+ *     tenant's owner as an itemized final bill via Resend. Deliberately NOT
+ *     built in this round: a tenant-facing "pay this old invoice" flow — an
+ *     admin with billing.confirm_payment can mark it paid once money arrives
+ *     by whatever channel, same as any other manual reconciliation today. */
+export async function cancelTenantSubscriptionAction(tenantId: string, reason: string) {
+  if (!reason?.trim()) return { error: "A reason is required." };
+  return withAssertAdminPermission("tenants.cancel", async (admin) => {
+    const [tenant, sub] = await Promise.all([
+      db.tenant.findUnique({ where: { id: tenantId } }),
+      db.subscription.findUnique({ where: { tenantId } }),
+    ]);
+    if (!tenant || !sub) return { error: "Tenant or subscription not found." };
+    if (sub.status === "cancelled") return { error: "This subscription is already cancelled." };
+
+    const bill = await computeBill(tenantId);
+    const period = bill.periodLabel;
+    const alreadyPaid = await db.payment.aggregate({
+      where: { tenantId, purpose: "subscription", status: "paid", periodLabel: period },
+      _sum: { amount: true },
+    });
+    const outstanding = Math.max(0, bill.total - (alreadyPaid._sum.amount ?? 0));
+
+    // Cutoff — before anything about the outstanding balance is touched.
+    await finalizeCancellation(tenantId);
+
+    let emailSent = false;
+    let emailError: string | undefined;
+    let reference: string | undefined;
+    if (outstanding > 0) {
+      reference = "CANCEL-" + randomToken(4).toUpperCase();
+      await db.payment.create({
+        data: { tenantId, reference, amount: outstanding, currency: "KES", purpose: "cancellation", method: "mpesa", status: "pending", provider: "manual", periodLabel: period },
+      });
+      const email = await resolveTenantRecipientEmail(tenantId);
+      if (email) {
+        const itemLines = [
+          `${bill.planName} plan — KES ${bill.planFee.toLocaleString("en-US")}`,
+          ...bill.lines.map((l) => `${l.label} (${l.qty} × KES ${l.unit}) — KES ${l.amount.toLocaleString("en-US")}`),
+        ].join("\n");
+        const result = await sendEmail({
+          to: email,
+          subject: `${tenant.name} — final P2Less invoice (subscription cancelled)`,
+          text: `Your P2Less subscription for ${tenant.name} has been cancelled.\n\nFinal invoice for ${period}:\n${itemLines}\n\nTotal due: KES ${outstanding.toLocaleString("en-US")}\nReference: ${reference}\n\nWe'll follow up on payment for this final balance. Contact us if you have questions.`,
+        });
+        emailSent = result.ok;
+        if (!result.ok) emailError = result.error;
+      } else {
+        emailError = "No recipient email on file for this tenant.";
+      }
+    }
+
+    await logPrivilegedAction({
+      admin, permission: "tenants.cancel", tenantId,
+      action: "admin.tenant_cancelled", target: tenant.name, reason,
+      detail: { outstanding, reference, emailSent, emailError },
+    });
+    revalidatePath("/admin");
+    revalidatePath("/admin/tenants");
+    return { ok: true, outstanding, emailSent, emailError };
   }, { tenantId });
 }
 

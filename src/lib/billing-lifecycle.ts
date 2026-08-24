@@ -62,6 +62,17 @@ export async function recordFailedPayment(tenantId: string, reason: string) {
   const settings = await billingSettings();
   const sub = await db.subscription.findUnique({ where: { tenantId } });
   if (!sub) return;
+  // A renewal charge that was already in flight (payment_pending) at the
+  // moment the tenant self-service-cancelled can still resolve after
+  // cancellation completes — Safaricom's callback doesn't know the
+  // subscription moved on underneath it. A cancelled subscription must never
+  // enter a retry schedule or grace period; there's nothing left to retry
+  // toward. See cancelSubscriptionAction's own comment for the mirror case
+  // on the success side (handleSubscriptionPaymentConfirmed below).
+  if (sub.status === "cancelled") {
+    await billingAudit(tenantId, "stray_payment_failure_on_cancelled_subscription", { reason }, false);
+    return;
+  }
   const attempts = sub.paymentAttemptCount + 1;
 
   if (attempts < settings.maxRetries) {
@@ -132,6 +143,18 @@ function nextRenewalDate(from: Date, interval: string): Date {
 export async function handleSubscriptionPaymentConfirmed(payment: { id: string; tenantId: string; reference: string; amount: number; currency: string; method: string; periodLabel: string | null }) {
   const sub = await db.subscription.findUnique({ where: { tenantId: payment.tenantId }, include: { plan: true } });
   if (!sub) return;
+  // Real race, found while designing self-service cancellation: a renewal
+  // charge sent BEFORE the tenant cancelled can still get confirmed paid
+  // AFTER cancellation already completed (Safaricom's callback is fully
+  // async, independent of when the tenant clicked cancel). Blindly
+  // reactivating here would silently undo a real cancellation the moment a
+  // stray in-flight payment resolves. The money is still real and still
+  // owed to nobody in particular now — recorded and audited, just not used
+  // to bring a cancelled tenant back.
+  if (sub.status === "cancelled") {
+    await billingAudit(payment.tenantId, "stray_payment_confirmed_on_cancelled_subscription", { reference: payment.reference, amount: payment.amount });
+    return;
+  }
   await reactivateAfterPayment(payment.tenantId, sub.plan);
   const tenant = await db.tenant.findUnique({ where: { id: payment.tenantId } });
   if (tenant) {
@@ -143,6 +166,32 @@ export async function handleSubscriptionPaymentConfirmed(payment: { id: string; 
     await billingAudit(payment.tenantId, "payment_confirmed", { reference: payment.reference, amount: payment.amount, receiptUrl: receipt?.url });
     await queueNotification("payment_received", `Payment of ${payment.currency} ${payment.amount.toLocaleString("en-US")} confirmed for ${tenant.name}. Receipt: ${receipt?.url ?? "(generation failed)"}`, { tenantId: payment.tenantId });
   }
+}
+
+/** Subscription cancellation, 2026-08-24 (Gap Register item 3) — the actual
+ *  cutoff. Admin-only by explicit direction (a self-service version was
+ *  built first, then deliberately rejected — see admin-actions.ts's
+ *  cancelTenantSubscriptionAction, the only real caller). Called
+ *  SYNCHRONOUSLY, before anything about the outstanding balance is touched:
+ *  an earlier version of this waited for a payment to be confirmed before
+ *  cutting off access, which meant a tenant who never completed payment
+ *  stayed fully active — and kept costing Hamzone real Meta/AI money —
+ *  indefinitely, since the subscription would still read "active" to
+ *  runBillingCycle() and wouldn't hit the non-payment grace-period
+ *  machinery until its next natural renewal date, potentially weeks away.
+ *  Cutoff is unconditional and immediate; collecting what's owed for the
+ *  final cycle is a fully separate step (billed + emailed, not an
+ *  automated payment prompt — see cancelTenantSubscriptionAction) that
+ *  never gates this. Reuses Tenant.status="suspended"'s proven access-gate
+ *  in conversation.ts (now also recognizing "cancelled" — see there) and
+ *  sets Subscription.status="cancelled", the value that already existed in
+ *  the schema but nothing ever set. runBillingCycle()'s own query only
+ *  selects active/renewal_due/payment_pending/grace_period subscriptions,
+ *  so a cancelled one is never billed, reminded, or auto-suspended again. */
+export async function finalizeCancellation(tenantId: string) {
+  await db.tenant.update({ where: { id: tenantId }, data: { status: "cancelled" } });
+  await db.subscription.update({ where: { tenantId }, data: { status: "cancelled" } }).catch(() => {});
+  await billingAudit(tenantId, "cancelled", {});
 }
 
 /** Called from the M-Pesa callback route when a subscription payment

@@ -215,7 +215,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
 
   if (input.tenantId) {
     const t = await db.tenant.findUnique({ where: { id: input.tenantId }, include: { subscription: true } });
-    if (!t || t.status === "suspended") {
+    if (!t || t.status === "suspended" || t.status === "cancelled") {
       return { ok: false, replies: [{ body: "This service is not available." }] };
     }
     tenant = t;
@@ -251,7 +251,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       where: { phoneNumber: input.toNumber },
       include: { tenant: { include: { subscription: true } } },
     }));
-    if (!num || num.status !== "active" || num.tenant.status === "suspended") {
+    if (!num || num.status !== "active" || num.tenant.status === "suspended" || num.tenant.status === "cancelled") {
       // Unknown/inactive number: nothing to reply as, and no tenant to bill/audit.
       return { ok: false, replies: [{ body: "This number is not in service." }] };
     }
