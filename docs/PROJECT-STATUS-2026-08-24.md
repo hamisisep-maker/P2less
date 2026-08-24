@@ -42,9 +42,9 @@ Everything below is shipped, live-verified (not just typechecked), and deployed 
 
 ### Blocked on an external provider or a decision only you can make — not more code
 
-17 items now (item #5 shipped, see below), each with exact next steps, every one re-verified against live evidence 2026-08-24: [`EXTERNAL-REGISTRATIONS-CHECKLIST-2026-08-24.md`](EXTERNAL-REGISTRATIONS-CHECKLIST-2026-08-24.md). Fastest to close: a real Telegram bot token (minutes, self-service) and the Resend Inbound dashboard setup (~15 min, self-service).
+16 items now (items #1 and #5 done, see below), each with exact next steps, every one re-verified against live evidence 2026-08-24: [`EXTERNAL-REGISTRATIONS-CHECKLIST-2026-08-24.md`](EXTERNAL-REGISTRATIONS-CHECKLIST-2026-08-24.md). Fastest to close of what's left: a real Telegram bot token (minutes, self-service) and the Resend Inbound dashboard setup (~15 min, self-service).
 
-⚠️ **Urgent, found during this audit, not previously tracked**: Meta's own Business Suite shows a live warning — "Access verification status: Not verified... API calls to certain permissions and features in advanced access will begin to be blocked." This threatens the WhatsApp/Messenger integration already working in production, not just paused future work. Resolved by the same Business Verification step already on the list (item #1) — worth prioritizing above its position in the effort-sorted table given the consequence.
+✅ **The urgent Access/Tech-Provider warning found during the audit is resolved (pending Meta's review).** WhatsApp Business Verification (item #1) — legal name, address, phone, Tax ID, Primary Page, and domain verification — was fully completed and submitted 2026-08-24, walked through live end-to-end. Meta's own confirmation: "In review... about 2 business days." Once it clears, App Review (#3) and Instagram App Review (#7) become the next real steps.
 
 **WhatsApp access-token health monitoring (item #5) is done** — shipped 2026-08-24, see Operations Guide §66.
 
