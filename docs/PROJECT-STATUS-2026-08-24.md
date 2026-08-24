@@ -2,6 +2,8 @@
 
 **This is the one document to read first for "where are we."** Kept current every round and pushed immediately — not a snapshot that goes stale. Full reasoning, evidence, and history live in the linked docs below; this page states the current state in the fewest words that stay honest.
 
+**On a new machine?** See [`README.md`](../README.md)'s "Lost your laptop? Start here" section — clone from GitHub, production is already live at Railway and needs no local setup, and real secrets come from `railway variables`, not from memory (`.env` is deliberately never committed).
+
 ---
 
 ## The goal

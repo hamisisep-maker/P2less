@@ -1,5 +1,21 @@
 # P2Less — Universal Conversational Access & Integration Platform
 
+> **Read [`docs/PROJECT-STATUS-2026-08-24.md`](docs/PROJECT-STATUS-2026-08-24.md) first.** This README describes the original MVP shape and is not kept current — PROJECT-STATUS is the one doc that states the real goal, everything actually shipped, and everything genuinely remaining, and it's updated every round. This file stays as the quick local-setup guide below.
+
+## Lost your laptop? Start here.
+
+Everything that matters is on GitHub and Railway, not on any one machine — a fresh laptop gets you fully back up in a few minutes:
+
+1. **Clone the repo**: `git clone https://github.com/hamisisep-maker/P2less.git` (this platform is the `p2less-platform/` folder inside it).
+2. **Read `docs/PROJECT-STATUS-2026-08-24.md`** for the current goal/achieved/remaining picture, then `docs/ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md` and `docs/EXTERNAL-REGISTRATIONS-CHECKLIST-2026-08-24.md` for full detail on any specific item.
+3. **Production is already live and doesn't need local setup at all**: <https://p2less-app-production.up.railway.app>. Log into `/admin` as the super admin to see real tenant/usage data straight away.
+4. **For local development**, `.env` is deliberately never committed (it holds real secrets) — get the real values back with the Railway CLI, not from memory: `npm install -g @railway/cli` (if needed) → `railway login` → `railway link` (pick the P2Less project) → `railway variables` prints every real key currently live in production. Copy the ones you need into a fresh local `.env` (see `.env`'s own inline comments in git history, or ask to have one regenerated, for which vars are expected).
+5. **Deploys**: `git push origin main` (source of truth) then `railway up --detach` from inside `p2less-platform/` (already linked once you've done step 4) — no CI pipeline, this is the actual deploy path used every round.
+
+> **Standing rule going forward**: every commit gets pushed immediately, and `docs/PROJECT-STATUS-2026-08-24.md` is kept current every round specifically so this recovery path always works, not just as of whenever it was last convenient.
+
+---
+
 > **Stop logging into systems. Start talking to them.**
 > One organization's number. One conversation. Many systems behind it.
 
