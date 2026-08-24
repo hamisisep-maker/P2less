@@ -602,6 +602,14 @@ model Subscription {
   // single message after the threshold is passed.
   messageLowBalanceNotifiedAt DateTime?
   aiLowBalanceNotifiedAt      DateTime?
+  // Set once, the first time a boot-time migration grants this subscription
+  // its starting balance (see scripts/prod-start.mjs) — every subscription
+  // that existed before the prepaid-balance gate shipped had 0/0 by schema
+  // default, which would silently block all of its real traffic the moment
+  // the gate went live. Checking this (not "balance is 0") means a tenant who
+  // later legitimately runs their real balance down to 0 through normal usage
+  // is never re-granted a free top-up on the next boot.
+  balanceMigratedAt DateTime?
 
   // ── Automated billing lifecycle ──────────────────────────────────────────
   autoRenew            Boolean   @default(true)

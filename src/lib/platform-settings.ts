@@ -32,6 +32,15 @@ export const SETTING_DEFAULTS = {
   low_balance_threshold_messages_kes: 100,
   low_balance_threshold_ai_kes: 50,
 
+  // One-time starting credit granted by the boot-time balance migration
+  // (scripts/prod-start.mjs) to any real, non-Enterprise, non-trial
+  // subscription that predates the prepaid-balance gate — comfortably above
+  // both low-balance thresholds above so it doesn't immediately trip a
+  // notification, and configurable independently of them since a migration
+  // grant and a "getting low" warning are different concerns.
+  migration_grant_messages_kes: 500,
+  migration_grant_ai_kes: 250,
+
   // ── Automated billing lifecycle (src/lib/billing-lifecycle.ts) ──────────
   billing_grace_period_days: 7, // days a tenant keeps service after renewal fails before auto-suspend
   billing_reminder_days: "7,3,1", // comma list — days before renewsAt to queue a reminder notification

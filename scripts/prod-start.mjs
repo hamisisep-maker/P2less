@@ -47,6 +47,39 @@ run("npx tsx scripts/sync-owner-permissions.ts");
 // separate manual seeding step against the remote database.
 run("npx tsx scripts/seed-products.ts");
 
+// Prepaid billing, 2026-08-25 — one-time-per-subscription balance migration.
+// Every subscription that existed before the prepaid-balance gate shipped has
+// messageBalanceKes/aiBalanceKes at their schema default of 0, which would
+// otherwise silently block 100% of its real traffic the instant the gate went
+// live (confirmed live: the local regression suite went from 73/73 to 31/73
+// passing, every failure the balance-exhausted fallback, until this ran).
+// Runs every boot like the reconciliation steps below, but is itself
+// idempotent per-subscription via balanceMigratedAt (not "balance is 0"), so
+// a subscription that legitimately runs its real balance down through normal
+// usage is never re-granted a free top-up on a later boot. Mirrors (not
+// imports — this script can't import anything tagged "server-only", see
+// src/lib/prepaid-billing.ts's own migrateSubscriptionBalances(), used by
+// local dev instead) the same logic inline.
+{
+  const [msgSetting, aiSetting] = await Promise.all([
+    db.platformSetting.findUnique({ where: { key: "migration_grant_messages_kes" } }),
+    db.platformSetting.findUnique({ where: { key: "migration_grant_ai_kes" } }),
+  ]);
+  const messagesGrant = msgSetting ? Number(msgSetting.value) : 500;
+  const aiGrant = aiSetting ? Number(aiSetting.value) : 250;
+  const pending = await db.subscription.findMany({
+    where: { balanceMigratedAt: null, status: { not: "trial" }, plan: { postpaidUsage: false } },
+    select: { id: true },
+  });
+  for (const s of pending) {
+    await db.subscription.update({
+      where: { id: s.id },
+      data: { messageBalanceKes: messagesGrant, aiBalanceKes: aiGrant, balanceMigratedAt: new Date() },
+    });
+  }
+  if (pending.length) console.log(`[prod-start] Prepaid balance migration: granted ${pending.length} subscription(s) ${messagesGrant}/${aiGrant} KES starting balance.`);
+}
+
 // Reconcile which tenant owns the REAL live WhatsApp number(s) from env — this
 // runs on EVERY boot (not just first-seed) so it also corrects a value the seed
 // assigned before an env var existed. A physical number can only route to ONE

@@ -20,6 +20,7 @@ import { startTopup, creditRateKes, creditsForAmount } from "./wallet";
 import { isConfigured as mpesaConfigured } from "./mpesa";
 import { setAiTenantContext } from "./ai-context";
 import { enterTenantContext, currentChannelSupportsFiles, getCurrentChannelLabel, runCrossTenant } from "./tenant-context";
+import { hasMessageBudget, debitMessageBalance } from "./prepaid-billing";
 import { nextTicketNumber } from "./ticket-numbering";
 import { queueNotification } from "./notifications";
 import { resolveNumberBranch } from "./branches";
@@ -349,6 +350,21 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     return { ok: true, replies: [{ body }], conversationId: `driver:${driver.id}`, from: fromIdentity };
   }
 
+  // ── Prepaid message balance gate, 2026-08-25 — checked BEFORE any real
+  // processing, deliberately AFTER driver routing above: a driver is the
+  // tenant's own staff reporting a delivery, not a paying customer's
+  // conversation, and blocking that on the tenant's OWN balance running low
+  // would be an operational failure (a driver couldn't report "delivered"
+  // right when the tenant most needs that to keep working). Real customer
+  // conversations from here on ARE gated — this is the actual point of the
+  // whole redesign: never let a real WhatsApp/channel send happen before
+  // it's already been paid for. No-op for Enterprise/trial subscriptions
+  // (see prepaid-billing.ts's isGateExempt). ─────────────────────────────
+  if (!(await hasMessageBudget(tenant.id))) {
+    await sendServiceUnavailable({ tenantId: tenant.id, channelType: input.channelType, to: input.fromNumber, fromNumberId: number?.phoneNumberId, fromPageId, fromTelegramBotId });
+    return { ok: false, replies: [{ body: SERVICE_UNAVAILABLE_MESSAGE }] };
+  }
+
   // Identity spans channels: a person's number is who they are whether they reach
   // the org via WhatsApp, the web simulator, or SMS. Reuse an existing contact for
   // this number (and its grants/roles) rather than forking one per transport.
@@ -386,6 +402,11 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   const limit = await checkLimit(tenant.id, "message_in");
   await db.message.create({ data: { tenantId: tenant.id, conversationId: conversation.id, direction: "in", body: input.text, requestId: reqId } });
   await meter(tenant.id, "message_in");
+  // Real KES debit — no-op for Enterprise/trial subscriptions (see
+  // prepaid-billing.ts). This is AFTER hasMessageBudget() already gated the
+  // whole message earlier in this function; reaching here means there was
+  // budget at gate-check time.
+  await debitMessageBalance(tenant.id);
   void dispatchWebhook(tenant.id, "message.received", { conversationId: conversation.id, from: input.fromNumber, to: input.toNumber, text: input.text }).catch(() => {});
   if (!limit.ok) {
     const reply: Reply = { body: "This service has reached its monthly message limit. Please contact the organization." };

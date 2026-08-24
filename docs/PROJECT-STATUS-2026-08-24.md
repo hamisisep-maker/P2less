@@ -38,6 +38,8 @@ Everything below is shipped, live-verified (not just typechecked), and deployed 
 
 **Billing lifecycle**: subscription cancellation shipped 2026-08-24, admin-only by explicit direction — immediate cutoff (never gated behind a payment), final cycle's usage billed and emailed as an invoice rather than pushed for in real time. Plan changes shipped 2026-08-25 — upgrades are tenant self-service and immediate, downgrades are admin-only and deferred to the next renewal (closes the "downgrade right before the bill" gaming risk, and the "retroactive billing from an un-prorated mid-cycle change" trap — no proration exists anywhere in this billing model). Both items fully resolved — see [`GAP-REGISTER-2026-08-24.md`](GAP-REGISTER-2026-08-24.md) items 3 and 4 for the full design reasoning and live verification.
 
+**Prepaid billing redesign — in progress, 2026-08-25**: post-paid usage (billed at renewal, real risk of unpaid accumulation) replaced with two real prepaid KES balances per tenant (messages, AI understanding), checked *before* the real external cost, never after; Enterprise alone stays post-paid. Message-balance gate and a centralized AI-balance gate (inside the one real `callLLM()` choke point every AI-calling function shares — closes a real gap where three AI-calling functions besides `understand()` were found live-untracked) are both shipped and live-verified, including graceful no-disclosure degradation on exhaustion and a boot-time migration so subscriptions that predate this feature aren't cut off. **Not yet built**: low-balance notifications, the top-up flow, and the `/onboard` trial-first flow changes. Full detail: [`GAP-REGISTER-2026-08-24.md`](GAP-REGISTER-2026-08-24.md) item 5.
+
 **Full detail and evidence for every item above**: [`ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md`](ROADMAP-UNIVERSAL-PLATFORM-2026-08-19.md) (the phase-by-phase build log) and [`OPERATIONS-GUIDE-2026-08-23.md`](OPERATIONS-GUIDE-2026-08-23.md) (security/ops hardening rounds, numbered §1-§65+).
 
 ---
@@ -64,4 +66,4 @@ Mode 2 outbound/proactive messaging (marketing, notifications, follow-ups to kno
 
 ---
 
-*Last updated: 2026-08-24 (tenant-scoping root-cause fix round). Update this doc (and push it) in the same round as any change that ships, closes an external item, or surfaces a new gap — don't let it go stale.*
+*Last updated: 2026-08-25 (prepaid billing redesign — message + AI balance gates, centralized AI gate/debit fix, boot-time balance migration). Update this doc (and push it) in the same round as any change that ships, closes an external item, or surfaces a new gap — don't let it go stale.*

@@ -5,6 +5,7 @@ import { getAiTenantId } from "./ai-context";
 import { getCurrentChannelLabel, currentChannelSupportsFiles } from "./tenant-context";
 import { getSettingNumber } from "./platform-settings";
 import { randomToken } from "./crypto";
+import { hasAiBudget, debitAiBalance } from "./prepaid-billing";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AI layer — provider-agnostic (Claude / OpenAI / Gemini). It does three jobs:
@@ -328,10 +329,26 @@ async function fetchT(url: string, init: RequestInit, timeoutMs = LLM_TIMEOUT_MS
  *  we fall over to the next configured provider before giving up to the
  *  deterministic template. A single throttled key no longer silences the reply. */
 async function callLLM(system: string, user: string, opts: LLMOpts = {}): Promise<string | null> {
+  const tenantId = getAiTenantId() ?? null;
+  // Prepaid billing, 2026-08-25 — this is the ONE real choke point every
+  // feature that calls an AI provider goes through (understand, commerce
+  // classification, order-step, FAQ extraction, humanizeReply, smallTalk,
+  // tool completions — recordAiCost below already logs all of them by
+  // "feature" regardless of caller). Gating and debiting HERE, once, means
+  // no caller can accidentally ship a real AI reply that was never checked
+  // against or charged to the tenant's balance — the exact gap found live
+  // 2026-08-25: smallTalk/humanizeReply/complete each called the provider
+  // directly and were never gated or debited under the original per-call-site
+  // approach (only understand() was). A real, non-Enterprise, non-trial
+  // subscription with an exhausted balance gets null here — same as "AI not
+  // configured" — and every existing caller already degrades gracefully on
+  // null (local intent match, raw factText, a canned fallback line), so this
+  // never needs its own error handling downstream. No-op for Enterprise/trial
+  // (see prepaid-billing.ts's isGateExempt).
+  if (tenantId && !(await hasAiBudget(tenantId))) return null;
   const chain = await providerChain();
   const perProvider = Number(process.env.AI_ATTEMPTS || 2);
   const correlationId = randomToken(6);
-  const tenantId = getAiTenantId() ?? null;
   for (let rank = 0; rank < chain.length; rank++) {
     const p = chain[rank];
     const keys = getProviderKeys(p);
@@ -364,6 +381,7 @@ async function callLLM(system: string, user: string, opts: LLMOpts = {}): Promis
             feature: opts.feature ?? "unknown", reason: "primary provider unavailable", correlationId,
           });
         }
+        if (tenantId) await debitAiBalance(tenantId);
         return out;
       }
     }
