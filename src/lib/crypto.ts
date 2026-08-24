@@ -8,33 +8,49 @@ import crypto from "node:crypto";
 // returned to clients or written to logs.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function key(): Buffer {
-  const raw = process.env.CREDENTIAL_KEY || "";
+function deriveKey(raw: string): Buffer {
   const buf = Buffer.from(raw, "base64");
   if (buf.length === 32) return buf;
   // Derive a stable 32-byte key from whatever is provided (dev convenience).
   return crypto.createHash("sha256").update(raw || "p2less-dev-credential-key").digest();
 }
 
-/** Encrypt a JSON-serializable value → compact "v1:iv:tag:ciphertext" (base64). */
-export function encryptJSON(value: unknown): string {
+function key(): Buffer {
+  return deriveKey(process.env.CREDENTIAL_KEY || "");
+}
+
+/** Exposed ONLY for the CREDENTIAL_KEY rotation migration (2026-08-24) — lets
+ *  it derive the OLD key (from the current env value) and a NEW key (from a
+ *  freshly generated one, passed explicitly) using the exact same derivation
+ *  crypto.ts itself uses, rather than a hand-duplicated copy of this logic
+ *  living in a migration script where it could silently drift. */
+export function deriveKeyForRotation(raw: string): Buffer {
+  return deriveKey(raw);
+}
+
+/** Encrypt a JSON-serializable value → compact "v1:iv:tag:ciphertext" (base64).
+ *  `explicitKey` is for the rotation migration only — every real caller omits
+ *  it and gets the current CREDENTIAL_KEY. */
+export function encryptJSON(value: unknown, explicitKey?: Buffer): string {
+  const k = explicitKey ?? key();
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", key(), iv);
+  const cipher = crypto.createCipheriv("aes-256-gcm", k, iv);
   const plaintext = Buffer.from(JSON.stringify(value), "utf8");
   const ct = Buffer.concat([cipher.update(plaintext), cipher.final()]);
   const tag = cipher.getAuthTag();
   return `v1:${iv.toString("base64")}:${tag.toString("base64")}:${ct.toString("base64")}`;
 }
 
-/** Decrypt a value produced by encryptJSON. Returns null on any tampering. */
-export function decryptJSON<T = unknown>(blob: string | null | undefined): T | null {
+/** Decrypt a value produced by encryptJSON. Returns null on any tampering.
+ *  `explicitKey` is for the rotation migration only, same as above. */
+export function decryptJSON<T = unknown>(blob: string | null | undefined, explicitKey?: Buffer): T | null {
   if (!blob) return null;
   try {
     const [v, ivb64, tagb64, ctb64] = blob.split(":");
     if (v !== "v1") return null;
     const decipher = crypto.createDecipheriv(
       "aes-256-gcm",
-      key(),
+      explicitKey ?? key(),
       Buffer.from(ivb64, "base64"),
     );
     decipher.setAuthTag(Buffer.from(tagb64, "base64"));
