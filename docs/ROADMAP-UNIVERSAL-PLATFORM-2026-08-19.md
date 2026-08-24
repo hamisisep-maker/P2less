@@ -4,6 +4,8 @@ Sequencing for `docs/VISION-UNIVERSAL-ACCESS-PLATFORM-2026-08-19.md` against wha
 
 **Sequencing principle**: schema/foundation before behavior, behavior before new verticals. Multi-branch and the Capability model are both structural (everything downstream depends on them existing), so they come first even though they're less visible than a new feature would be. Net-new product surfaces (social media, marketplace, OCR) come last — they're additive, nothing else in this roadmap depends on them existing first.
 
+**External registrations tracker**: every item across this roadmap that's blocked on a Meta/Telegram/Resend/SMS-provider/M-Pesa/AI-provider dashboard action or approval process (not more building) is consolidated in one place, with exact next steps: `docs/EXTERNAL-REGISTRATIONS-CHECKLIST-2026-08-24.md`. Check there before assuming something is still open — it's kept current as items close.
+
 ---
 
 ## Phase 1 — Foundational data model (branch hierarchy + capability + provenance schema) — ✅ SHIPPED 2026-08-19
