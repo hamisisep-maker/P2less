@@ -46,7 +46,7 @@ All 18 items, grouped by provider, each with exact next steps: [`EXTERNAL-REGIST
 
 ### Genuine, unblocked engineering work still open
 
-- **Public Feedback / Quality Centre** — 🔧 **NEXT UP.** Only Phase A (support-ticket triage dashboard) is shipped. The `TestExercise`/`TestCase`/`Finding`/`AssuranceReport` model, PDF reports, public feedback channels, and the ROI/evaluation layer are still design-only. See `PUBLIC-FEEDBACK-QUALITY-CENTRE-2026-08-23.md`.
+- **Public Feedback / Quality Centre** — Phase A (support-ticket triage dashboard) and now Phase B's invitation toggle (2026-08-24, admin-controlled, default off) are shipped. The three open design questions blocking Phase B are resolved — see `PUBLIC-FEEDBACK-QUALITY-CENTRE-2026-08-23.md`'s "Open questions" section. **Still deferred, by the doc's own explicit design**: the `TestExercise`/`TestCase`/`Finding`/`AssuranceReport` schema, PDF reports, and the ROI/evaluation layer — these wait until the pilot (now unblocked to start) has produced real triaged findings; building them against zero real data would be the "manufactured score, empty pipe" trap the doc itself warns against.
 - **Phase 5 workflow engine** — 4 flows (`awaiting_otp`, `awaiting_identify`, `awaiting_cv_details`, `awaiting_delivery_feedback`) were deliberately left bespoke rather than migrated to the generic engine; may stay that way permanently.
 - **`resolveFieldConflict()`** (Phase 4) — built and tested, zero live callers yet; no tenant has two connectors to the same external system to trigger a real conflict.
 
