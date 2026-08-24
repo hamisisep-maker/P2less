@@ -1,81 +1,48 @@
 import "server-only";
-import dns from "node:dns/promises";
-import net from "node:net";
+import { assertSafeUrl, safeFetch as guardedFetch } from "./ssrf-guard";
 
 // Universal Platform roadmap Phase 8e (2026-08-21) — website content
-// ingestion. Fetches an admin-supplied URL server-side, so this is
-// genuinely new SSRF exposure in this codebase (a related, pre-existing,
-// lower-urgency gap was found in connector-engine.ts while scoping this —
-// same tenant-admin-supplied-URL pattern, no equivalent protection there
-// today, flagged separately, not fixed here). Real protection built in from
-// the start, not an afterthought: only http/https, private/reserved IP
-// ranges rejected, re-validated after every redirect hop (a redirect from an
-// allowed URL to an internal one is the classic bypass).
+// ingestion. Fetches an admin-supplied URL server-side — real SSRF exposure,
+// protected from the start, not an afterthought.
+//
+// UNIFIED with ssrf-guard.ts (2026-08-24), not left as its own bespoke
+// implementation. This file originally had its own IP-range checks, built
+// the same day as (and independently of) connector-engine.ts's — this was
+// the ONE already known to be real and protected; connector-engine.ts's was
+// the "related, pre-existing, lower-urgency gap" this file's own comment
+// used to point at, fixed later in a separate round and given the shared
+// ssrf-guard.ts module. Re-checking THIS file's own protection against that
+// later, more thoroughly-covered module (2026-08-24 audit) found it was
+// actually the weaker of the two by then: no CGNAT (100.64.0.0/10) or
+// multicast/reserved (224.0.0.0/4+) ranges, an incomplete IPv6 check
+// (`startsWith("fe80")` misses fe90::-febf::, no IPv4-mapped-address
+// unwrapping — `::ffff:127.0.0.1` would have sailed straight through), and
+// — the more serious one — FAILED OPEN on a DNS resolution error (`.catch(()
+// => [])` on a failed lookup produced an empty address list, which the
+// following loop treated as "nothing to block" instead of "couldn't
+// confirm this is safe"). Replaced with the shared, more thoroughly
+// verified implementation rather than patched in place, so the two
+// SSRF-relevant code paths in this codebase can't quietly drift apart
+// again — one real implementation, not two hand-maintained copies of the
+// same security-critical logic.
+//
+// Known, NOT fixed by either implementation: a DNS-rebinding TOCTOU window
+// between assertSafeUrl's own DNS lookup and fetch()'s separate, later one
+// a few milliseconds afterward — a malicious/compromised DNS answer could
+// theoretically differ between the two. Closing that fully needs resolving
+// once and fetching by the pinned IP with a Host-header override (careful
+// work for HTTPS/SNI), not attempted in either file today.
 
-const PRIVATE_V4_RANGES: [string, number][] = [
-  ["10.0.0.0", 8],
-  ["172.16.0.0", 12],
-  ["192.168.0.0", 16],
-  ["127.0.0.0", 8],
-  ["169.254.0.0", 16], // cloud metadata range (AWS/GCP/Azure instance metadata)
-  ["0.0.0.0", 8],
-];
+const CRAWL_USER_AGENT = "P2LessBot/1.0 (+website content ingestion for a customer's own assistant)";
+const CRAWL_TIMEOUT_MS = 8000;
 
-function ipv4ToLong(ip: string): number {
-  return ip.split(".").reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
-}
-
-function isPrivateIPv4(ip: string): boolean {
-  const target = ipv4ToLong(ip);
-  return PRIVATE_V4_RANGES.some(([base, bits]) => {
-    const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
-    return (target & mask) === (ipv4ToLong(base) & mask);
-  });
-}
-
-function isPrivateIPv6(ip: string): boolean {
-  const lower = ip.toLowerCase();
-  return lower === "::1" || lower.startsWith("fc") || lower.startsWith("fd") || lower.startsWith("fe80");
-}
-
-async function assertSafeUrl(urlStr: string): Promise<URL> {
-  const url = new URL(urlStr);
-  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Only http/https URLs are allowed.");
-  const hostname = url.hostname;
-  if (net.isIP(hostname)) {
-    if (net.isIPv4(hostname) && isPrivateIPv4(hostname)) throw new Error("That address isn't reachable for scanning.");
-    if (net.isIPv6(hostname) && isPrivateIPv6(hostname)) throw new Error("That address isn't reachable for scanning.");
-    return url;
-  }
-  const resolved = await dns.lookup(hostname, { all: true }).catch(() => []);
-  for (const a of resolved) {
-    if (a.family === 4 && isPrivateIPv4(a.address)) throw new Error("That address isn't reachable for scanning.");
-    if (a.family === 6 && isPrivateIPv6(a.address)) throw new Error("That address isn't reachable for scanning.");
-  }
-  return url;
-}
-
-/** Fetches with manual redirect handling so every hop is re-validated against
- *  the same private-IP check — following an allowed URL's redirect straight
- *  to an internal address without re-checking is the classic SSRF bypass. */
-async function safeFetch(urlStr: string, maxRedirects = 3): Promise<Response> {
-  let current = urlStr;
-  for (let i = 0; i <= maxRedirects; i++) {
-    const url = await assertSafeUrl(current);
-    const res = await fetch(url.toString(), {
-      redirect: "manual",
-      signal: AbortSignal.timeout(8000),
-      headers: { "User-Agent": "P2LessBot/1.0 (+website content ingestion for a customer's own assistant)" },
-    });
-    if (res.status >= 300 && res.status < 400) {
-      const loc = res.headers.get("location");
-      if (!loc) return res;
-      current = new URL(loc, url).toString();
-      continue;
-    }
-    return res;
-  }
-  throw new Error("Too many redirects.");
+/** Fetches with manual redirect handling so every hop is re-validated —
+ *  following an allowed URL's redirect straight to an internal address
+ *  without re-checking is the classic SSRF bypass. Thin wrapper over the
+ *  shared guard, just fixing this crawler's own User-Agent/timeout/redirect
+ *  budget. */
+async function safeFetch(urlStr: string): Promise<Response> {
+  return guardedFetch(urlStr, { timeoutMs: CRAWL_TIMEOUT_MS, headers: { "User-Agent": CRAWL_USER_AGENT } }, 3);
 }
 
 function parseDisallow(robotsTxt: string): string[] {
@@ -140,7 +107,8 @@ export type CrawledPage = { url: string; text: string };
 export async function crawlSite(startUrl: string, opts: { maxPages?: number; maxDepth?: number } = {}): Promise<CrawledPage[]> {
   const maxPages = opts.maxPages ?? 10;
   const maxDepth = opts.maxDepth ?? 2;
-  const start = await assertSafeUrl(startUrl);
+  await assertSafeUrl(startUrl); // throws if unsafe — checked before trusting startUrl at all
+  const start = new URL(startUrl);
   const origin = start.origin;
 
   let disallow: string[] = [];
