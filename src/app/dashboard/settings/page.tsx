@@ -1,4 +1,4 @@
-import { requireTenantUser, userPermissions } from "@/lib/auth";
+import { withTenantUser, userPermissions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { PERMISSIONS } from "@/lib/permissions";
 import { Card, PageHeader } from "@/components/ui";
@@ -20,26 +20,27 @@ type Branding = { assistantName?: string; logoText?: string; primaryColor?: stri
 // organically generating the underlying data first, a real dead end. Same
 // option lists as the /onboard form, for the same self-report.
 export default async function DashboardSettingsPage() {
-  const user = await requireTenantUser();
-  const canManage = userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE);
-  const tenant = await db.tenant.findUnique({ where: { id: user.tenantId! }, select: { name: true, industry: true, branding: true, useCases: true, channelsNeeded: true } });
-  const branding = (tenant?.branding as Branding | null) ?? {};
+  return withTenantUser(async (user) => {
+    const canManage = userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE);
+    const tenant = await db.tenant.findUnique({ where: { id: user.tenantId! }, select: { name: true, industry: true, branding: true, useCases: true, channelsNeeded: true } });
+    const branding = (tenant?.branding as Branding | null) ?? {};
 
-  return (
-    <div>
-      <PageHeader title="Settings" subtitle="Your organization's name, industry, assistant branding, and which parts of the dashboard are relevant to you." />
+    return (
+      <div>
+        <PageHeader title="Settings" subtitle="Your organization's name, industry, assistant branding, and which parts of the dashboard are relevant to you." />
 
-      {!canManage && <Card className="mb-4 p-4 text-sm text-muted">You can view these settings, but need the <code>tenant.manage</code> permission to edit them.</Card>}
+        {!canManage && <Card className="mb-4 p-4 text-sm text-muted">You can view these settings, but need the <code>tenant.manage</code> permission to edit them.</Card>}
 
-      <SettingsForm
-        initial={{
-          name: tenant?.name ?? "", industry: tenant?.industry ?? "business",
-          assistantName: branding.assistantName ?? "", logoText: branding.logoText ?? "", primaryColor: branding.primaryColor ?? "",
-          welcome: branding.welcome ?? "", poweredBy: branding.poweredBy ?? "", pdfFooter: branding.pdfFooter ?? "",
-          useCases: (tenant?.useCases as string[] | null) ?? [], channelsNeeded: (tenant?.channelsNeeded as string[] | null) ?? [],
-        }}
-        canManage={canManage}
-      />
-    </div>
-  );
+        <SettingsForm
+          initial={{
+            name: tenant?.name ?? "", industry: tenant?.industry ?? "business",
+            assistantName: branding.assistantName ?? "", logoText: branding.logoText ?? "", primaryColor: branding.primaryColor ?? "",
+            welcome: branding.welcome ?? "", poweredBy: branding.poweredBy ?? "", pdfFooter: branding.pdfFooter ?? "",
+            useCases: (tenant?.useCases as string[] | null) ?? [], channelsNeeded: (tenant?.channelsNeeded as string[] | null) ?? [],
+          }}
+          canManage={canManage}
+        />
+      </div>
+    );
+  });
 }

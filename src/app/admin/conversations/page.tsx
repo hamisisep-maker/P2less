@@ -1,4 +1,4 @@
-import { requireAdminPermission } from "@/lib/admin-authz";
+import { withAdminPermission } from "@/lib/admin-authz";
 import { db } from "@/lib/db";
 import { Card, PageHeader } from "@/components/ui";
 import { AdminConversationsTable, type AdminConvoRow } from "@/components/dashboard-ui";
@@ -11,31 +11,31 @@ import { AdminConversationsTable, type AdminConvoRow } from "@/components/dashbo
 // real cap for a v1 cross-tenant view, not a placeholder; a platform-wide
 // date-range/filter query is real future scope once this proves useful.
 export default async function AdminConversationsPage() {
-  await requireAdminPermission("tenants.view");
+  return withAdminPermission("tenants.view", async () => {
+    const conversations = await db.conversation.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: 200,
+      include: { contact: true, tenant: { select: { id: true, name: true } }, _count: { select: { messages: true } } },
+    });
 
-  const conversations = await db.conversation.findMany({
-    orderBy: { updatedAt: "desc" },
-    take: 200,
-    include: { contact: true, tenant: { select: { id: true, name: true } }, _count: { select: { messages: true } } },
+    const rows: AdminConvoRow[] = conversations.map((c) => ({
+      id: c.id,
+      tenantId: c.tenant.id,
+      tenantName: c.tenant.name,
+      name: c.contact.displayName ?? c.contact.address,
+      channel: c.contact.channelType,
+      messages: c._count.messages,
+      status: c.status,
+      updated: c.updatedAt,
+    }));
+
+    return (
+      <div>
+        <PageHeader title="Conversations" subtitle="Every conversation across every tenant, most recently active first." />
+        <Card className="p-5">
+          <AdminConversationsTable data={rows} />
+        </Card>
+      </div>
+    );
   });
-
-  const rows: AdminConvoRow[] = conversations.map((c) => ({
-    id: c.id,
-    tenantId: c.tenant.id,
-    tenantName: c.tenant.name,
-    name: c.contact.displayName ?? c.contact.address,
-    channel: c.contact.channelType,
-    messages: c._count.messages,
-    status: c.status,
-    updated: c.updatedAt,
-  }));
-
-  return (
-    <div>
-      <PageHeader title="Conversations" subtitle="Every conversation across every tenant, most recently active first." />
-      <Card className="p-5">
-        <AdminConversationsTable data={rows} />
-      </Card>
-    </div>
-  );
 }

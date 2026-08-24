@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
 import { db } from "./db";
-import { getCurrentUser, type CurrentUser } from "./auth";
+import { getCurrentUser, requireSuperAdmin, type CurrentUser } from "./auth";
 import { enterCrossTenantContext } from "./tenant-context";
 import type { AdminPermission } from "./admin-permissions";
 
@@ -117,6 +117,73 @@ export async function requireAdminPermission(
     }
     throw e;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tenant-isolation hardening, 2026-08-23/24 root-cause fix — these two
+// wrappers exist because assertAdminPermission()/requireAdminPermission()
+// calling enterCrossTenantContext() INSIDE themselves and then RETURNING a
+// value for the caller to keep using does not reliably survive under a real
+// `next build && next start` (proved by direct isolated reproduction — see
+// tenant-context.ts's comment): the AsyncLocalStorage context set inside a
+// nested async function is lost the instant that function returns to its
+// caller, even one line later in the exact same function body. What DOES
+// reliably survive: set context, then IMMEDIATELY (no return-and-resume
+// step) invoke a callback synchronously — even across further awaits inside
+// that callback, even a callback defined in another module, even reading it
+// from db.ts's own Prisma extension.
+//
+// So instead of "call a guard, get a value back, keep using it", every
+// admin entry point that does tenant/cross-tenant db.ts work after its
+// guard must use the "guard-and-invoke" shape below: call one of these with
+// the REMAINING logic as a callback (`fn`). Context is (re-)entered here,
+// synchronously, in this function's own frame, with fn() invoked immediately
+// after — never awaited-then-resumed-into on the caller's side first.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** For PAGES/LAYOUTS. Same behavior as requireAdminPermission (redirects to
+ *  /dashboard or /login on denial) but invokes fn(user) synchronously after
+ *  (re-)setting cross-tenant context, instead of returning a value for the
+ *  page component to keep using across its own await boundaries. */
+export async function withAdminPermission<T>(
+  permission: AdminPermission,
+  fn: (user: CurrentUser) => T | Promise<T>,
+  opts?: { tenantId?: string | null },
+): Promise<T> {
+  const user = await requireAdminPermission(permission, opts);
+  enterCrossTenantContext();
+  return fn(user);
+}
+
+/** For SERVER ACTIONS. Never redirects — returns { error: string } on denial
+ *  instead, matching the hand-rolled try/catch-ForbiddenError pattern used
+ *  everywhere else. Invokes fn(admin) synchronously after (re-)setting
+ *  cross-tenant context. */
+export async function withAssertAdminPermission<T>(
+  permission: AdminPermission,
+  fn: (user: CurrentUser) => Promise<T>,
+  opts?: { tenantId?: string | null },
+): Promise<T | { error: string }> {
+  let user: CurrentUser;
+  try {
+    user = await assertAdminPermission(permission, opts);
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { error: e.message };
+    throw e;
+  }
+  enterCrossTenantContext();
+  return fn(user);
+}
+
+/** For the small number of admin pages/actions that aren't gated by a
+ *  specific AdminPermission — just "is a logged-in platform admin at all"
+ *  (the /admin overview page, self-service password change). Same
+ *  guard-and-invoke shape as withAdminPermission, built on requireSuperAdmin
+ *  (auth.ts) instead of a permission check. */
+export async function withAnyAdmin<T>(fn: (user: CurrentUser) => T | Promise<T>): Promise<T> {
+  const user = await requireSuperAdmin();
+  enterCrossTenantContext();
+  return fn(user);
 }
 
 export type LogPrivilegedActionInput = {

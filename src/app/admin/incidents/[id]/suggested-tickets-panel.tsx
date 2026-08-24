@@ -24,7 +24,7 @@ export function SuggestedTicketsPanel({ incidentIdentifier, tickets, canLink }: 
               disabled={pending}
               onClick={() => startTransition(async () => {
                 const res = await linkIncidentAction(t.id, incidentIdentifier);
-                if (res.error) { toast.error(res.error); return; }
+                if ("error" in res) { toast.error(res.error); return; }
                 toast.success("Linked to incident");
                 setLinked((s) => new Set(s).add(t.id));
               })}

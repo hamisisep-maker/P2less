@@ -91,7 +91,7 @@ export function TrainingSessionCard({ tenants, activeSessions }: { tenants: Tena
                   disabled={pending}
                   onClick={() => startTransition(async () => {
                     const res = await endTrainingSessionAction(s.id);
-                    if (res.error) { toast.error(res.error); return; }
+                    if ("error" in res) { toast.error(res.error); return; }
                     toast.success("Session ended");
                   })}
                   className="rounded-lg border border-line px-2.5 py-1 text-xs font-medium hover:bg-surface-2"

@@ -141,6 +141,22 @@ export async function requireTenantUser(): Promise<CurrentUser> {
   return user;
 }
 
+/** Require a tenant-scoped user (dashboard) and run `fn` with tenant context
+ *  already established, in the SAME call stack as `enterTenantContext`.
+ *  AsyncLocalStorage context set inside a nested async function does not
+ *  reliably survive that function returning to its caller — see the
+ *  2026-08-23/24 fail-closed incident writeup. This wrapper sets context and
+ *  synchronously invokes `fn` in one step so tenant-scoped `db.*` calls made
+ *  inside `fn` (directly or via further awaits/callbacks within it) reliably
+ *  see the right tenant. Prefer this over `requireTenantUser()` whenever the
+ *  caller does tenant-scoped `db.*` work afterward. */
+export async function withTenantUser<T>(fn: (user: CurrentUser) => T | Promise<T>): Promise<T> {
+  const user = await requireUser();
+  if (!user.tenantId) redirect("/admin");
+  enterTenantContext(user.tenantId);
+  return fn(user);
+}
+
 /** Legacy coarse gate — still used by the admin layout to keep any platform
  *  admin (any role) into /admin at all. Individual pages/actions must still
  *  call requireAdminPermission/assertAdminPermission (admin-authz.ts) for the
@@ -149,10 +165,17 @@ export async function requireTenantUser(): Promise<CurrentUser> {
 export async function requireSuperAdmin(): Promise<CurrentUser> {
   const user = await requireUser();
   if (!user.isSuperAdmin && !user.adminRoleId) redirect("/dashboard");
-  // Tenant-isolation fail-open audit, 2026-08-23 — every /admin/** page
-  // renders through this (the admin layout's own gate), so this is the
-  // single choke point that marks the whole page tree as deliberately
-  // cross-tenant for db.ts's extension. See tenant-context.ts's comment.
+  // Tenant-isolation fail-open audit, 2026-08-23 — this call sets
+  // cross-tenant context for the CURRENT async chain only. It does NOT
+  // propagate to the individual page components /admin/** renders as
+  // children: confirmed live, under a real `next build && next start`, that
+  // context set here is gone by the time a child page's own async body
+  // runs. This function only gates the admin layout's nav/sidebar (which
+  // does no db.ts calls of its own) — it is NOT the choke point for the
+  // page tree. Every individual /admin/** page/action must set its own
+  // cross-tenant context via withAdminPermission/withAssertAdminPermission
+  // (admin-authz.ts) immediately before its own db.ts calls. See
+  // tenant-context.ts's comment for the full root-cause writeup.
   enterCrossTenantContext();
   return user;
 }

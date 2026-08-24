@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Building2, MessagesSquare, Send, ShieldAlert, Wallet, BrainCircuit, Settings, ArrowRight, Radio } from "lucide-react";
 import { db } from "@/lib/db";
+import { withAnyAdmin } from "@/lib/admin-authz";
 import { Card, PageHeader, Badge, timeAgo } from "@/components/ui";
 import { IconStat, SimpleAreaChart, InfoTip } from "@/components/dashboard-ui";
 
@@ -10,6 +11,13 @@ function dayKey(d: Date): string {
 }
 
 export default async function AdminPage() {
+  // withAnyAdmin(), not the (missing) layout-only gate — this page never had
+  // its own permission check, relying solely on admin/layout.tsx's
+  // requireSuperAdmin(). That context does not propagate to this page's own
+  // render (confirmed live, real production build): every query below ran
+  // with no context at all, tripping db.ts's fail-closed check the moment it
+  // was tested for real. See admin-authz.ts's comment.
+  return withAnyAdmin(async () => {
   const since14 = new Date(); since14.setDate(since14.getDate() - 13); since14.setHours(0, 0, 0, 0);
   const today = new Date().toISOString().slice(0, 10);
 
@@ -146,4 +154,5 @@ export default async function AdminPage() {
       </Card>
     </div>
   );
+  });
 }

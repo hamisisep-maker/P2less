@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { requireAdminPermission } from "@/lib/admin-authz";
+import { withAdminPermission } from "@/lib/admin-authz";
 import { Card, PageHeader } from "@/components/ui";
 import { IntegrationRow } from "./integration-row";
 import { DependencyMap } from "./dependency-map";
@@ -36,53 +36,54 @@ function credentialStatus(key: string): "configured" | "not_configured" | "n/a" 
 }
 
 export default async function AdminIntegrationsPage() {
-  await requireAdminPermission("integrations.view");
-  const integrations = await db.integration.findMany({ orderBy: { name: "asc" } });
+  return withAdminPermission("integrations.view", async () => {
+    const integrations = await db.integration.findMany({ orderBy: { name: "asc" } });
 
-  const byCategory = new Map<string, typeof integrations>();
-  for (const i of integrations) {
-    if (!byCategory.has(i.category)) byCategory.set(i.category, []);
-    byCategory.get(i.category)!.push(i);
-  }
+    const byCategory = new Map<string, typeof integrations>();
+    for (const i of integrations) {
+      if (!byCategory.has(i.category)) byCategory.set(i.category, []);
+      byCategory.get(i.category)!.push(i);
+    }
 
-  return (
-    <div>
-      <PageHeader
-        title="Integrations"
-        subtitle="Every external dependency the platform relies on — real status, not a page that just renders."
-      />
-
-      <Card className="p-5">
-        <h2 className="mb-1 font-display font-semibold">Dependency map</h2>
-        <p className="mb-3 text-xs text-muted">If M-Pesa fails, this is exactly what's affected — and what isn't.</p>
-        <DependencyMap
-          mpesaOk={integrations.find((i) => i.key === "mpesa_stk")?.lastCheckOk ?? null}
-          whatsappOk={integrations.find((i) => i.key === "whatsapp_cloud_api")?.lastCheckOk ?? null}
-          aiOk={integrations.some((i) => i.key.startsWith("ai_") && i.lastCheckOk === true)}
-          dbOk={integrations.find((i) => i.key === "database")?.lastCheckOk ?? null}
+    return (
+      <div>
+        <PageHeader
+          title="Integrations"
+          subtitle="Every external dependency the platform relies on — real status, not a page that just renders."
         />
-      </Card>
 
-      <div className="mt-4 space-y-4">
-        {CATEGORY_ORDER.filter((c) => byCategory.has(c)).map((category) => (
-          <Card key={category} className="p-5">
-            <h2 className="mb-3 font-display font-semibold">{CATEGORY_LABELS[category] ?? category}</h2>
-            <div className="space-y-2">
-              {byCategory.get(category)!.map((i) => (
-                <IntegrationRow
-                  key={i.key}
-                  data={{
-                    key: i.key, name: i.name, provider: i.provider, environment: i.environment, enabled: i.enabled,
-                    lastCheckedAt: i.lastCheckedAt, lastCheckOk: i.lastCheckOk, lastCheckDetail: i.lastCheckDetail,
-                    docsUrl: i.docsUrl, providerDashboardUrl: i.providerDashboardUrl, billingUrl: i.billingUrl,
-                    credentialStatus: credentialStatus(i.key),
-                  }}
-                />
-              ))}
-            </div>
-          </Card>
-        ))}
+        <Card className="p-5">
+          <h2 className="mb-1 font-display font-semibold">Dependency map</h2>
+          <p className="mb-3 text-xs text-muted">If M-Pesa fails, this is exactly what's affected — and what isn't.</p>
+          <DependencyMap
+            mpesaOk={integrations.find((i) => i.key === "mpesa_stk")?.lastCheckOk ?? null}
+            whatsappOk={integrations.find((i) => i.key === "whatsapp_cloud_api")?.lastCheckOk ?? null}
+            aiOk={integrations.some((i) => i.key.startsWith("ai_") && i.lastCheckOk === true)}
+            dbOk={integrations.find((i) => i.key === "database")?.lastCheckOk ?? null}
+          />
+        </Card>
+
+        <div className="mt-4 space-y-4">
+          {CATEGORY_ORDER.filter((c) => byCategory.has(c)).map((category) => (
+            <Card key={category} className="p-5">
+              <h2 className="mb-3 font-display font-semibold">{CATEGORY_LABELS[category] ?? category}</h2>
+              <div className="space-y-2">
+                {byCategory.get(category)!.map((i) => (
+                  <IntegrationRow
+                    key={i.key}
+                    data={{
+                      key: i.key, name: i.name, provider: i.provider, environment: i.environment, enabled: i.enabled,
+                      lastCheckedAt: i.lastCheckedAt, lastCheckOk: i.lastCheckOk, lastCheckDetail: i.lastCheckDetail,
+                      docsUrl: i.docsUrl, providerDashboardUrl: i.providerDashboardUrl, billingUrl: i.billingUrl,
+                      credentialStatus: credentialStatus(i.key),
+                    }}
+                  />
+                ))}
+              </div>
+            </Card>
+          ))}
+        </div>
       </div>
-    </div>
-  );
+    );
+  });
 }
