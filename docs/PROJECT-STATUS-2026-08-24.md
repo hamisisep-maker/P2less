@@ -4,6 +4,8 @@
 
 **On a new machine?** See [`README.md`](../README.md)'s "Lost your laptop? Start here" section — clone from GitHub, production is already live at Railway and needs no local setup, and real secrets come from `railway variables`, not from memory (`.env` is deliberately never committed).
 
+**Worried something's broken, missing, or half-built?** [`GAP-REGISTER-2026-08-24.md`](GAP-REGISTER-2026-08-24.md) is the one current, evidence-backed list of every known gap across security, money/billing, data integrity, and missing CRUD operations — each with real status verified against actual code, not an old note. Check there first before assuming something is fine or reopening an investigation that's already been done.
+
 ---
 
 ## The goal
