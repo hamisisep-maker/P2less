@@ -190,6 +190,30 @@ export function normalizePhone(n: string): string {
   return digits === t.replace(/[\s-]/g, "") && digits.length >= 7 ? "+" + digits : t;
 }
 
+// Real, honest, fixed reply for every "can't serve this customer at all"
+// case — suspended, cancelled, and (once wired) balance-exhausted. Found and
+// fixed 2026-08-25: the early-return paths below used to just RETURN this
+// text without ever actually sending it — the WhatsApp webhook route (and
+// every other real channel's route) never reads handleInbound()'s return
+// value, only the demo/webchat simulator paths do, so a real WhatsApp/
+// Messenger/Telegram customer messaging a suspended or cancelled tenant got
+// genuine silence, not a reply. Deliberately generic and NEVER AI-generated
+// — no hallucination risk, no further cost, and critically it must never
+// reveal WHY (not "suspended", not "cancelled", not "balance low/finished")
+// — that's the tenant's own business standing with P2Less, not something
+// their own customer should ever see.
+const SERVICE_UNAVAILABLE_MESSAGE = "We're unable to respond right now — please try again shortly, or reach out to us directly.";
+
+async function sendServiceUnavailable(opts: {
+  tenantId: string; channelType: string; to: string;
+  fromNumberId?: string | null; fromPageId?: string | null; fromTelegramBotId?: string | null;
+}): Promise<void> {
+  await deliver({
+    tenantId: opts.tenantId, channelType: opts.channelType, to: opts.to, body: SERVICE_UNAVAILABLE_MESSAGE,
+    fromNumberId: opts.fromNumberId, fromPageId: opts.fromPageId, fromTelegramBotId: opts.fromTelegramBotId,
+  }).catch(() => {}); // best-effort — a failure here must never throw past the honest {ok:false} return below
+}
+
 export async function handleInbound(input: InboundInput): Promise<HandleResult> {
   const reqId = newRequestId();
 
@@ -215,8 +239,28 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
 
   if (input.tenantId) {
     const t = await db.tenant.findUnique({ where: { id: input.tenantId }, include: { subscription: true } });
-    if (!t || t.status === "suspended" || t.status === "cancelled") {
+    if (!t) {
       return { ok: false, replies: [{ body: "This service is not available." }] };
+    }
+    // Resolved BEFORE the suspended/cancelled check specifically so a real
+    // reply can still be sent on the way out below — moved up from where
+    // this used to live (after the check, unreachable when blocked). Harmless
+    // read regardless of tenant status.
+    if (input.channelType === "messenger") {
+      const channel = await runCrossTenant(() => db.channel.findFirst({ where: { tenantId: t.id, type: "messenger", status: "active" } }));
+      fromPageId = channel?.address ?? null;
+    }
+    if (input.channelType === "telegram") {
+      const channel = await runCrossTenant(() => db.channel.findFirst({ where: { tenantId: t.id, type: "telegram", status: "active" } }));
+      fromTelegramBotId = channel?.address ?? null;
+    }
+    if (t.status === "suspended" || t.status === "cancelled") {
+      // Real bug found + fixed 2026-08-25: this used to just return this
+      // reply without ever actually sending it — see sendServiceUnavailable's
+      // comment. webchat/widget still get it via the return value too
+      // (deliver() returns synchronously for those channel types).
+      await sendServiceUnavailable({ tenantId: t.id, channelType: input.channelType, to: input.fromNumber, fromPageId, fromTelegramBotId });
+      return { ok: false, replies: [{ body: SERVICE_UNAVAILABLE_MESSAGE }] };
     }
     tenant = t;
     branding = (tenant.branding as { assistantName?: string; welcome?: string; poweredBy?: string } | null) ?? {};
@@ -226,18 +270,6 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       name: assistant,
     };
     branchLookup = { branchId: null, tenantId: tenant.id };
-    // Deliberately cross-tenant — this whole routing block runs BEFORE
-    // enterTenantContext() below resolves who "the current tenant" even is.
-    // Found in the same 2026-08-23 fail-closed audit as every other
-    // identity-resolution lookup.
-    if (input.channelType === "messenger") {
-      const channel = await runCrossTenant(() => db.channel.findFirst({ where: { tenantId: tenant.id, type: "messenger", status: "active" } }));
-      fromPageId = channel?.address ?? null;
-    }
-    if (input.channelType === "telegram") {
-      const channel = await runCrossTenant(() => db.channel.findFirst({ where: { tenantId: tenant.id, type: "telegram", status: "active" } }));
-      fromTelegramBotId = channel?.address ?? null;
-    }
   } else {
     // Deliberately cross-tenant — resolves WHICH tenant this destination
     // number belongs to, before any context can exist. Same category of
@@ -251,9 +283,20 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       where: { phoneNumber: input.toNumber },
       include: { tenant: { include: { subscription: true } } },
     }));
-    if (!num || num.status !== "active" || num.tenant.status === "suspended" || num.tenant.status === "cancelled") {
-      // Unknown/inactive number: nothing to reply as, and no tenant to bill/audit.
+    if (!num || num.status !== "active") {
+      // Genuinely unknown/inactive number — not one of ours, no real tenant
+      // to attribute a reply to or send FROM. Silent is correct here (unlike
+      // the suspended/cancelled case right below): this isn't a real
+      // customer of a real tenant being left hanging, it's someone who
+      // messaged a number P2Less doesn't manage at all.
       return { ok: false, replies: [{ body: "This number is not in service." }] };
+    }
+    if (num.tenant.status === "suspended" || num.tenant.status === "cancelled") {
+      // Real bug found + fixed 2026-08-25 — see sendServiceUnavailable's
+      // comment: this used to just return this reply without ever actually
+      // sending it on WhatsApp, the majority real channel.
+      await sendServiceUnavailable({ tenantId: num.tenant.id, channelType: input.channelType, to: input.fromNumber, fromNumberId: num.phoneNumberId });
+      return { ok: false, replies: [{ body: SERVICE_UNAVAILABLE_MESSAGE }] };
     }
     number = num;
     tenant = num.tenant;

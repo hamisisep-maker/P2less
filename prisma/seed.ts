@@ -57,11 +57,21 @@ async function main() {
   ]);
 
   // ── Plans (configurable, not hard-coded into app logic) ─────────────────
-  const [free, professional, business] = await Promise.all([
-    db.plan.create({ data: { key: "free", name: "Free / Trial", priceMonthly: 0, sort: 0, limits: { users: 2, messagesPerMonth: 200, connectors: 1, aiRequestsPerMonth: 100, documentsPerMonth: 20 } } }),
-    db.plan.create({ data: { key: "professional", name: "Professional", priceMonthly: 4900, sort: 1, limits: { users: 15, messagesPerMonth: 10000, connectors: 10, aiRequestsPerMonth: 5000, documentsPerMonth: 1000 } } }),
-    db.plan.create({ data: { key: "business", name: "Business", priceMonthly: 19900, sort: 2, limits: { users: 60, messagesPerMonth: 100000, connectors: 50, aiRequestsPerMonth: 50000, documentsPerMonth: 10000 } } }),
-    db.plan.create({ data: { key: "enterprise", name: "Enterprise", priceMonthly: 0, whiteLabel: true, sort: 3, limits: {} } }),
+  // Prepaid billing redesign, 2026-08-25: "free" is now an INTERNAL-ONLY row
+  // (active: false, never shown to a customer) that holds the admin-
+  // configurable trial allowance every new signup gets before choosing a
+  // real plan — see finalizeOnboarding's key:"free" lookup and Plan's own
+  // schema comment. "starter" is the real, cheapest publicly-selectable
+  // plan (there is no plan literally called "Free" a customer can see — a
+  // direct product decision, not an oversight). Only "enterprise" carries
+  // postpaidUsage: true — every other plan uses the new prepaid message/AI
+  // balance model.
+  const [free, starter, professional, business] = await Promise.all([
+    db.plan.create({ data: { key: "free", name: "Trial allowance (internal)", priceMonthly: 0, active: false, sort: -1, limits: { messagesPerMonth: 50, aiRequestsPerMonth: 30 } } }),
+    db.plan.create({ data: { key: "starter", name: "Starter", priceMonthly: 1500, sort: 0, limits: { users: 5, connectors: 3 } } }),
+    db.plan.create({ data: { key: "professional", name: "Professional", priceMonthly: 4900, sort: 1, limits: { users: 15, connectors: 10 } } }),
+    db.plan.create({ data: { key: "business", name: "Business", priceMonthly: 19900, sort: 2, limits: { users: 60, connectors: 50 } } }),
+    db.plan.create({ data: { key: "enterprise", name: "Enterprise", priceMonthly: 0, whiteLabel: true, sort: 3, postpaidUsage: true, limits: {} } }),
   ]);
 
   // ── Platform admin RBAC: the 6 built-in roles (Users → Roles → Permissions
@@ -481,7 +491,7 @@ async function main() {
   const retail = await db.tenant.create({
     data: { name: "Kilimani Retail", slug: "kilimani-retail", industry: "business", status: "active", branding: { assistantName: "Kilimani Retail", primaryColor: "#b45309", poweredBy: "Powered by P2Less" } },
   });
-  await db.subscription.create({ data: { tenantId: retail.id, planId: free.id, period: "monthly", status: "active", renewsAt: new Date(Date.now() + 30 * 864e5) } });
+  await db.subscription.create({ data: { tenantId: retail.id, planId: starter.id, period: "monthly", status: "active", renewsAt: new Date(Date.now() + 30 * 864e5) } });
   await db.whatsAppNumber.create({ data: { tenantId: retail.id, phoneNumber: "+254711000003", displayName: "Kilimani Retail", department: "Customer Care", phoneNumberId: "WA_PNID_RETAIL", status: "active", verificationStatus: "verified" } });
   const retOwnerRole = await db.role.create({ data: { tenantId: retail.id, key: "owner", name: "Organization Owner", isSystem: true, permissions: Object.values(PERM) } });
   const customerRole = await db.role.create({ data: { tenantId: retail.id, key: "customer", name: "Customer", isSystem: true, permissions: [PERM.ORDER_READ] } });

@@ -21,6 +21,17 @@ export const SETTING_DEFAULTS = {
   ai_primary_provider: "", // "" = use AI_PROVIDER env var / auto-detect
   usd_to_kes_rate: 129, // for converting provider token pricing (always USD) to KES billing — keep current from an actual FX rate
 
+  // ── Prepaid balances, 2026-08-25 (src/lib/prepaid-billing.ts) ───────────
+  // A tenant's own dashboard + a real SMS, fired once when a balance first
+  // drops to/below this KES amount — not a percentage, a real amount, so it
+  // reads the same regardless of how large a top-up someone made. Separate
+  // thresholds because the two balances are drawn down at very different
+  // rates (message price vs. AI price aren't the same, see price_ai_kes/
+  // price_conversation_kes above) — one shared number would trip at wildly
+  // different "messages remaining" points for each.
+  low_balance_threshold_messages_kes: 100,
+  low_balance_threshold_ai_kes: 50,
+
   // ── Automated billing lifecycle (src/lib/billing-lifecycle.ts) ──────────
   billing_grace_period_days: 7, // days a tenant keeps service after renewal fails before auto-suspend
   billing_reminder_days: "7,3,1", // comma list — days before renewsAt to queue a reminder notification

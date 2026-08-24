@@ -530,16 +530,30 @@ model Tenant {
 /// Configurable subscription plan. Not hard-coded — Super Admin edits these.
 model Plan {
   id           String  @id @default(cuid())
-  key          String  @unique // free | professional | business | enterprise
+  key          String  @unique // free | starter | professional | business | enterprise — "free" is now the INTERNAL trial-allowance holder, never shown to a customer (active=false) — see the comment below
   name         String
   priceMonthly Int     @default(0) // WHOLE units of tenant currency (KES) — NOT cents; e.g. 4900 = KES 4,900/mo. Matches Payment.amount's convention.
   interval     String  @default("monthly") // monthly | half_yearly | yearly (base cadence)
   whiteLabel   Boolean @default(false)
-  // Usage limits enforced by the metering layer.
+  // Usage limits enforced by the metering layer. For the "free" (internal
+  // trial) row specifically: messagesPerMonth/aiRequestsPerMonth ARE the
+  // admin-configurable trial allowance every new signup gets before they
+  // pick a real plan — reuses the exact same limit-checking (checkLimit())
+  // real plans already use, nothing new needed for trial enforcement.
   limits       Json // { users, messagesPerMonth, connectors, aiRequestsPerMonth, documentsPerMonth }
   features     Json? // free-form feature flags
   active       Boolean @default(true)
   sort         Int     @default(0)
+  // Prepaid billing redesign, 2026-08-25 — true ONLY for Enterprise. Every
+  // other real plan uses the new prepaid message/AI balance model
+  // (Subscription.messageBalanceKes/aiBalanceKes, checked before the real
+  // external cost in conversation.ts/ai.ts). Enterprise keeps the ORIGINAL
+  // post-paid model untouched (computeBill()/runBillingCycle()) — a
+  // deliberate trust-tier line: negotiated-contract customers get
+  // billed-after-use convenience; self-serve customers can't run up a bill
+  // Hamzone has no real relationship to collect against, which is the exact
+  // risk this whole redesign exists to close.
+  postpaidUsage Boolean @default(false)
 
   subscriptions Subscription[]
 }
@@ -569,6 +583,25 @@ model Subscription {
   startedAt DateTime @default(now())
   renewsAt  DateTime
   createdAt DateTime @default(now())
+
+  // ── Prepaid balances, 2026-08-25 ─────────────────────────────────────────
+  // Real KES, drawn down per real message/AI-understanding request at the
+  // SAME price PlatformSetting's price_conversation_kes/price_ai_kes already
+  // charge under the post-paid model — one consistent price source either
+  // way. Checked BEFORE the real external cost (the actual WhatsApp/channel
+  // send, the actual AI provider call) in conversation.ts/ai.ts, never
+  // after — the whole point is Hamzone is never left holding a cost nobody
+  // already paid for. Ignored entirely when plan.postpaidUsage is true
+  // (Enterprise) — those subscriptions keep using computeBill()/
+  // runBillingCycle() exactly as before, untouched by any of this.
+  messageBalanceKes Float @default(0)
+  aiBalanceKes      Float @default(0)
+  // Set the instant a balance first crosses below the configured low-balance
+  // threshold, cleared once topped back above it — so the low-balance
+  // notification (dashboard + SMS) fires once per crossing, not on every
+  // single message after the threshold is passed.
+  messageLowBalanceNotifiedAt DateTime?
+  aiLowBalanceNotifiedAt      DateTime?
 
   // ── Automated billing lifecycle ──────────────────────────────────────────
   autoRenew            Boolean   @default(true)

@@ -19,7 +19,14 @@ import { sendEmailReply } from "./email-channel";
 
 export type OutboundMessage = {
   tenantId: string;
-  conversationId: string;
+  // Optional ONLY for the "can't serve this customer at all" fallback
+  // (suspended/cancelled/balance-exhausted — see conversation.ts) — sent
+  // before any Contact/Conversation exists for this exchange, and
+  // deliberately not persisted, metered, or billed as a real message: it's
+  // not a real reply from the assistant, it's the honest "we can't respond
+  // right now" notice that must go out either way (never leave a real
+  // customer met with silence — see the 2026-08-24/25 fix).
+  conversationId?: string;
   channelType: string;
   to: string; // recipient (the user's number)
   body: string;
@@ -122,18 +129,23 @@ export async function sendWhatsAppText(fromNumberId: string, to: string, body: s
 }
 
 export async function deliver(msg: OutboundMessage): Promise<{ delivered: boolean; transport: string; error?: string }> {
-  // Persist + meter the outbound message (the web simulator also reads it back).
-  await db.message.create({
-    data: {
-      tenantId: msg.tenantId,
-      conversationId: msg.conversationId,
-      direction: "out",
-      body: msg.body,
-      meta: (msg.meta ?? undefined) as Prisma.InputJsonValue | undefined,
-    },
-  });
-  await meter(msg.tenantId, "message_out");
-  void dispatchWebhook(msg.tenantId, "message.sent", { conversationId: msg.conversationId, to: msg.to, text: msg.body }).catch(() => {});
+  // Persist + meter the outbound message (the web simulator also reads it
+  // back) — skipped entirely when there's no conversationId, i.e. the
+  // "can't serve this customer" fallback (see the type comment above): not
+  // a real reply, nothing to attach a Message row to, nothing to meter.
+  if (msg.conversationId) {
+    await db.message.create({
+      data: {
+        tenantId: msg.tenantId,
+        conversationId: msg.conversationId,
+        direction: "out",
+        body: msg.body,
+        meta: (msg.meta ?? undefined) as Prisma.InputJsonValue | undefined,
+      },
+    });
+    await meter(msg.tenantId, "message_out");
+    void dispatchWebhook(msg.tenantId, "message.sent", { conversationId: msg.conversationId, to: msg.to, text: msg.body }).catch(() => {});
+  }
 
   switch (msg.channelType) {
     case "webchat":
