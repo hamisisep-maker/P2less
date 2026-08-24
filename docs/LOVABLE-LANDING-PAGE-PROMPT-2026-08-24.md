@@ -16,68 +16,45 @@ You're building a landing page for **P2Less** — a real, working B2B SaaS produ
 
 *Audience*: schools, hospitals, SACCOs/cooperatives, government bodies, retail/business, and developers building on the platform's API. This should read as trustworthy B2B infrastructure — think "the software behind the number," not a flashy consumer app. Professional, credible, calm confidence — not hype, not gimmicks.
 
-### Design freedom
+### Design freedom — this means structure too, not just color
 
-You have full creative control over color palette, typography, and visual style — don't try to guess or match an existing brand. Design this as if it's a genuine visual refresh for a serious institutional-trade SaaS product (schools, hospitals, government are real customers here — the design should feel like something a hospital administrator or school principal would trust). Pick a palette and type pairing that earns that trust; avoid the generic "AI startup" look (a single accent-color-on-white gradient hero, an emoji-decorated feature grid, Inter/Space Grotesk as a safe default).
+You have full creative control over color palette, typography, visual style, section ORDER, section GROUPING, and how each idea gets presented. Don't default to the standard SaaS template shape (hero → problem/solution → feature grid → pricing → FAQ, stacked top to bottom, one card style repeated everywhere). Actually rethink it: What's the strongest way to open? Does "who it's for" work better woven through the page instead of one big block? Could two of these ideas share one visual moment instead of being separate sections? Is a stacked-cards grid even the right device for this content, or would something else (a comparison table, an annotated diagram, a horizontal scroller, alternating asymmetric rows) tell the story better?
 
-### Required sections and their real content
+Design this as if it's a genuine visual refresh for a serious institutional-trade SaaS product (schools, hospitals, government are real customers here — it should feel like something a hospital administrator or school principal would trust). Pick a palette and type pairing that earns that trust; avoid the generic "AI startup" look (a single accent-color-on-white gradient hero, an emoji-decorated feature grid, Inter/Space Grotesk as a safe default, everything centered, a rounded card with an accent-bar for every single idea).
 
-**1. Header/nav**: Logo/wordmark "P2Less". Nav links: Channels, Automation, Who it's for, Security, Pricing, FAQ. Right side: a "Dashboard" text link, an "Open the demo" secondary button, and a "Start free" primary CTA button.
+### The content — an inventory, not a wireframe
 
-**2. Hero**
-- Eyebrow tag: "Built on the number you already have — not a new app"
-- Headline: "Your customers already message you. **Make that message answer itself.**"
-- Subhead: "P2Less sits quietly behind the WhatsApp number, Facebook Page, Telegram bot, or website you already have. It checks who's asking, looks into your real systems, and replies — in your name, as your organization. **Nobody meets P2Less. They meet you, just faster.**"
-- Two CTAs: "Message a live organization →" (primary) and "Start free — it's yours in minutes" (secondary)
-- A small live-stat line: "Already answering live across 3 different industries in our sandbox — try it below." (this number is real and dynamic in production; just design the space for it)
-- A visual centerpiece: a stylized chat-conversation mockup showing a real example exchange:
-  - User: "Send me my payslip."
-  - Assistant: "Sure — I'll need to verify it's you first. I've sent a 6-digit code to your registered number."
-  - User: "482913"
-  - Assistant: "Verified. Here's your payslip for August 2026 📄 — anything else?"
-  - Caption beneath it: "↘ this same assistant is live in the corner of this page"
+Everything below is real information that needs to appear somewhere on the page, told accurately. **Treat this as raw material, not a section-by-section spec.** Group it, reorder it, cut a list down to its strongest points, or blend two ideas into one moment — whatever makes the strongest page. Don't render this as "one section per bullet-group below, in this order."
 
-**3. Problem/solution** — two-column comparison, "Without P2Less" vs "With P2Less":
-- Without: Callers wait on hold for a question you answer the same way every time · Staff retype the same answer dozens of times a day · After 5pm and on weekends: silence · Sensitive records shared over insecure channels, or not at all · Every new system means another login for your team
-- With: Answered instantly, day or night, from your own number · The repeat questions handle themselves — your team handles what's actually new · Real records released only after verifying who's asking · One number your customers already trust. No new app to learn · You stay in control — P2Less only acts within what you configure
+**What P2Less is**: Organizations already have a WhatsApp number, a Facebook Page, a Telegram bot, an email address, or a website — P2Less sits behind whichever one they already use, verifies who's messaging, calls their real backend systems, and replies as them. Their customers never see or know about P2Less; they just get a fast, accurate answer from the organization itself. Nobody meets P2Less. They meet the organization, just faster.
 
-**4. Channels** — "Wherever your customers already are." One assistant, same knowledge, same rules, every channel, set up once. Six channel badges: WhatsApp (live), Messenger (live), Telegram (live), Email (live), Website widget (live), X/Twitter (marked "soon", not live yet — visually distinguish this one as upcoming).
+**A real example exchange** (useful as a hero visual, a proof moment, or wherever it lands best):
+User: "Send me my payslip." → Assistant: "Sure — I'll need to verify it's you first. I've sent a 6-digit code to your registered number." → User: "482913" → Assistant: "Verified. Here's your payslip for August 2026 📄 — anything else?" This same assistant is genuinely live in the corner of the real page.
 
-**5. How it works** — 4 numbered steps: (1) They message your number — WhatsApp, Messenger, Telegram, email, or the widget on your site. (2) P2Less identifies & verifies them — checks who's asking and what they're allowed to see. (3) It calls your real systems — through specific, permissioned connectors, never free-form access. (4) It replies — as you — your name, your number, your answer.
+**The problem, without P2Less**: Callers wait on hold for a question answered the same way every time. Staff retype the same answer dozens of times a day. After 5pm and weekends: silence. Sensitive records shared over insecure channels, or not at all. Every new system means another login for the team.
 
-**6. Automation examples** — "Automation, not just answers" — this isn't a FAQ bot, it takes real actions. Show as example cards (who asked → what they said → what happened):
-- Patient: "Can I get an appointment this week?" → Checks the hospital's real schedule, books the open slot, and confirms it — no receptionist involved.
-- Employee: "I need Monday and Tuesday off." → Submits the request to the real HR system and confirms the remaining balance.
-- Customer: "Where's my order?" → Looks up the real status from the retail system and replies instantly, any time of day.
-- Employee: "Send me my payslip." → After a one-time verification code, generates the real payslip from the payroll system and sends it.
-- The organization adds a product to their catalog → Posts it to the organization's Facebook Page and Instagram once connected — a real, built capability currently pending Meta's own approval process, not yet live for every organization.
+**With P2Less**: Answered instantly, day or night, from the org's own number. Repeat questions handle themselves; staff handle what's actually new. Real records released only after verifying who's asking. One number customers already trust, nothing new to learn. The organization stays in control — P2Less only acts within what's configured.
 
-**7. Who it's for** — 5 audience segments, each with a headline, a pain point, and capability bullets. Design this as either tabs, an interactive selector, or distinct cards — your call on the best pattern:
-- **Retail & Business** — "Customers ask 'where's my order' a hundred times a day, and every new product means another manual social media post." → Real order status from your own retail system, answered instantly · Add a product once, publish it to your Facebook Page and Instagram once connected · M-Pesa-aware conversations for payments and confirmations · Delivery dispatch that offers a trip to a real driver and tracks the reply
-- **Schools & Hospitals** — "Parents and patients call the front office for the same handful of answers, and after-hours means silence." → Grounded answers to fees, term dates, visiting hours, from FAQs staff actually approved · Real records (exam results, appointments, payslips) released only after a one-time verification code · Multiple branches or campuses under one number, correctly routed · Answers day or night, without a single extra staff member
-- **SACCOs & Cooperatives** — "Members across many branches all need the same self-service, and your core system wasn't built for chat." → One number, many branches, each correctly scoped · Connects to your existing core system rather than replacing it · Member self-service for balances and statements, verified before anything sensitive is shared · Every action logged for the board
-- **Government** — "Public-facing services need to scale without compromising who can see what, or losing the paper trail." → Full audit trail on every privileged action · Role-based access scoped by branch or department · Encrypted credentials, isolated tenant data, step-up verification · Custom-priced Enterprise deployment
-- **Developers** — "Wiring a chat interface to a real backend usually means weeks of custom integration work." → Paste an OpenAPI spec, get working permission-scoped connectors drafted for review · A curated marketplace of ready-made connector templates · Every capability risk-tiered and permission-gated by design · API keys and webhooks to build on the same engine
+**Channels it runs on**: WhatsApp, Facebook Messenger, Telegram, Email, and a website chat widget — all genuinely live today. X/Twitter is a real, named "coming soon," not live yet — should read as honestly upcoming, not equal to the live ones.
 
-**8. Security** — "Security you can verify, not just trust." Six cards: Your data, isolated (every organization is a separate tenant, never visible to another) · Role-based, branch-scoped access · Step-up verification (a one-time code before any payslip, result, or medical record is released) · Controlled connectors (only specific, permissioned actions, never free-form database access) · Encrypted credentials (never exposed in logs or dashboards) · A real audit trail (every privileged action recorded). Plus a callout: "The assistant never invents an answer — it only ever responds from approved FAQs, real connected-system data, or a live handoff to staff." Plus a smaller note: "Registered in Kenya, held to Kenya's law — Hamzone Technologies is a duly registered Kenyan company; formal registration with Kenya's Data Protection Commissioner is underway."
+**How it actually works, as a real sequence**: someone messages the org's number on whichever channel they already use → P2Less checks who's asking and what they're allowed to see, before anything sensitive moves → it calls the org's real backend systems through specific, permissioned connectors, never free-form access → it replies as the organization, in their name and number.
 
-**9. "Try it yourself"** — a short CTA section: "The chat bubble in the corner of this page is a real, live P2Less assistant — ask it anything." Link: "Prefer WhatsApp? Message a real demo organization →"
+**It takes real actions, not just answers** — genuine examples: a patient asks "Can I get an appointment this week?" and P2Less checks the hospital's real schedule, books the open slot, confirms it, no receptionist involved. An employee asks for two days off and it submits the real HR request and confirms the remaining balance. A customer asks "where's my order?" and gets the real retail-system status instantly, any time. An employee asks for their payslip, verifies with a one-time code, and gets the real document generated and sent. An organization adds a product and — once Meta's own approval for this specific integration clears (a real, built capability, currently pending that approval, not yet live for every org) — it can auto-post to their Facebook Page and Instagram.
 
-**10. Pricing** — "Simple, honest pricing." A flat monthly fee plus small usage costs, free to start with a $0 card authorization, never charged unless upgraded. Four tiers as cards:
-- Free — 0 KES — 2 users · 200 messages/mo · 1 connector
-- Professional — 4,900 KES/mo — 15 users · 10,000 messages/mo · 10 connectors
-- Business — 19,900 KES/mo — 60 users · 100,000 messages/mo · 50 connectors
-- Enterprise — Custom — no fixed ceiling, white-label, negotiated
+**Who actually uses it, and what matters to each** (five real segments — feel free to present these as a unified idea with examples rather than five identical repeated blocks, if that reads better):
+- *Retail & business*: tired of answering "where's my order" all day, and of a new product meaning a manual social post. Gets real order status instantly, product-adds that can auto-publish once connected, M-Pesa-aware payment conversations, delivery dispatch that offers a trip to a real driver.
+- *Schools & hospitals*: parents/patients calling for the same handful of answers, silence after hours. Gets grounded FAQ answers staff actually approved, real records (results, appointments, payslips) released only after verification, multiple branches/campuses correctly routed under one number.
+- *SACCOs & cooperatives*: members across branches needing the same self-service, a core system not built for chat. Gets one number spanning many correctly-scoped branches, connects to the existing core system rather than replacing it, member self-service for balances/statements, every action logged for the board.
+- *Government*: public services needing to scale without losing who-can-see-what or the paper trail. Gets a full audit trail, role-based access by branch/department, encrypted credentials, custom Enterprise pricing.
+- *Developers*: wiring a chat interface to a real backend usually means weeks of integration work. Gets an OpenAPI-spec-to-working-connector pipeline, a marketplace of ready templates, every capability risk-tiered and permission-gated by design, API keys and webhooks on the same engine powering every channel.
 
-**11. FAQ** — "Questions, answered honestly." An accordion. Design it to scale to ~25-30 questions (the real list is longer than what's below — build a clean, scannable pattern, not one that only looks good with 5 items). Representative sample to design against:
-- "Do my customers need to install an app?" → No. They message the number they already have.
-- "Is our data isolated from other organizations on P2Less?" → Yes, every organization is a separate tenant.
-- "Does the assistant ever make things up?" → No — it only answers from approved FAQs, real system data, or a human handoff.
-- "How many customers/clients do you have?" → We're honest that P2Less is newly launched — real working software, not a mockup, but no public customer count yet.
-- "Which AI model or company powers the assistant?" → Not tied to one vendor — automatic failover across several major AI providers for reliability.
-- "Is there a contract, or can I cancel anytime?" → Free/Professional/Business are month-to-month, cancel anytime. Enterprise is negotiated.
+**Security, in real, verifiable terms, not vague promises**: every organization is a fully isolated tenant, never visible to another. Access is role-based and branch-scoped, not all-or-nothing. A one-time step-up code is required before any payslip, result, or medical record is ever released. Connectors only ever call specific, permissioned actions — never free-form database access. Credentials are encrypted at rest, never exposed in logs. Every privileged action is recorded in a real audit trail. The assistant never invents an answer — it only responds from approved FAQs, real connected-system data, or a live handoff to staff; if it doesn't know, it says so. Hamzone Technologies (the company behind P2Less) is a duly registered Kenyan company; formal registration with Kenya's Data Protection Commissioner is underway.
 
-**12. Footer** — Logo, links (Privacy, Terms, Demo, Start free), and the line: "P2Less is a product of Hamzone Technologies, a registered Kenyan company. One organization's own number. One conversation. Every system behind it, answering as you."
+**Pricing, real numbers**: Free — 0 KES, 2 users, 200 messages/mo, 1 connector. Professional — 4,900 KES/mo, 15 users, 10,000 messages/mo, 10 connectors. Business — 19,900 KES/mo, 60 users, 100,000 messages/mo, 50 connectors. Enterprise — custom, no fixed ceiling, negotiated. Free to start, a $0 card authorization to verify, never charged unless upgraded.
+
+**FAQ material** — the real list runs to about 25-30 questions; whatever pattern you design needs to hold up at that scale, not just look good with five. Representative examples: "Do my customers need to install an app?" (No — they message the number they already have). "Is our data isolated from other organizations?" (Yes, every org is a separate tenant). "Does the assistant ever make things up?" (No — only from approved FAQs, real system data, or a human handoff). "How many customers do you have?" (Honestly newly launched — real working software, no public customer count yet). "Which AI model powers this?" (Not tied to one vendor — automatic failover across several providers). "Is there a contract?" (Month-to-month on Free/Professional/Business, Enterprise negotiated).
+
+**Navigation and CTAs that need to exist somewhere**: a way to reach the demo ("Message a live organization" / "Open the demo"), a way to sign up ("Start free — it's yours in minutes"), a link to the dashboard/login for existing customers, and the footer needs Privacy/Terms/Demo/Start-free links plus: "P2Less is a product of Hamzone Technologies, a registered Kenyan company."
 
 ### What NOT to build
 
