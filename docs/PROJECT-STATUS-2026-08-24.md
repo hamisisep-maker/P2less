@@ -30,7 +30,7 @@ Everything below is shipped, live-verified (not just typechecked), and deployed 
 
 **Registration & data model**: `useCases`/`channelsNeeded` capture what an org actually wants at signup (not sector-only); capability-based dashboard navigation shows only what's relevant to what a tenant actually uses.
 
-**Security hardening**: structural tenant isolation (an ORM-level Prisma extension auto-scoping all 27 tenant-scoped models, AsyncLocalStorage-backed — currently warn-only after a real production incident, see the Operations Guide for the full story); SSRF guard shared across every server-side fetch of a tenant-supplied URL, with IP-pinning closing a DNS-rebinding TOCTOU window (2026-08-24); `CREDENTIAL_KEY` rotated from a guessable placeholder to a real random key; five trial-abuse hardening items on `/onboard` (email canonicalization, signup rate-limiting, real phone OTP, admin anomaly alerts, Stripe card-on-file).
+**Security hardening**: structural tenant isolation (an ORM-level Prisma extension auto-scoping all 27 tenant-scoped models, AsyncLocalStorage-backed — currently warn-only after a real production incident, see the Operations Guide for the full story); SSRF guard shared across every server-side fetch of a tenant-supplied URL, with IP-pinning closing a DNS-rebinding TOCTOU window (2026-08-24); `CREDENTIAL_KEY` rotated from a guessable placeholder to a real random key; five trial-abuse hardening items on `/onboard` (email canonicalization, signup rate-limiting, real phone OTP, admin anomaly alerts, Stripe card-on-file); real WhatsApp Cloud API token-health monitoring (2026-08-24) — a silently revoked shared platform token now opens a real Incident instead of going undetected.
 
 **Growth features**: auto-publish new products to Facebook/Instagram (zero ongoing human login), resume-on-refresh for every multi-step flow, real website-content crawling into draft FAQs.
 
@@ -46,8 +46,7 @@ All 18 items, grouped by provider, each with exact next steps: [`EXTERNAL-REGIST
 
 ### Genuine, unblocked engineering work still open
 
-- **WhatsApp access-token health monitoring** — 🔧 **IN PROGRESS, started 2026-08-24.** The platform's shared WhatsApp Cloud API token has no live validity check today; a silent revocation would go undetected. Being built now (a shared Meta `debug_token` health-check helper, wired into the existing integration-health sweep and a new incident-detection check).
-- **Messenger media/postback handling** — today's Messenger slice is text-only; no image/attachment or button-postback handling yet.
+- **Messenger media/postback handling** — 🔧 **NEXT UP.** today's Messenger slice is text-only; no image/attachment or button-postback handling yet.
 - **Public Feedback / Quality Centre** — only Phase A (support-ticket triage dashboard) is shipped. The `TestExercise`/`TestCase`/`Finding`/`AssuranceReport` model, PDF reports, public feedback channels, and the ROI/evaluation layer are still design-only. See `PUBLIC-FEEDBACK-QUALITY-CENTRE-2026-08-23.md`.
 - **Phase 5 workflow engine** — 4 flows (`awaiting_otp`, `awaiting_identify`, `awaiting_cv_details`, `awaiting_delivery_feedback`) were deliberately left bespoke rather than migrated to the generic engine; may stay that way permanently.
 - **`resolveFieldConflict()`** (Phase 4) — built and tested, zero live callers yet; no tenant has two connectors to the same external system to trigger a real conflict.
