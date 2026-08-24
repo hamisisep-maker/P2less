@@ -65,6 +65,19 @@ export const SETTING_DEFAULTS = {
   // no other off switch; this is it, checked both in the page (hides the
   // form) and in the server action itself (blocks a direct call too).
   public_registration_enabled: 1,
+
+  // ── Public Feedback / Quality Centre, Phase B (src/app/page.tsx) ────────
+  // Default OFF — this is deliberately the ONE setting on this whole list
+  // that starts off, not on: Phase A (docs/PUBLIC-FEEDBACK-QUALITY-CENTRE-
+  // 2026-08-23.md) is triage-workflow-only, and the reporting mechanism
+  // itself (the P2Less-official widget) already works for anyone who
+  // messages it regardless of this flag — this ONLY controls whether the
+  // public "found a bug? tell us" invitation is actually DISPLAYED on the
+  // landing page. The explicit reason this exists as a real toggle rather
+  // than a code change when the time comes: the user wants to run an
+  // invite-only pilot first and flip this on personally once ready, on
+  // their own timing, not have that decision baked into a deploy.
+  quality_feedback_invitation_enabled: 0,
 } as const;
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;

@@ -88,3 +88,29 @@ export async function setPublicRegistrationEnabledAction(enabled: boolean, reaso
   revalidatePath("/admin/system-health");
   return { ok: true };
 }
+
+/** The Public Feedback / Quality Centre's Phase B invitation, shown on the
+ *  landing page (docs/PUBLIC-FEEDBACK-QUALITY-CENTRE-2026-08-23.md). The
+ *  reporting mechanism (the widget) already works for anyone regardless of
+ *  this setting — this ONLY controls whether the public invitation copy is
+ *  DISPLAYED, so the user can run an invite-only pilot first and switch to
+ *  public on their own timing, not a date baked into a deploy. Same low-
+ *  blast-radius shape as public registration: reused permission, required
+ *  reason, no typed confirmation. */
+export async function setQualityFeedbackInvitationEnabledAction(enabled: boolean, reason: string) {
+  if (!reason?.trim()) return { error: "A reason is required." };
+  let admin;
+  try {
+    admin = await assertAdminPermission("maintenance.manage");
+  } catch (e) {
+    if (isForbidden(e)) return { error: e.message };
+    throw e;
+  }
+  await setSetting("quality_feedback_invitation_enabled", enabled ? "1" : "0");
+  await logPrivilegedAction({
+    admin, permission: "maintenance.manage", action: enabled ? "admin.quality_feedback_invitation_enabled" : "admin.quality_feedback_invitation_disabled", reason,
+  });
+  revalidatePath("/");
+  revalidatePath("/admin/system-health");
+  return { ok: true };
+}

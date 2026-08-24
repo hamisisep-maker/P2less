@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { runCrossTenant } from "@/lib/tenant-context";
+import { getSetting } from "@/lib/platform-settings";
 import { Logo } from "@/components/ui";
 import { AudienceOrbit } from "./audience-orbit";
 import { AudienceTabs } from "./audience-tabs";
@@ -40,6 +41,11 @@ export default async function Landing() {
   // applies to a public marketing page, a category the audit missed.
   const numbers = await runCrossTenant(() => db.whatsAppNumber.findMany({ where: { status: "active" }, include: { tenant: true } }));
   const industries = Array.from(new Set(numbers.map((n) => n.tenant.industry)));
+  // Public Feedback / Quality Centre, Phase B (docs/PUBLIC-FEEDBACK-QUALITY-
+  // CENTRE-2026-08-23.md) — admin-controlled via /admin/system-health, off
+  // by default. The widget below already accepts reports either way; this
+  // only controls whether the invitation is publicly advertised.
+  const qualityFeedbackInvitationEnabled = (await getSetting("quality_feedback_invitation_enabled")) === "1";
 
   return (
     <div className="min-h-screen">
@@ -251,6 +257,19 @@ export default async function Landing() {
             <FaqAccordion faqs={LANDING_FAQS} />
           </div>
         </section>
+
+        {/* Public Feedback / Quality Centre invitation — admin-controlled,
+            /admin/system-health, off by default. */}
+        {qualityFeedbackInvitationEnabled && (
+          <section className="py-12">
+            <div className="mx-auto max-w-2xl rounded-2xl border border-line bg-surface p-6 text-center">
+              <h2 className="font-display text-lg font-bold tracking-tight">Try to break it.</h2>
+              <p className="mx-auto mt-2 max-w-md text-sm text-muted">
+                If P2Less gives you something wrong, confusing, unexpected, or suspicious, tell us through the chat in the bottom-right corner — we review every report by hand before anything changes.
+              </p>
+            </div>
+          </section>
+        )}
       </main>
 
       <footer className="border-t border-line-soft">

@@ -7,6 +7,7 @@ import { StatusBadge } from "./status-badge";
 import { MetricsSection } from "./metrics-section";
 import { MaintenanceCard } from "./maintenance-card";
 import { RegistrationCard } from "./registration-card";
+import { QualityFeedbackCard } from "./quality-feedback-card";
 
 const VALID_RANGES: MetricsRange[] = ["1h", "24h", "7d", "30d"];
 
@@ -15,13 +16,14 @@ export default async function AdminSystemHealthPage({ searchParams }: { searchPa
   const { range: rawRange } = await searchParams;
   const range: MetricsRange = VALID_RANGES.includes(rawRange as MetricsRange) ? (rawRange as MetricsRange) : "24h";
 
-  const [h, metrics, maintenanceEnabled, maintenanceReason, maintenanceStartedAt, registrationEnabled] = await Promise.all([
+  const [h, metrics, maintenanceEnabled, maintenanceReason, maintenanceStartedAt, registrationEnabled, qualityFeedbackEnabled] = await Promise.all([
     getSystemHealthOverview(),
     getSystemMetrics(range),
     getSetting("maintenance_enabled"),
     getSetting("maintenance_reason"),
     getSetting("maintenance_started_at"),
     getSetting("public_registration_enabled"),
+    getSetting("quality_feedback_invitation_enabled"),
   ]);
 
   const categories: { label: string; summary: typeof h.platform }[] = [
@@ -127,6 +129,7 @@ export default async function AdminSystemHealthPage({ searchParams }: { searchPa
       {hasAdminPermission(admin, "maintenance.manage") && (
         <div className="mt-4 space-y-4">
           <RegistrationCard enabled={registrationEnabled === "1"} />
+          <QualityFeedbackCard enabled={qualityFeedbackEnabled === "1"} />
           <MaintenanceCard enabled={maintenanceEnabled === "1"} reason={maintenanceReason} startedAt={maintenanceStartedAt} />
         </div>
       )}
