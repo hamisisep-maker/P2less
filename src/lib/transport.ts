@@ -86,6 +86,25 @@ export async function fetchWhatsAppMedia(mediaId: string, fromNumberId?: string 
   }
 }
 
+/** Download a Messenger attachment (image/audio/video/file) → base64 + mime
+ *  type. One hop, unlike WhatsApp's two — Messenger's own `attachments[].
+ *  payload.url` (confirmed against Meta's Send/webhook docs) is already a
+ *  directly-fetchable, short-lived CDN link, no access token needed. Mime
+ *  type is read from the real response header rather than trusted from the
+ *  attachment's own `type` field (image/audio/video/file — not a real MIME
+ *  type), same as WhatsApp's own fallback-by-content-type convention. */
+export async function fetchMessengerAttachment(url: string): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    const mimeType = (res.headers.get("content-type") || "application/octet-stream").split(";")[0];
+    return { base64: buf.toString("base64"), mimeType };
+  } catch {
+    return null;
+  }
+}
+
 /** Send a plain WhatsApp text directly (for system-level notes like "couldn't
  *  hear that voice note") without going through the metered conversation pipeline. */
 export async function sendWhatsAppText(fromNumberId: string, to: string, body: string): Promise<void> {
@@ -170,24 +189,56 @@ export async function deliver(msg: OutboundMessage): Promise<{ delivered: boolea
         if (process.env.NODE_ENV !== "production") console.log(`[messenger:not-configured →${msg.to}] ${msg.body}`);
         return { delivered: false, transport: "messenger:not-configured", error: "Messenger Page token not configured" };
       }
-      try {
-        // Send API contract confirmed against Meta's own docs: POST
-        // /{PAGE_ID}/messages?access_token=..., body {recipient,messaging_type,message}.
-        const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${msg.fromPageId}/messages?access_token=${encodeURIComponent(token)}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ recipient: { id: msg.to }, messaging_type: "RESPONSE", message: { text: msg.body } }),
-        });
-        if (!res.ok) {
-          const detail = await res.text().catch(() => "");
-          console.error(`[messenger:send-failed ${res.status}] ${detail.slice(0, 300)}`);
-          return { delivered: false, transport: "messenger", error: `Send API ${res.status}` };
+      // Send API contract confirmed against Meta's own docs: POST
+      // /{PAGE_ID}/messages?access_token=..., body {recipient,messaging_type,message}.
+      // Unlike WhatsApp's combined image+caption message, Meta's own docs
+      // don't demonstrate combining text and an attachment in one message
+      // object — an attachment message carries `message.attachment`, not
+      // `message.text`, so a caption goes out as its own preceding text
+      // message (the same two-message shape a human sending "here's your
+      // file" + the file would produce).
+      const sendOne = async (body: Record<string, unknown>): Promise<{ ok: boolean; status?: number; detail?: string }> => {
+        try {
+          const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${msg.fromPageId}/messages?access_token=${encodeURIComponent(token)}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          if (!res.ok) return { ok: false, status: res.status, detail: (await res.text().catch(() => "")).slice(0, 300) };
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, detail: e instanceof Error ? e.message : "network error" };
+        }
+      };
+
+      const attachmentPayload = msg.image
+        ? { type: "image", payload: { url: msg.image.url, is_reusable: true } }
+        : msg.document
+        ? { type: "file", payload: { url: msg.document.url, is_reusable: true } }
+        : null;
+
+      if (attachmentPayload) {
+        // Caption first (if any), THEN the file — mirrors sending order a
+        // human would use, and means a caption-fetch/attachment-send
+        // failure never hides the other half silently.
+        if (msg.body.trim()) {
+          const textResult = await sendOne({ recipient: { id: msg.to }, messaging_type: "RESPONSE", message: { text: msg.body } });
+          if (!textResult.ok) console.error(`[messenger:send-failed ${textResult.status ?? ""}] ${textResult.detail}`);
+        }
+        const fileResult = await sendOne({ recipient: { id: msg.to }, messaging_type: "RESPONSE", message: { attachment: attachmentPayload } });
+        if (!fileResult.ok) {
+          console.error(`[messenger:send-failed ${fileResult.status ?? ""}] ${fileResult.detail}`);
+          return { delivered: false, transport: "messenger", error: `Send API ${fileResult.status ?? fileResult.detail}` };
         }
         return { delivered: true, transport: "messenger" };
-      } catch (e) {
-        console.error("[messenger:send-error]", e);
-        return { delivered: false, transport: "messenger", error: "network error" };
       }
+
+      const result = await sendOne({ recipient: { id: msg.to }, messaging_type: "RESPONSE", message: { text: msg.body } });
+      if (!result.ok) {
+        console.error(`[messenger:send-failed ${result.status ?? ""}] ${result.detail}`);
+        return { delivered: false, transport: "messenger", error: `Send API ${result.status ?? result.detail}` };
+      }
+      return { delivered: true, transport: "messenger" };
     }
 
     case "telegram": {
