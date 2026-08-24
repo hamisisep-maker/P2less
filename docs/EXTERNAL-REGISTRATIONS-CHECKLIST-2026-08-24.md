@@ -4,16 +4,21 @@
 
 **How to use this doc**: work items in any order — none block each other except where noted. When an item is finished, mark it `✅ DONE <date>` in place (don't delete the row — keep the history) and, if it unblocks follow-on engineering work (e.g. Resend inbound → the email channel actually testable), say so in the chat so the next step gets picked up.
 
+**Evidence audit, 2026-08-24**: every item below was re-verified against real, current evidence today — the user's own live, logged-in Meta Business Manager session (via a connected browser), the Railway CLI (`railway variables`), and this app's own database — not re-stated from memory. Each item now carries an **Evidence** line citing exactly what was checked. Three real findings came out of this pass: a new, time-sensitive risk (below), one item corrected as already shipped, and one item's stated problem corrected to match what's actually true today.
+
+> ⚠️ **New, urgent finding — Meta Access (Tech Provider) verification, not previously tracked separately from Business Verification.** Live-checked in Meta Business Suite → Business info → Access verification status: **"Not verified — Your business was not verified as a Tech Provider and API calls to certain permissions and features in advanced access will begin to be blocked."** This is Meta's own live warning, not a hypothetical — it threatens the WhatsApp/Messenger integration that's already working in production today, not just the paused Phase 9 work. It's closely related to item #1 (Business Verification) but is a distinct status Meta tracks separately, and its consequence (active features breaking) is more urgent than #1's framing as "deliberately deferred" suggests. Worth treating as higher priority than its position in this list implies — see item #1 for the actual next action, since completing Business Verification is what resolves both.
+
 ---
 
 ## Meta (WhatsApp, Messenger, Instagram) — one Business Manager, one App (`2450932552082438`, "Hamzone Technologies")
 
 ### 1. WhatsApp — Business Verification
-- **Status**: not started. Deliberately deferred 2026-08-21 ("keep building around it for now").
+- **Status**: not started. Deliberately deferred 2026-08-21 ("keep building around it for now") — but see the urgent-finding callout above, since the consequence of staying deferred is now more concrete than when that call was made.
+- **Evidence (2026-08-24, live)**: Meta Business Suite → Settings → Business info: "Business verification status: **Unverified** — Your business must be verified to access certain Meta products." Directly below it, "Access verification status: **Not verified** — API calls to certain permissions and features in advanced access will begin to be blocked."
 - **Next action**: log into the Meta Business Manager (Hamzone Technologies portfolio) as an admin → complete "Verify your business" under the Tech Provider onboarding checklist. Needs real legal/business identity documents.
 - **Blocked on**: you directly — Meta requires the actual Business Manager admin to do this, not driveable by browser automation on your behalf.
-- **Unblocks**: WhatsApp App Review submission (#3 below), and possibly Coexistence mode (unconfirmed prerequisite, see #4).
-- **Source**: roadmap §Phase 9, lines 663, 667.
+- **Unblocks**: WhatsApp App Review submission (#3 below), possibly Coexistence mode (unconfirmed prerequisite, see #4), and clears the active-feature-blocking risk in the urgent finding above.
+- **Source**: roadmap §Phase 9, lines 663, 667; live-reverified 2026-08-24.
 
 ### 2. WhatsApp — a spare/test phone number for Embedded Signup
 - **Status**: paused — confirmed 2026-08-24 you don't have one ready yet.
@@ -35,30 +40,32 @@
 - **Blocked on**: the Business-Verification-prerequisite question is unresolved; you explicitly chose to wait for a spare number over testing this path (2026-08-22).
 - **Source**: roadmap §Phase 9, lines 694-696.
 
-### 5. WhatsApp — access-token expiry monitoring (a real, currently-open gap, not a registration task but adjacent)
-- **Status**: no live token-validity probe exists. If a number's access token silently expires or is revoked, nothing detects it — `checkWhatsAppHealth()` only checks recent message activity, not token validity.
-- **Next action**: worth confirming `WHATSAPP_ACCESS_TOKEN` is a genuine permanent System User token (Meta Business Settings → System Users → generate token, never expires unless revoked) rather than a 24-hour temporary one — if it's the latter, it will silently stop working. Not confirmed either way.
-- **Blocked on**: nothing external — this is a real engineering gap (build a token-validity health check, mirroring Messenger's `social_token_health_sweep`) that can be picked up anytime.
-- **Source**: `SYSTEM-DISCOVERY-2026-08-19.md` line 53.
+### 5. WhatsApp — access-token expiry monitoring — ✅ DONE 2026-08-24
+- **Status**: **shipped.** A real live-check via Meta's `debug_token` endpoint now runs inside `checkWhatsAppHealth()` (shared with Messenger's own check via `src/lib/meta-token-health.ts`), and a new incident-detection check opens a real platform Incident if the shared token ever goes invalid. Full detail: Operations Guide §66.
+- **Still open, not this item's scope**: whether `WHATSAPP_ACCESS_TOKEN` is a genuine permanent System User token vs. a 24-hour temporary one is unconfirmed either way — but it no longer matters silently, since it would now be actively detected and alerted on the moment it died, regardless of which kind it is.
+- **Source**: `SYSTEM-DISCOVERY-2026-08-19.md` line 53; shipped 2026-08-24, `OPERATIONS-GUIDE-2026-08-23.md` §66.
 
 ### 6. Messenger — add the test sender as a Meta App Tester
 - **Status**: NOT done, despite an earlier chat exchange that briefly said otherwise — corrected by you directly (2026-08-21). Paused on the "Add people to your app" → Roles → Tester screen, with "Tester" already selected as the role.
-- **Next action**: search for and confirm the invite for the specific Facebook account that will send the test message; that account then needs to accept the invite; then resend a real message from that account to the connected Page ("Hamzone Technologies LTD").
+- **Evidence (2026-08-24, live)**: App roles page shows **"Testers 0 of 50"** — confirmed zero testers currently added, matching this status exactly.
+- **Next action**: search for and confirm the invite for the specific Facebook account that will send the test message; that account then needs to accept the invite; then resend a real message from that account to the connected Page ("Hamzone Technologies LTD"). **I don't know which Facebook account this should be** — tell me the account (or handle it yourself directly in the App roles → Testers screen) and I can add the invite for you once you confirm who.
 - **Blocked on**: you (or whoever controls that Facebook account) completing the invite-accept step — I can't act on someone else's Facebook login.
 - **Unblocks**: proving the full Messenger inbound round-trip (webhook → `handleInbound()` → grounded reply → Send API) end-to-end. Everything on P2Less's own side is already built, deployed, and correctly wired.
 - **Source**: roadmap §Phase 8a, lines 214-215.
 
 ### 7. Instagram DMs — App Review (no dev-mode exception, unlike Messenger)
-- **Status**: not started at all. `instagram_basic`/`instagram_manage_messages` both require App Review with zero dev-mode testing exception — genuinely different from Messenger's "Ready for testing" permissions.
+- **Status**: not started at all. `instagram_business_manage_messages` (the current permission name — Meta's own dashboard, not `instagram_manage_messages` as earlier written) requires App Review with zero dev-mode testing exception — genuinely different from Messenger's "Ready for testing" permissions.
+- **Evidence (2026-08-24, live)**: Instagram API → Permissions and features → `instagram_business_manage_messages` shows **no approval status and no request status at all** ("—"/"—") — confirms not merely pending, genuinely never requested.
 - **Next action**: submit alongside WhatsApp's App Review (#3) if you want to batch it — video documentation can be shared/reused.
 - **Blocked on**: a deliberate reordering decision already made — build and fully live-test Messenger first, submit Instagram in parallel.
-- **Source**: roadmap §Phase 8a, line 197.
+- **Source**: roadmap §Phase 8a, line 197; live-reverified 2026-08-24.
 
 ### 8. Phase 8c (auto-publish to Facebook/Instagram) — real permission re-verification
-- **Status**: code built and structurally correct against Meta's documented contracts, but the live dashboard state for `pages_manage_posts`/`instagram_content_publish` hasn't been re-confirmed this session (the browser tool was disconnected when this phase was built).
-- **Next action**: a real click-through — reconnect a Page, check the requested-permissions screen, attempt a real publish.
-- **Blocked on**: nothing except doing the click-through; not a registration task, just unverified.
-- **Source**: roadmap §Phase 8c, line 248.
+- **Status**: code built and structurally correct against Meta's documented contracts. **Corrected 2026-08-24 — the real gap is bigger than "unconfirmed":** neither permission has been requested at all yet, not just unverified.
+- **Evidence (2026-08-24, live)**: `instagram_content_publish` shows no approval/request status ("—"/"—"), same as `instagram_business_manage_messages` above. `pages_manage_posts` doesn't even appear in the app's current Messenger permission list — checked the "Add more use cases" dialog directly, and its parent use case ("Manage everything on your Page" — the Pages API, which is what would carry `pages_manage_posts`) is still listed under **available to add**, meaning it was never added to this app at all.
+- **Next action**: add the "Manage everything on your Page" use case (via Use cases → Add use cases → Content management), then request `pages_manage_posts` there, alongside Instagram's App Review (#7) and WhatsApp's (#3) — this is a real registration step, not just a click-through to re-check something already working.
+- **Blocked on**: nothing except doing it — but it's real setup work, not just verification as previously stated.
+- **Source**: roadmap §Phase 8c, line 248; live-reverified and corrected 2026-08-24.
 
 ---
 
@@ -83,6 +90,7 @@
 
 ### 10. Resend Inbound dashboard setup
 - **Status**: not started (confirmed directly against both local `.env` and Railway production variables 2026-08-24 — `RESEND_INBOUND_DOMAIN`/`RESEND_WEBHOOK_SECRET` are unset in both).
+- **Evidence (re-checked 2026-08-24)**: `railway variables` shows neither key present; local `.env` shows neither key present. Unchanged since first confirmed.
 - **Next action** (walked through in chat 2026-08-24, reproduced here for permanence):
   1. Pick a receiving domain: **fast path** — use Resend's auto-provisioned `.resend.app` domain (zero DNS work, ready instantly); **or** a custom domain/subdomain (needs MX records — use a *subdomain* if your root domain already has real MX records for existing email, to avoid conflicts). Found at [resend.com/emails](https://resend.com/emails) → **Receiving** tab → **⋯** menu → **Receiving address**.
   2. Create the webhook: [resend.com/webhooks](https://resend.com/webhooks) → **Add Webhook** → endpoint `https://p2less-app-production.up.railway.app/api/channels/email/webhook` → event **`email.received`** only → **Add**.
@@ -108,6 +116,7 @@
 
 ### 12. Daraja production "Go-Live" application
 - **Status**: `MPESA_ENV="sandbox"` — real STK pushes work end-to-end today, confirmed reaching a real phone, but against Safaricom's sandbox environment, not real production payments.
+- **Evidence (2026-08-24)**: `railway variables` confirms `MPESA_ENV=sandbox` live in production right now. Unchanged.
 - **Next action**: Safaricom's Daraja portal (developer.safaricom.co.ke) has a formal Go-Live application process to get a production shortcode/passkey/consumer-key+secret — this is a real business-verification-style process with Safaricom, separate from the sandbox credentials already in use.
 - **Blocked on**: you — this needs real business banking/paybill details tied to Hamzone Technologies.
 - **Source**: `.env` comments; not yet written up in the roadmap doc (recorded here for the first time).
@@ -118,18 +127,20 @@
 
 ### 13. Cerebras — `402 Payment Required` on every call
 - **Status**: kept configured as a harmless no-op in the failover chain; needs a payment method added at cloud.cerebras.ai billing.
+- **Evidence (2026-08-24, live query against real `AiProviderStat` rows, today's date)**: 502 calls, 0 successes, 502 failures — every single one the identical error: `"Payment required to access this resource. Visit your billing tab."` Confirmed still genuinely broken, not intermittent.
 - **Next action**: add billing at cloud.cerebras.ai.
-- **Source**: roadmap line 477.
+- **Source**: roadmap line 477; live-reconfirmed 2026-08-24.
 
 ### 14. Anthropic — `400 credit balance too low`
 - **Status**: same shape as Cerebras — needs credits purchased on the Anthropic Console.
+- **Evidence (2026-08-24, live query, today's date)**: 498 calls, 0 successes, 498 failures — every one: `"Your credit balance is too low to access the Anthropic API."` Confirmed still genuinely broken.
 - **Next action**: top up credits at console.anthropic.com.
-- **Source**: roadmap line 477.
+- **Source**: roadmap line 477; live-reconfirmed 2026-08-24.
 
-### 15. `OPENAI_API_KEY`/`XAI_API_KEY` — configured in Railway but not reaching the running container
-- **Status**: a real, unresolved discrepancy — both show as set via `railway variables`, but direct container inspection confirmed they are NOT present in the actual running environment. Full key values aren't visible to diagnose further without your involvement.
-- **Next action**: re-set both variables directly (delete and re-add, in case of a stale/corrupted entry) and confirm via a fresh deploy that they're actually present in the container.
-- **Source**: roadmap line 477.
+### 15. `OPENAI_API_KEY`/`XAI_API_KEY` — corrected 2026-08-24, the real current state is simpler than previously written
+- **Status**: the roadmap's original claim ("both show as set via `railway variables`, but the running container doesn't actually receive them") is **stale and no longer accurate**. Re-checked directly 2026-08-24: `railway variables` today shows **neither key present at all** (only their companion `_MODEL` vars, `XAI_MODEL`/etc., are set) — and local `.env` shows both as empty strings. There is no longer a "configured but not reaching the container" mismatch to diagnose; the real, current state is just "not configured," full stop — either the earlier finding was itself stale, or the keys were removed since. Either way, don't spend effort re-diagnosing a container/env mismatch that isn't the actual problem today.
+- **Next action**: if you want OpenAI/xAI in the failover chain, set both keys fresh in Railway (`railway variables --set OPENAI_API_KEY=... --set XAI_API_KEY=...`) — a normal first-time setup, not a fix for a broken sync.
+- **Source**: roadmap line 477 (original, now stale claim); corrected against live `railway variables` output and local `.env`, 2026-08-24.
 
 ---
 
@@ -153,17 +164,19 @@
 
 ## Quick-reference summary — sorted by effort to close
 
+*Updated 2026-08-24 after a full live evidence re-check. Item #5 is done — dropped from this table. ⚠️ marks the new urgent finding.*
+
 | # | Item | Effort | Blocked on |
 |---|---|---|---|
 | 9 | Telegram real bot token | **Minutes** — free, instant, self-service | Nothing |
 | 10 | Resend Inbound setup | **~15 min** — self-service dashboard | Nothing |
-| 6 | Messenger Tester invite | **Minutes**, once you're at a computer | Accepting the invite on the test FB account |
-| 13, 14 | Cerebras/Anthropic billing | **Minutes** — add a card | Nothing |
-| 15 | OpenAI/xAI Railway var mismatch | **Minutes** to re-set, but needs verifying | Nothing |
-| 8 | Phase 8c permission re-check | **Minutes** — one click-through | Nothing |
+| 6 | Messenger Tester invite | **Minutes**, once you tell me which FB account | Which Facebook account to invite |
+| 13, 14 | Cerebras/Anthropic billing | **Minutes** — add a card | Nothing — confirmed still failing on every call today |
+| 15 | OpenAI/xAI not configured | **Minutes** — first-time setup, not a fix | Nothing — corrected: no mismatch to diagnose, just unset |
+| 8 | Phase 8c — add the missing Pages use case + request permissions | **~15-30 min**, real setup | Nothing — corrected: was never requested, not just unverified |
 | 11 | Real SMS provider account | **~1 day** — provider signup + verification | Choosing/signing up with a provider |
 | 2, 4 | WhatsApp spare number / Coexistence | **Depends on number availability** | You having a spare number |
-| 1 | WhatsApp Business Verification | **Days-weeks** — Meta's own review | Your business identity docs |
+| ⚠️ 1 | WhatsApp Business Verification (+ resolves the Access/Tech-Provider warning) | **Days-weeks** — Meta's own review | Your business identity docs — see the urgent finding above |
 | 3, 7 | App Review (WhatsApp + Instagram) | **Days-weeks** — Meta's own review | Item #1 landing first (recommended) |
 | 12 | M-Pesa Go-Live | **Days-weeks** — Safaricom's own review | Your business/banking details |
 | 16-18 | X / LinkedIn / TikTok | **Not started, no urgency** | A future prioritization decision |
