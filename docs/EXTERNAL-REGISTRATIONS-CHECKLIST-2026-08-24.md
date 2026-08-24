@@ -66,9 +66,16 @@
 
 ### 9. A real `@BotFather`-created bot token
 - **Status**: fully built, error path live-verified against a deliberately fake token. Never tested against a real token.
-- **Next action**: create a bot via Telegram's `@BotFather` (free, instant, no approval process at all — the easiest external registration on this whole list), paste the token into `/dashboard/channels`, send it a real message.
-- **Blocked on**: nothing — this is the single fastest item on this entire checklist to close.
-- **Source**: roadmap §Phase 8d, line 261.
+- **Next action** (walked through in chat 2026-08-24, reproduced here for permanence):
+  1. Open Telegram (app or [web.telegram.org](https://web.telegram.org)) on your own account.
+  2. Search for **@BotFather** (the official bot, verified) and start a chat.
+  3. Send `/newbot`.
+  4. Give it a **display name** (anything, e.g. "Hamzone Support"), then a **username** — must be unique and end in `bot` (e.g. `HamzoneSupportBot`).
+  5. BotFather replies with the token — looks like `123456789:ABCdefGhIJKlmNoPQRsTUVwxyz`.
+  6. Paste that token directly into the **Connect Telegram** form on `/dashboard/channels` yourself (not through chat — same reason a live credential never gets typed into the conversation; it validates via a real `getMe` call before saving anything).
+  7. Send the bot a real message from Telegram (search its username → Start → type anything) to prove the full inbound round-trip (webhook → `handleInbound()` → grounded reply → `sendTelegramText()`) — the one thing never yet tested against a real token.
+- **Blocked on**: nothing — this is the single fastest item on this entire checklist to close, no approval process at all.
+- **Source**: roadmap §Phase 8d, line 261; chat 2026-08-24.
 
 ---
 
