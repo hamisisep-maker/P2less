@@ -14,7 +14,16 @@ function run(cmd) {
   execSync(cmd, { stdio: "inherit" });
 }
 
-run("npx prisma db push --skip-generate");
+// TEMPORARY, 2026-08-24: --accept-data-loss for exactly ONE boot, to apply
+// the new Channel @@unique([type, address]) constraint. Prisma's static
+// check flags ANY new unique constraint as "could cause data loss" without
+// actually knowing whether real duplicates exist -- already independently
+// verified zero duplicates exist in production before this shipped. This
+// line gets reverted back to the safety-net version (no flag) in the very
+// next commit, once this boot confirms the schema is in sync -- this is
+// not meant to become permanent, since removing it entirely would also
+// silently wave through a genuinely destructive future change.
+run("npx prisma db push --skip-generate --accept-data-loss");
 
 const db = new PrismaClient();
 const tenantCount = await db.tenant.count();
