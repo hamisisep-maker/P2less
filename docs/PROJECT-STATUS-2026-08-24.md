@@ -26,7 +26,7 @@ Everything below is shipped, live-verified (not just typechecked), and deployed 
 
 **Conversation engine**: grounded AI with 7-provider automatic failover (never fabricates — explicit Known/Generated distinction in the prompts themselves), full RBAC, hash-chained tamper-evident audit logs (per-tenant and platform-wide), OTP step-up for sensitive data with a 180-day re-verification staleness gate (both for single actions and bundled overviews), conversational CRUD (book/reschedule/cancel), workflow-engine primitive live on 9 of 9 quantified conversation states.
 
-**Channels — live today**: WhatsApp (the original channel) and the embeddable website widget. **Built, needs one real-world step to prove the round-trip**: Facebook Messenger (a real Page is connected in production; needs a Meta App Tester invite accepted), Telegram (needs a real `@BotFather` token), Email via Resend Inbound (needs the Resend dashboard configured). **Not started**: Instagram DMs (blocked on Meta App Review), WhatsApp self-service onboarding for other tenants (Phase 9, paused on a spare test number).
+**Channels — live today**: WhatsApp (the original channel) and the embeddable website widget. **Built, needs one real-world step to prove the round-trip**: Facebook Messenger — now handles media attachments and postback buttons too (2026-08-24), not just text; a real Page is connected in production, still needs a Meta App Tester invite accepted to prove a real inbound round-trip — Telegram (needs a real `@BotFather` token), Email via Resend Inbound (needs the Resend dashboard configured). **Not started**: Instagram DMs (blocked on Meta App Review), WhatsApp self-service onboarding for other tenants (Phase 9, paused on a spare test number).
 
 **Registration & data model**: `useCases`/`channelsNeeded` capture what an org actually wants at signup (not sector-only); capability-based dashboard navigation shows only what's relevant to what a tenant actually uses.
 
@@ -46,8 +46,7 @@ All 18 items, grouped by provider, each with exact next steps: [`EXTERNAL-REGIST
 
 ### Genuine, unblocked engineering work still open
 
-- **Messenger media/postback handling** — 🔧 **NEXT UP.** today's Messenger slice is text-only; no image/attachment or button-postback handling yet.
-- **Public Feedback / Quality Centre** — only Phase A (support-ticket triage dashboard) is shipped. The `TestExercise`/`TestCase`/`Finding`/`AssuranceReport` model, PDF reports, public feedback channels, and the ROI/evaluation layer are still design-only. See `PUBLIC-FEEDBACK-QUALITY-CENTRE-2026-08-23.md`.
+- **Public Feedback / Quality Centre** — 🔧 **NEXT UP.** Only Phase A (support-ticket triage dashboard) is shipped. The `TestExercise`/`TestCase`/`Finding`/`AssuranceReport` model, PDF reports, public feedback channels, and the ROI/evaluation layer are still design-only. See `PUBLIC-FEEDBACK-QUALITY-CENTRE-2026-08-23.md`.
 - **Phase 5 workflow engine** — 4 flows (`awaiting_otp`, `awaiting_identify`, `awaiting_cv_details`, `awaiting_delivery_feedback`) were deliberately left bespoke rather than migrated to the generic engine; may stay that way permanently.
 - **`resolveFieldConflict()`** (Phase 4) — built and tested, zero live callers yet; no tenant has two connectors to the same external system to trigger a real conflict.
 
