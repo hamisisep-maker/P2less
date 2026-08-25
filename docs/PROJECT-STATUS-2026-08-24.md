@@ -72,4 +72,4 @@ Mode 2 outbound/proactive messaging (marketing, notifications, follow-ups to kno
 
 ---
 
-*Last updated: 2026-08-25 (Forgot-password flow shipped — real reset-link email, hashed single-use tokens, all other sessions revoked on reset; plus the Phase 2 "Explore" hub and a large landing-page redesign pass, both shipped the same day). Update this doc (and push it) in the same round as any change that ships, closes an external item, or surfaces a new gap — don't let it go stale.*
+*Last updated: 2026-08-25 (Login/forgot-password/reset-password redesigned — shared shell, gradient panel instead of flat black, the homepage's live multi-channel demo running in the background, real Hamzone/version attribution; plus forgot-password itself, the Phase 2 "Explore" hub, and a large landing-page redesign pass, all shipped the same day). Update this doc (and push it) in the same round as any change that ships, closes an external item, or surfaces a new gap — don't let it go stale.*

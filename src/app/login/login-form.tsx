@@ -31,7 +31,7 @@ export function LoginForm({ accounts }: { accounts: Account[] }) {
 
       {accounts.length > 0 && (
         <div className="rounded-xl border border-line bg-surface-2 p-3 text-xs">
-          <div className="mb-1.5 font-medium text-muted">Demo accounts — password: <code>password</code></div>
+          <div className="mb-1.5 font-medium text-muted">Demo accounts, password: <code>password</code></div>
           <div className="space-y-1">
             {accounts.map((a) => (
               <div key={a.email} className="flex justify-between">
