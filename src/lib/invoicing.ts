@@ -10,6 +10,7 @@ import { assertChannelEnabled } from "./payment-channels";
 import { randomToken } from "./crypto";
 import { computeProration } from "./proration";
 import { settleInvoice, nextInvoiceNumber, normalizeInvoiceRef, loadFreshInvoiceForAction } from "./invoice-settlement";
+import { createCheckoutSession, retrieveCheckoutSessionUrl, isConfigured as stripeConfigured } from "./stripe";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Invoice-centric paid-upgrade flow, 2026-08-25 — the Invoice IS the primary
@@ -184,5 +185,74 @@ export async function initiateInvoiceStkPaymentAction(invoiceId: string, phone: 
     }
     await db.payment.update({ where: { id: payment.id }, data: { providerRef: res.checkoutId } });
     return { ok: true, ref: reference, checkoutId: res.checkoutId, message: res.customerMessage };
+  });
+}
+
+/** Card (Stripe), 2026-08-25 — real availability, not assumed. Same shape as
+ *  getPaybillInfo(): checks the existing channel gate AND that Stripe is
+ *  actually configured (secret + publishable keys) before ever showing
+ *  Visa/Card as available. */
+export async function getCardInfo(): Promise<{ available: boolean }> {
+  const channelCheck = await assertChannelEnabled("card");
+  if (!channelCheck.ok) return { available: false };
+  return { available: stripeConfigured() };
+}
+
+type InitiateCardPaymentResult = { ok: true; url: string } | { error: string };
+
+/** Redirects to Stripe's real hosted Checkout page — no card form of any
+ *  kind lives in this app, so there's nothing here for PCI scope to touch.
+ *  Same invoicePendingKey compare-and-swap as STK: a second concurrent
+ *  attempt hits the P2002 and is handed the existing session's URL instead
+ *  of minting a duplicate Checkout Session. */
+export async function initiateInvoiceCardPaymentAction(invoiceId: string): Promise<InitiateCardPaymentResult> {
+  return withTenantUser(async (user) => {
+    if (!userPermissions(user).includes(PERMISSIONS.BILLING_MANAGE)) return { error: "You don't have billing permission." };
+    const invoice = await db.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice || invoice.tenantId !== user.tenantId) return { error: "Invoice not found." };
+    const expiryHours = await getSettingNumber("invoice_expiry_hours");
+    if (invoice.createdAt.getTime() < Date.now() - expiryHours * 60 * 60 * 1000) return { error: "This invoice has expired — go back and start the upgrade again." };
+    if (invoice.status === "paid") return { error: "This invoice is already paid." };
+    if (invoice.status !== "awaiting_payment") return { error: "This invoice is no longer payable." };
+    if (invoice.payableKes <= 0) return { error: "Nothing is payable on this invoice." };
+
+    const channelCheck = await assertChannelEnabled("card");
+    if (!channelCheck.ok) return { error: channelCheck.error };
+    if (!stripeConfigured()) return { error: "Card payment isn't configured yet." };
+
+    const reference = "CARD-" + randomToken(4).toUpperCase();
+    let payment;
+    try {
+      payment = await db.payment.create({
+        data: {
+          tenantId: invoice.tenantId, invoiceId: invoice.id, invoicePendingKey: invoice.id,
+          reference, amount: invoice.payableKes, currency: invoice.currency,
+          purpose: "plan_change", method: "card", channelKey: "card", status: "pending", provider: "stripe",
+        },
+      });
+    } catch {
+      // P2002 on invoicePendingKey — another request already has a pending
+      // checkout in flight for this exact invoice. Re-fetch that SAME
+      // session's URL rather than minting a duplicate one.
+      const inFlight = await db.payment.findFirst({ where: { invoiceId: invoice.id, status: "pending", channelKey: "card" }, orderBy: { createdAt: "desc" } });
+      const url = inFlight?.providerRef ? await retrieveCheckoutSessionUrl(inFlight.providerRef) : null;
+      if (url) return { ok: true, url };
+      return { error: "Could not start payment — please try again." };
+    }
+
+    const base = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+    const session = await createCheckoutSession({
+      invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, payableKes: invoice.payableKes,
+      successUrl: `${base}/dashboard/billing?upgrade=success`,
+      cancelUrl: `${base}/dashboard/billing?upgrade=cancelled`,
+    });
+    if ("error" in session) {
+      await db.payment.update({ where: { id: payment.id }, data: { status: "failed", invoicePendingKey: null, failureCategory: "provider_error", failureReason: session.error } });
+      return { error: session.error };
+    }
+    // The real Stripe Checkout Session id (cs_...) — matches STK's
+    // providerRef convention exactly (Daraja's CheckoutRequestID there).
+    await db.payment.update({ where: { id: payment.id }, data: { providerRef: session.sessionId } });
+    return { ok: true, url: session.url };
   });
 }

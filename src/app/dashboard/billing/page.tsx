@@ -11,7 +11,8 @@ const STATUS_TONE: Record<string, "green" | "amber" | "rose" | "neutral" | "acce
   active: "green", trial: "accent", renewal_due: "amber", payment_pending: "amber", grace_period: "amber", suspended: "rose", cancelled: "neutral",
 };
 
-export default async function BillingPage() {
+export default async function BillingPage({ searchParams }: { searchParams: Promise<{ upgrade?: string }> }) {
+  const { upgrade } = await searchParams;
   return withTenantUser(async (user) => {
     const tenantId = user.tenantId!;
     const [bill, payments, sub, allPlans] = await Promise.all([
@@ -30,9 +31,37 @@ export default async function BillingPage() {
     const upgradeOptions = sub ? allPlans.filter((p) => p.sort > sub.plan.sort && !p.postpaidUsage) : [];
     const pendingPlan = sub?.pendingPlanId ? allPlans.find((p) => p.id === sub.pendingPlanId) : null;
 
+    // Card (Stripe), 2026-08-25 — the browser genuinely navigates away to
+    // Stripe's hosted Checkout and back, so this can't stay inside the
+    // modal's in-memory state the way STK/Paybill's polling does. Never
+    // claim "upgraded" just because ?upgrade=success is present — Stripe's
+    // webhook delivery is asynchronous and may not have landed yet by the
+    // time the browser redirects back. Checked against the REAL current
+    // state (a genuinely recent paid+applied invoice), same discipline as
+    // the dashboard bell — the query param only decides which honest
+    // message to show, never the fact of success itself.
+    let cardRedirectBanner: { tone: "green" | "amber" | "neutral"; text: string } | null = null;
+    if (upgrade === "success") {
+      const recentlyPaid = await db.invoice.findFirst({
+        where: { tenantId, status: "paid", appliedAt: { gte: new Date(Date.now() - 5 * 60 * 1000) } },
+        orderBy: { appliedAt: "desc" }, include: { toPlan: true },
+      });
+      cardRedirectBanner = recentlyPaid
+        ? { tone: "green", text: `Payment confirmed — your plan is now ${recentlyPaid.toPlan.name}.` }
+        : { tone: "amber", text: "Payment received — confirming now. This page will reflect your new plan within a moment; refresh if it doesn't update automatically." };
+    } else if (upgrade === "cancelled") {
+      cardRedirectBanner = { tone: "neutral", text: "Checkout was cancelled — no changes were made to your plan." };
+    }
+
     return (
       <div>
         <PageHeader title="Billing" subtitle={`Plan + usage for ${bill.periodLabel} — one simple monthly bill.`} />
+
+        {cardRedirectBanner && (
+          <Card className={`mb-4 p-4 ${cardRedirectBanner.tone === "green" ? "border-green/30 bg-green-soft" : cardRedirectBanner.tone === "amber" ? "border-amber/30 bg-amber-soft" : ""}`}>
+            <p className="text-sm font-medium">{cardRedirectBanner.text}</p>
+          </Card>
+        )}
 
         {sub && (
           <Card className="mb-4 p-4">

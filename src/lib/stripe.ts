@@ -83,3 +83,85 @@ export async function createCustomerWithCard(email: string, name: string, paymen
     return { error: "Could not save your card on file. Please try again." };
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Invoice-centric paid-upgrade flow, 2026-08-25 — real card charging, built
+// on Stripe's hosted Checkout (not Elements/PaymentIntent-direct — zero
+// custom card-form code needed, PCI scope stays entirely with Stripe). This
+// is a real charge, unlike createSetupIntent() above ($0, never charged).
+//
+// KES is a real two-decimal currency in Stripe (confirmed live against the
+// actual test-mode API before this was written — Kenyan Shilling doesn't
+// appear on Stripe's zero-decimal or special-case currency lists, matching
+// ISO 4217's minor-unit-2 designation) — amounts are sent in CENTS
+// (Math.round(payableKes * 100)), not whole KES the way Daraja's stkPush()
+// takes whole shillings. Getting this backwards would be a real 100x over/
+// undercharge.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function createCheckoutSession(opts: {
+  invoiceId: string; invoiceNumber: string; payableKes: number; successUrl: string; cancelUrl: string;
+}): Promise<{ url: string; sessionId: string } | { error: string }> {
+  try {
+    const session = await stripe().checkout.sessions.create({
+      mode: "payment",
+      line_items: [{
+        price_data: {
+          currency: "kes",
+          product_data: { name: `P2Less upgrade — ${opts.invoiceNumber}` },
+          unit_amount: Math.round(opts.payableKes * 100),
+        },
+        quantity: 1,
+      }],
+      success_url: opts.successUrl,
+      cancel_url: opts.cancelUrl,
+      // Both set on purpose — client_reference_id is Stripe's own
+      // purpose-built field for exactly this ("what internal record does
+      // this checkout belong to"); metadata.invoiceId is a second,
+      // independent read of the same value on the webhook side, belt and
+      // suspenders on the one field the webhook trusts to identify the
+      // invoice.
+      client_reference_id: opts.invoiceId,
+      metadata: { invoiceId: opts.invoiceId },
+    });
+    if (!session.url) return { error: "Could not start card payment. Please try again." };
+    return { url: session.url, sessionId: session.id };
+  } catch (e) {
+    console.error("[stripe] createCheckoutSession failed:", e instanceof Error ? e.message : e);
+    return { error: "Could not start card payment. Please try again." };
+  }
+}
+
+/** Re-fetches a Checkout Session's URL — used only for the "a payment for
+ *  this invoice is already in flight" retry path (initiateInvoiceCardPaymentAction,
+ *  invoicing.ts), so the user can be handed a valid link back to the SAME
+ *  session rather than the route minting a duplicate one. Returns null if
+ *  the session can't be found or has expired (Checkout Sessions expire
+ *  after 24h) — the caller treats that as "start over". */
+export async function retrieveCheckoutSessionUrl(sessionId: string): Promise<string | null> {
+  try {
+    const session = await stripe().checkout.sessions.retrieve(sessionId);
+    return session.url;
+  } catch (e) {
+    console.error("[stripe] retrieveCheckoutSessionUrl failed:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+/** Verifies the Stripe-Signature header over the RAW request body — never
+ *  trust an unsigned/incorrectly-signed webhook delivery. Returns null on
+ *  any verification failure (missing secret, missing/invalid signature,
+ *  tampered body) rather than throwing, mirroring this file's existing
+ *  `{ error }` convention; the caller (the webhook route) is responsible for
+ *  responding 400, not 200 — unlike Safaricom's callbacks, a bad signature
+ *  here is a real attack surface, not a delivery quirk to swallow. */
+export function constructWebhookEvent(rawBody: string, signatureHeader: string | null): Stripe.Event | null {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!secret || !signatureHeader) return null;
+  try {
+    return stripe().webhooks.constructEvent(rawBody, signatureHeader, secret);
+  } catch (e) {
+    console.error("[stripe] webhook signature verification failed:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}

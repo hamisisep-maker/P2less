@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/modal";
-import { createUpgradeInvoiceAction, initiateInvoiceStkPaymentAction, getPaybillInfo } from "@/lib/invoicing";
+import { createUpgradeInvoiceAction, initiateInvoiceStkPaymentAction, getPaybillInfo, getCardInfo, initiateInvoiceCardPaymentAction } from "@/lib/invoicing";
 
 const kes = (n: number) => `KES ${n.toLocaleString("en-US")}`;
 
@@ -20,7 +20,7 @@ type InvoiceView = {
   fromPlan: { name: string } | null; toPlan: { name: string; limits: unknown };
 };
 
-type Step = "loading" | "breakdown" | "phone" | "waiting" | "paybill" | "paybill_partial" | "paybill_pending" | "paid" | "failed" | "error";
+type Step = "loading" | "breakdown" | "phone" | "waiting" | "paybill" | "paybill_partial" | "paybill_pending" | "card_redirecting" | "paid" | "failed" | "error";
 
 export function UpgradeModal({ planId, planName, priceMonthly }: { planId: string; planName: string; priceMonthly: number }) {
   const router = useRouter();
@@ -31,6 +31,7 @@ export function UpgradeModal({ planId, planName, priceMonthly }: { planId: strin
   const [phone, setPhone] = useState("");
   const [ref, setRef] = useState<string | null>(null);
   const [paybill, setPaybill] = useState<{ available: boolean; shortcode?: string }>({ available: false });
+  const [cardAvailable, setCardAvailable] = useState(false);
   const [copied, setCopied] = useState(false);
   const [paidSoFar, setPaidSoFar] = useState(0);
 
@@ -38,8 +39,9 @@ export function UpgradeModal({ planId, planName, priceMonthly }: { planId: strin
     setOpen(true);
     setStep("loading");
     setErrorMsg(null);
-    const [result, pb] = await Promise.all([createUpgradeInvoiceAction(planId), getPaybillInfo()]);
+    const [result, pb, card] = await Promise.all([createUpgradeInvoiceAction(planId), getPaybillInfo(), getCardInfo()]);
     setPaybill(pb);
+    setCardAvailable(card.available);
     if ("error" in result) {
       setStep("error");
       setErrorMsg(result.error);
@@ -102,6 +104,22 @@ export function UpgradeModal({ planId, planName, priceMonthly }: { planId: strin
       } catch { /* keep polling */ }
       if (Date.now() - started > 120_000) { clearInterval(t); setStep((s) => (s === "paid" ? s : "paybill_pending")); }
     }, 4000);
+  };
+
+  const payWithCard = async () => {
+    if (!invoice) return;
+    setErrorMsg(null);
+    setStep("card_redirecting");
+    const result = await initiateInvoiceCardPaymentAction(invoice.id);
+    if ("error" in result) {
+      setStep("breakdown");
+      setErrorMsg(result.error);
+      return;
+    }
+    // Full page navigation to Stripe's real hosted Checkout — no card form
+    // of any kind lives in this app, so there's nothing here to poll; the
+    // redirect back to success_url/cancel_url IS the "waiting" step.
+    window.location.href = result.url;
   };
 
   const copyInvoiceNumber = () => {
@@ -181,11 +199,26 @@ export function UpgradeModal({ planId, planName, priceMonthly }: { planId: strin
                     <span className="text-xs text-faint">Coming soon</span>
                   </div>
                 )}
-                <div className="flex w-full items-center justify-between rounded-xl border border-line-soft px-3.5 py-2.5 text-sm font-medium opacity-50">
-                  <span>Visa / Card</span>
-                  <span className="text-xs text-faint">Coming soon</span>
-                </div>
+                {cardAvailable ? (
+                  <button
+                    type="button"
+                    onClick={payWithCard}
+                    className="flex w-full items-center justify-between rounded-xl border border-line-soft px-3.5 py-2.5 text-sm font-medium transition-colors hover:border-accent hover:bg-accent-soft"
+                  >
+                    <span>Visa / Card</span>
+                    <span className="text-xs text-green">Available</span>
+                  </button>
+                ) : (
+                  <div className="flex w-full items-center justify-between rounded-xl border border-line-soft px-3.5 py-2.5 text-sm font-medium opacity-50">
+                    <span>Visa / Card</span>
+                    <span className="text-xs text-faint">Coming soon</span>
+                  </div>
+                )}
               </div>
+            )}
+
+            {step === "card_redirecting" && (
+              <p className="mt-5 text-sm text-amber">Redirecting to a secure Stripe checkout page…</p>
             )}
 
             {step === "phone" && (
