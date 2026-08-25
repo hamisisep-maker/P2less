@@ -4,7 +4,7 @@ import { computeBill } from "@/lib/billing";
 import { Card, Stat, PageHeader, Badge } from "@/components/ui";
 import { PayButton } from "./pay-button";
 import { AutoRenewForm } from "./auto-renew-form";
-import { UpgradePlanButton } from "./upgrade-plan-button";
+import { UpgradeModal } from "./upgrade-modal";
 
 const kes = (n: number) => `KES ${n.toLocaleString("en-US")}`;
 const STATUS_TONE: Record<string, "green" | "amber" | "rose" | "neutral" | "accent"> = {
@@ -21,9 +21,13 @@ export default async function BillingPage() {
       db.plan.findMany({ where: { active: true }, orderBy: { sort: "asc" } }),
     ]);
     // Downgrades are read from Plan.sort, not priceMonthly — see
-    // upgradeSubscriptionPlanAction's comment (Enterprise prices at 0, same
-    // as Free, but is the top tier).
-    const upgradeOptions = sub ? allPlans.filter((p) => p.sort > sub.plan.sort) : [];
+    // createUpgradeInvoiceAction's comment (invoicing.ts): Enterprise prices
+    // at 0, same as the internal trial plan, but is the top tier.
+    // postpaidUsage plans (Enterprise) are excluded — negotiated-contract,
+    // admin-only always, never shown as a self-service upgrade target
+    // (invoicing.ts rejects it server-side too; this just avoids a
+    // clickable option that would only ever error).
+    const upgradeOptions = sub ? allPlans.filter((p) => p.sort > sub.plan.sort && !p.postpaidUsage) : [];
     const pendingPlan = sub?.pendingPlanId ? allPlans.find((p) => p.id === sub.pendingPlanId) : null;
 
     return (
@@ -100,10 +104,10 @@ export default async function BillingPage() {
             {upgradeOptions.length > 0 ? (
               <>
                 <h2 className="mb-1 font-display font-semibold">Upgrade your plan</h2>
-                <p className="mb-3 text-xs text-muted">We&apos;re finishing a secure payment flow for self-service upgrades — for now, contact us and we&apos;ll upgrade your plan right away. Want to downgrade instead? Contact us too.</p>
+                <p className="mb-3 text-xs text-muted">Your remaining subscription value is applied automatically — you only pay the difference. Want to downgrade instead? Contact us.</p>
                 <div className="space-y-2">
                   {upgradeOptions.map((p) => (
-                    <UpgradePlanButton key={p.id} planId={p.id} planName={p.name} priceMonthly={p.priceMonthly} />
+                    <UpgradeModal key={p.id} planId={p.id} planName={p.name} priceMonthly={p.priceMonthly} />
                   ))}
                 </div>
               </>

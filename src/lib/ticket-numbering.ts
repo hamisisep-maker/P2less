@@ -7,7 +7,7 @@ import { db } from "./db";
 // Wrapped in a transaction: SQLite serializes concurrent writers, so a
 // read-then-write here is safe at this app's admin-action scale without a
 // retry loop.
-async function nextSequence(key: string): Promise<number> {
+export async function nextSequence(key: string): Promise<number> {
   return db.$transaction(async (tx) => {
     const existing = await tx.platformSetting.findUnique({ where: { key } });
     const next = (existing ? parseInt(existing.value, 10) || 0 : 0) + 1;

@@ -122,6 +122,12 @@ export async function reactivateAfterPayment(tenantId: string, plan: { interval:
     where: { tenantId },
     data: {
       status: "active", renewsAt, lastPaymentAt: new Date(),
+      // Invoice-centric paid-upgrade flow, 2026-08-25 — this IS where a new
+      // billing cycle genuinely begins (renewsAt is being extended forward
+      // right here), so this is the one place currentPeriodStartedAt
+      // updates. A mid-cycle plan change (settleInvoice, invoice-settlement.ts)
+      // deliberately never touches it — only a real renewal does.
+      currentPeriodStartedAt: new Date(),
       paymentAttemptCount: 0, paymentFailureReason: null, nextPaymentAttemptAt: null, graceEndsAt: null, reconciliationNeeded: false,
     },
   });

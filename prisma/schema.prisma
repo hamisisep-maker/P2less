@@ -525,6 +525,7 @@ model Tenant {
   deliveryTrips DeliveryTrip[]
   notifications Notification[]
   branches      Branch[]
+  invoices      Invoice[]
 }
 
 /// Configurable subscription plan. Not hard-coded — Super Admin edits these.
@@ -556,6 +557,8 @@ model Plan {
   postpaidUsage Boolean @default(false)
 
   subscriptions Subscription[]
+  invoicesFrom  Invoice[] @relation("InvoiceFromPlan")
+  invoicesTo    Invoice[] @relation("InvoiceToPlan")
 }
 
 /// The billing lifecycle state machine lives in src/lib/billing-lifecycle.ts —
@@ -583,6 +586,17 @@ model Subscription {
   startedAt DateTime @default(now())
   renewsAt  DateTime
   createdAt DateTime @default(now())
+  // Invoice-centric paid-upgrade flow, 2026-08-25 — anchor for proration
+  // math (src/lib/invoicing.ts's computeProration()). Distinct from
+  // startedAt (lifetime-fixed, set once at creation, never updated) and
+  // renewsAt (the NEXT renewal date). This is when the CURRENT cycle began —
+  // set once at creation (mirrors startedAt), then updated to now() ONLY in
+  // the existing renewal path (reactivateAfterPayment(), billing-lifecycle.ts)
+  // when a cycle genuinely rolls over. Never touched by a mid-cycle plan
+  // change — the cycle boundary (and renewsAt) stays anchored to the
+  // original renewal date, so an upgrade never accidentally grants a fresh
+  // 30/31-day cycle. Confirmed no prior field tracked this at all.
+  currentPeriodStartedAt DateTime @default(now())
 
   // ── Prepaid balances, 2026-08-25 ─────────────────────────────────────────
   // Real KES, drawn down per real message/AI-understanding request at the
@@ -653,6 +667,21 @@ model Payment {
   // settles. One payment per order.
   orderId     String?  @unique
   order       Order?   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  // Invoice-centric paid-upgrade flow, 2026-08-25 — set for purpose="plan_change"
+  // payments only; every other purpose (subscription/usage/topup/order) leaves
+  // this null, unaffected. See Invoice model's own comment for the full flow.
+  invoiceId   String?
+  invoice     Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  // DB-enforced single-in-flight-payment-per-invoice lock — set to invoiceId
+  // WHILE this payment is pending, cleared (null) the instant it resolves
+  // (paid or failed). A second initiateInvoiceStkPaymentAction() call for the
+  // SAME invoice while one is already pending hits this unique constraint
+  // (P2002) on create, not an app-level race-prone check-then-act — real
+  // double-click/multi-tab/retry protection the database itself enforces,
+  // not just application discipline. Null (not invoiceId) once resolved so a
+  // later legitimate retry (payment attempt #2 after #1 failed) can create a
+  // fresh row without colliding with the resolved one.
+  invoicePendingKey String? @unique
   reference   String   @unique
   amount      Int // WHOLE units of `currency` (KES) — NOT cents; M-Pesa/Daraja amounts are whole-shilling, so this matches real STK push amounts directly.
   currency    String   @default("KES")
@@ -682,6 +711,42 @@ model Payment {
   periodLabel String? // e.g. "2026-08"
   createdAt   DateTime @default(now())
   paidAt      DateTime?
+
+  @@index([tenantId])
+}
+
+/// Invoice-centric paid-upgrade flow, 2026-08-25 — the PRIMARY billing
+/// reference for a plan change, not a phone number or account id. Every
+/// payment method (STK today; Paybill/card in later stages) converges on
+/// settling THIS row — see src/lib/invoicing.ts's settleInvoice(), the one
+/// function that ever transitions status "awaiting_payment" -> "paid" and
+/// applies the plan change, atomically, in a single transaction. A payer's
+/// M-Pesa number is recorded on the Payment row as evidence; it is never
+/// what identifies which invoice was being paid.
+model Invoice {
+  id            String   @id @default(cuid())
+  invoiceNumber String   @unique // "INV-2026-000123" — src/lib/invoicing.ts's nextInvoiceNumber(), same real sequential-counter pattern as nextTicketNumber()/nextIncidentNumber() (ticket-numbering.ts), not the ad hoc random-suffix pattern Payment.reference uses.
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kind          String   @default("plan_change") // plan_change — covers both a trial tenant's first real plan AND a real upgrade; the internal trial plan prices at 0, so the same proration formula naturally yields 0 credit, no special case needed.
+  fromPlanId    String?
+  fromPlan      Plan?    @relation("InvoiceFromPlan", fields: [fromPlanId], references: [id])
+  toPlanId      String
+  toPlan        Plan     @relation("InvoiceToPlan", fields: [toPlanId], references: [id])
+  fromPlanValueKes  Int  // fromPlan.priceMonthly at invoice creation time (0 for a trial tenant's first plan)
+  usedDays      Int
+  remainingDays Int
+  daysInCycle   Int      // real length of THIS billing cycle (renewsAt - currentPeriodStartedAt, in whole EAT calendar days) — naturally 28-31 depending on which real month(s) the cycle spans, since renewal is a rolling one-month anchor (nextRenewalDate(), billing-lifecycle.ts), not calendar-month-aligned.
+  remainingValueKes Int  // floor((fromPlanValueKes / daysInCycle) * remainingDays), never negative
+  toPlanPriceKes    Int  // toPlan.priceMonthly at invoice creation time
+  payableKes    Int      // max(0, toPlanPriceKes - remainingValueKes) — backend-computed & re-verified at every step; the client never submits an amount at all in this flow
+  currency      String   @default("KES")
+  status        String   @default("awaiting_payment") // awaiting_payment | paid | cancelled | expired
+  createdByUserId String?
+  createdAt     DateTime @default(now())
+  paidAt        DateTime?
+  appliedAt     DateTime? // when the plan change actually landed on Subscription
+  payments      Payment[]
 
   @@index([tenantId])
 }

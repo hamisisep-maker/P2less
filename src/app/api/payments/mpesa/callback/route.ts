@@ -5,6 +5,7 @@ import { creditsForAmount } from "@/lib/wallet";
 import { sendWhatsAppText } from "@/lib/transport";
 import { tryAssignTrip } from "@/lib/dispatch";
 import { handleSubscriptionPaymentConfirmed, handleSubscriptionPaymentFailed } from "@/lib/billing-lifecycle";
+import { settleInvoice } from "@/lib/invoice-settlement";
 import { recordInboundEvent, finishInboundEvent } from "@/lib/inbound-events";
 import { recordChannelOutcome, recordChannelCallback, syncReconciliationFlag } from "@/lib/payment-channels";
 import { enterTenantContext, runCrossTenant } from "@/lib/tenant-context";
@@ -54,19 +55,28 @@ export async function POST(req: Request) {
       // to, everything downstream runs scoped to it.
       enterTenantContext(payment.tenantId);
       const wasUnknown = payment.status === "unknown";
-      await recordChannelOutcome("mpesa_stk", parsed.success);
+      // Invoice-centric paid-upgrade flow, 2026-08-25 — never let the
+      // callback's own claimed amount become authoritative on its own.
+      // payment.amount was set server-side from Invoice.payableKes at
+      // initiation time; if Safaricom's confirmed amount disagrees, this is
+      // NOT a clean success — hold it as "unknown" (the existing, real
+      // reconciliation-required state, surfaced at /admin/reconciliation)
+      // rather than silently settling an invoice for the wrong amount.
+      const amountMismatch = parsed.success && parsed.amount != null && parsed.amount !== payment.amount;
+      await recordChannelOutcome("mpesa_stk", parsed.success && !amountMismatch);
       await db.payment.update({
         where: { id: payment.id },
         data: {
-          status: parsed.success ? "paid" : "failed",
-          paidAt: parsed.success ? new Date() : null,
+          status: amountMismatch ? "unknown" : parsed.success ? "paid" : "failed",
+          paidAt: parsed.success && !amountMismatch ? new Date() : null,
           providerRef: parsed.receipt ?? parsed.checkoutId,
-          failureCategory: parsed.success ? null : classifyMpesaFailure(parsed.desc),
-          failureReason: parsed.success ? null : (parsed.desc ?? "").slice(0, 300),
+          invoicePendingKey: null,
+          failureCategory: amountMismatch ? "manual_resolution" : parsed.success ? null : classifyMpesaFailure(parsed.desc),
+          failureReason: amountMismatch ? `Confirmed amount ${parsed.amount} did not match invoiced amount ${payment.amount}` : parsed.success ? null : (parsed.desc ?? "").slice(0, 300),
         },
       });
-      if (wasUnknown) await syncReconciliationFlag(payment.tenantId).catch(() => {});
-      if (parsed.success) {
+      if (wasUnknown || amountMismatch) await syncReconciliationFlag(payment.tenantId).catch(() => {});
+      if (parsed.success && !amountMismatch) {
         void dispatchWebhook(payment.tenantId, "payment.paid", { reference: payment.reference, amount: payment.amount, currency: payment.currency, receipt: parsed.receipt }).catch(() => {});
         // Wallet top-up: credit the CONTACT's balance now that M-Pesa confirmed it.
         if (payment.purpose === "topup" && payment.contactId) {
@@ -81,6 +91,15 @@ export async function POST(req: Request) {
             id: payment.id, tenantId: payment.tenantId, reference: payment.reference,
             amount: payment.amount, currency: payment.currency, method: payment.method, periodLabel: payment.periodLabel,
           }).catch((e) => console.error("[billing] handleSubscriptionPaymentConfirmed failed:", e));
+        }
+        // Paid upgrade (Invoice-centric flow, 2026-08-25): settleInvoice is
+        // the ONE place an invoice ever moves to "paid" and the plan change
+        // is applied — idempotent by construction (its own compare-and-swap
+        // guard), so a duplicate callback delivery here is already handled
+        // one layer up by recordInboundEvent's dedup AND, independently, by
+        // settleInvoice's own status guard.
+        if (payment.purpose === "plan_change" && payment.invoiceId) {
+          await settleInvoice(payment.invoiceId).catch((e) => console.error("[invoicing] settleInvoice failed:", e));
         }
         // Note: purpose "cancellation" payments (admin-actions.ts's
         // cancelTenantSubscriptionAction) are deliberately NOT an automated

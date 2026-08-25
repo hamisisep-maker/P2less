@@ -41,7 +41,7 @@ export function PayButton({ amount }: { amount: number }) {
           placeholder="M-Pesa no. e.g. 0712345678"
           className="min-w-[190px] flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
         />
-        <input type="hidden" name="amount" value={amount} />
+        {/* No amount field submitted — the server computes it independently via computeBill(), never trusts a client-submitted value. `amount` here is display-only. */}
         <button
           type="submit"
           disabled={pending || amount <= 0 || poll === "waiting"}

@@ -41,6 +41,13 @@ export const SETTING_DEFAULTS = {
   migration_grant_messages_kes: 500,
   migration_grant_ai_kes: 250,
 
+  // Invoice-centric paid-upgrade flow, 2026-08-25 — an "awaiting_payment"
+  // Invoice older than this is treated as expired (checked at read/pay
+  // time, no separate cron needed): the tenant starts a fresh upgrade
+  // attempt, which computes a new invoice against current proration numbers
+  // rather than paying a stale, possibly-inaccurate one.
+  invoice_expiry_hours: 24,
+
   // ── Automated billing lifecycle (src/lib/billing-lifecycle.ts) ──────────
   billing_grace_period_days: 7, // days a tenant keeps service after renewal fails before auto-suspend
   billing_reminder_days: "7,3,1", // comma list — days before renewsAt to queue a reminder notification

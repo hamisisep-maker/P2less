@@ -105,13 +105,22 @@ export async function stkPush(opts: { phone: string; amount: number; accountRef:
 }
 
 /** Parse a Daraja STK callback body → { checkoutId, success, receipt }. */
-export function parseCallback(body: unknown): { checkoutId: string; success: boolean; receipt?: string; desc?: string } | null {
+export function parseCallback(body: unknown): { checkoutId: string; success: boolean; receipt?: string; desc?: string; amount?: number } | null {
   try {
     const cb = (body as { Body?: { stkCallback?: { CheckoutRequestID: string; ResultCode: number; ResultDesc?: string; CallbackMetadata?: { Item: { Name: string; Value: unknown }[] } } } }).Body?.stkCallback;
     if (!cb?.CheckoutRequestID) return null;
     const success = cb.ResultCode === 0;
     const receipt = cb.CallbackMetadata?.Item?.find((i) => i.Name === "MpesaReceiptNumber")?.Value;
-    return { checkoutId: cb.CheckoutRequestID, success, receipt: receipt ? String(receipt) : undefined, desc: cb.ResultDesc };
+    // Invoice-centric paid-upgrade flow, 2026-08-25 — the actual confirmed
+    // amount Safaricom reports, extracted so a caller can defensively verify
+    // it against what was actually invoiced rather than blindly trusting
+    // "success" alone. Never let a callback's own claimed amount become the
+    // authoritative record on its own — the amount actually invoiced
+    // (Payment.amount, itself derived server-side from Invoice.payableKes)
+    // is the source of truth; this is only a real-world sanity check.
+    const rawAmount = cb.CallbackMetadata?.Item?.find((i) => i.Name === "Amount")?.Value;
+    const amount = typeof rawAmount === "number" ? rawAmount : rawAmount != null ? Number(rawAmount) : undefined;
+    return { checkoutId: cb.CheckoutRequestID, success, receipt: receipt ? String(receipt) : undefined, desc: cb.ResultDesc, amount: Number.isFinite(amount) ? amount : undefined };
   } catch {
     return null;
   }

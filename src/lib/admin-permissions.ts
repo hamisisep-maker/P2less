@@ -14,7 +14,7 @@ export const ADMIN_PERMISSIONS = [
   "tenants.suspend",
   "tenants.reactivate",
   "tenants.cancel", // permanently cancel a subscription (self-service was deliberately rejected — see admin-actions.ts's cancelTenantSubscriptionAction) — kept separate from suspend/reactivate: those are reversible access toggles, this ends the subscription and settles a final bill
-  "tenants.change_plan", // assign a tenant to a different plan (upgrade or downgrade) — distinct from plans.edit, which edits the GLOBAL plan definition, not which plan a specific tenant is on. Tenants can self-service upgrade themselves (see actions.ts's upgradeSubscriptionPlanAction, gated by billing.manage instead); this permission covers admin-initiated changes either direction, including downgrades (deliberately not self-service — see changeTenantPlanAction)
+  "tenants.change_plan", // assign a tenant to a different plan (upgrade or downgrade) — distinct from plans.edit, which edits the GLOBAL plan definition, not which plan a specific tenant is on. Tenants can self-service upgrade themselves via the invoice-centric paid-upgrade flow (see invoicing.ts's createUpgradeInvoiceAction, gated by billing.manage instead); this permission covers admin-initiated changes either direction, including downgrades (deliberately not self-service — see changeTenantPlanAction)
   "billing.view",
   "billing.confirm_payment",
   "billing.refund",

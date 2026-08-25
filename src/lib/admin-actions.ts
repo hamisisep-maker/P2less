@@ -154,7 +154,7 @@ export async function cancelTenantSubscriptionAction(tenantId: string, reason: s
  *  incurred this cycle at the higher one — exactly the "change plan right
  *  before the bill" gaming risk this was designed to close. This is also
  *  why downgrades are admin-only, not self-service (see
- *  upgradeSubscriptionPlanAction in actions.ts for the tenant-facing half). */
+ *  createUpgradeInvoiceAction in invoicing.ts for the tenant-facing half). */
 export async function changeTenantPlanAction(tenantId: string, newPlanId: string, reason: string) {
   if (!reason?.trim()) return { error: "A reason is required." };
   return withAssertAdminPermission("tenants.change_plan", async (admin) => {

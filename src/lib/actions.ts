@@ -16,6 +16,7 @@ import { storeProductImage } from "./documents";
 import { normalizePhone } from "./conversation";
 import { handleSubscriptionPaymentConfirmed } from "./billing-lifecycle";
 import { assertChannelEnabled } from "./payment-channels";
+import { computeBill } from "./billing";
 import type { ParamSpec } from "./connector-engine";
 import { getSetting, getSettingNumber } from "./platform-settings";
 import { crawlSite } from "./website-crawl";
@@ -74,7 +75,7 @@ export async function logoutAction() {
 // ── Billing: real M-Pesa Daraja STK push ──────────────────────────────────────
 // Sends a "pay" prompt to the customer's phone. If Daraja isn't configured, we
 // fall back to an instant mock so the demo still works.
-const paySchema = z.object({ phone: z.string().min(9), amount: z.coerce.number().int().positive() });
+const paySchema = z.object({ phone: z.string().min(9) });
 
 const autoRenewSchema = z.object({ billingPhone: z.string().min(9).optional().or(z.literal("")), autoRenew: z.coerce.boolean().optional() });
 
@@ -96,20 +97,37 @@ export async function updateAutoRenewAction(_prev: unknown, formData: FormData) 
   });
 }
 
+/** Invoice-centric paid-upgrade flow, 2026-08-25 — fixed the same class of
+ *  gap this whole redesign exists to close: `amount` used to come straight
+ *  from a client-submitted hidden form field (`z.coerce.number()`, no
+ *  server-side cross-check at all) — the browser could submit any number it
+ *  wanted. Now the server independently computes the real amount owed via
+ *  computeBill(), the same function the invoice/billing page itself
+ *  displays from, and that's the only amount ever charged. Also added a
+ *  DB-enforced (not app-level check-then-act) single-in-flight-payment lock
+ *  — invoicePendingKey's unique constraint, the same mechanism
+ *  initiateInvoiceStkPaymentAction (invoicing.ts) uses for the new upgrade
+ *  flow, reused here with a synthetic per-tenant key since a regular bill
+ *  payment has no real Invoice row. */
 export async function startPaymentAction(_prev: unknown, formData: FormData) {
   return withTenantUser(async (user) => {
     if (!userPermissions(user).includes(PERMISSIONS.BILLING_MANAGE)) return { error: "You don't have billing permission." };
     const parsed = paySchema.safeParse(Object.fromEntries(formData.entries()));
     if (!parsed.success) return { error: "Enter a valid M-Pesa phone number." };
-    const { phone, amount } = parsed.data;
+    const { phone } = parsed.data;
+    const tenantId = user.tenantId!;
+    const bill = await computeBill(tenantId);
+    const amount = bill.total;
+    if (amount <= 0) return { error: "Nothing is currently due." };
     const reference = "PAY-" + randomToken(4).toUpperCase();
     const period = new Date().toISOString().slice(0, 7);
+    const lockKey = `subscription-bill:${tenantId}`;
 
     const channelCheck = await assertChannelEnabled("mpesa_stk");
     if (!channelCheck.ok) return { error: channelCheck.error };
 
     if (!isConfigured()) {
-      const payment = await db.payment.create({ data: { tenantId: user.tenantId!, reference, amount, currency: "KES", purpose: "subscription", method: "mpesa", channelKey: "mpesa_stk", status: "paid", provider: "mock", periodLabel: period, paidAt: new Date() } });
+      const payment = await db.payment.create({ data: { tenantId, reference, amount, currency: "KES", purpose: "subscription", method: "mpesa", channelKey: "mpesa_stk", status: "paid", provider: "mock", periodLabel: period, paidAt: new Date() } });
       // Mock mode still drives the REAL billing lifecycle (renewsAt extension,
       // reactivation, receipt generation) — only the payment gateway call
       // itself is mocked, nothing about what happens after "paid" is faked.
@@ -118,46 +136,33 @@ export async function startPaymentAction(_prev: unknown, formData: FormData) {
       return { ok: true, ref: reference, mock: true, message: "Recorded (demo mode — set M-Pesa keys in .env for a real STK push)." };
     }
 
-    await db.payment.create({ data: { tenantId: user.tenantId!, reference, amount, currency: "KES", purpose: "subscription", method: "mpesa", channelKey: "mpesa_stk", status: "pending", provider: "daraja", periodLabel: period } });
+    let payment;
+    try {
+      payment = await db.payment.create({ data: { tenantId, invoicePendingKey: lockKey, reference, amount, currency: "KES", purpose: "subscription", method: "mpesa", channelKey: "mpesa_stk", status: "pending", provider: "daraja", periodLabel: period } });
+    } catch {
+      // P2002 on invoicePendingKey — a payment for this tenant's regular
+      // bill is already in flight (double-click, second tab, or a resubmit
+      // after the UI's poll timeout). Don't fire a second stkPush().
+      const inFlight = await db.payment.findFirst({ where: { tenantId, purpose: "subscription", status: "pending" }, orderBy: { createdAt: "desc" } });
+      if (inFlight) return { ok: true, ref: inFlight.reference, message: "A payment is already in progress — check your phone." };
+      return { error: "Could not start payment — please try again." };
+    }
     const res = await stkPush({ phone, amount, accountRef: reference, description: "P2Less bill" });
     if (!res.ok) {
-      await db.payment.updateMany({ where: { reference }, data: { status: "failed", failureCategory: classifyMpesaFailure(res.error), failureReason: res.error.slice(0, 300) } });
+      await db.payment.update({ where: { id: payment.id }, data: { status: "failed", invoicePendingKey: null, failureCategory: classifyMpesaFailure(res.error), failureReason: res.error.slice(0, 300) } });
       return { error: res.error, ref: reference };
     }
-    await db.payment.updateMany({ where: { reference }, data: { providerRef: res.checkoutId } });
+    await db.payment.update({ where: { id: payment.id }, data: { providerRef: res.checkoutId } });
     return { ok: true, ref: reference, checkoutId: res.checkoutId, message: res.customerMessage };
   });
 }
 
-/** EMERGENCY STOPGAP, 2026-08-25 — self-service upgrade previously applied
- *  `planId` immediately on click with NO payment step of any kind (confirmed:
- *  a bare `db.subscription.update`, no computeBill(), no Payment row, no
- *  stkPush(), nothing). That is a real, live money-exposure bug — a tenant
- *  could upgrade to any higher tier for free, indefinitely. Disabled here
- *  (same "admin-only, contact us" shape already used for downgrades) while
- *  a proper paid-upgrade flow — payment method selection, backend-computed
- *  amount, proration of remaining plan value, verified-payment-before-
- *  activation — is built. Admin-side changeTenantPlanAction (admin-actions.ts)
- *  is intentionally left as-is: that path requires a human with permission
- *  and a recorded reason, a legitimate manual override, not a self-service
- *  bypass. Direction is read from Plan.sort, not priceMonthly — checked the
- *  real seed data first: Enterprise prices at 0, same as Free, but is
- *  obviously the top tier. */
-export async function upgradeSubscriptionPlanAction(_prev: unknown, formData: FormData): Promise<{ ok?: boolean; planName?: string; error?: string }> {
-  return withTenantUser(async (user) => {
-    if (!userPermissions(user).includes(PERMISSIONS.BILLING_MANAGE)) return { error: "You don't have billing permission." };
-    const tenantId = user.tenantId!;
-    const newPlanId = String(formData.get("planId") ?? "");
-    const [sub, newPlan] = await Promise.all([
-      db.subscription.findUnique({ where: { tenantId }, include: { plan: true } }),
-      db.plan.findUnique({ where: { id: newPlanId } }),
-    ]);
-    if (!sub) return { error: "No subscription found." };
-    if (!newPlan || !newPlan.active) return { error: "That plan isn't available." };
-    if (newPlan.sort <= sub.plan.sort) return { error: "Downgrading isn't self-service — contact us and we'll take care of it." };
-    return { error: "Self-service upgrade is temporarily unavailable while we finish a secure payment flow for it. Contact us and we'll upgrade your plan right away." };
-  });
-}
+// Self-service upgrade lives in src/lib/invoicing.ts now
+// (createUpgradeInvoiceAction/initiateInvoiceStkPaymentAction) — this used
+// to be a bare `db.subscription.update({ planId })` with NO payment step of
+// any kind (see docs/GAP-REGISTER item 6), replaced 2026-08-25 by the
+// invoice-centric paid-upgrade flow: no plan change until a real payment is
+// verified server-side.
 
 // ── Self-serve onboarding (Embedded-Signup style) ─────────────────────────────
 // Provisions a tenant + number WITHOUT the org touching the Meta dashboard. In
