@@ -14,15 +14,24 @@ export default async function DemoPage() {
   // (lets a visitor pick any org/contact to simulate). Found broken in
   // production by the 2026-08-23 fail-closed rollout, same as the landing
   // page — public pages are a category the choke-point audit missed.
+  // Curated demo roster only — the 4 tenants this demo was actually built
+  // for (each has real sample prompts in demo-client.tsx's SAMPLES map).
+  // Without this filter, every tenant ever created with an active WhatsApp
+  // number shows up here, including one-off tenants from live testing —
+  // a real bug found live, not just a cosmetic size request.
+  const DEMO_SLUGS = ["hamzone", "riverside", "nairobi-hospital", "kilimani-retail"];
+
   const [numbers, contacts] = await runCrossTenant(() => Promise.all([
     db.whatsAppNumber.findMany({
-      where: { status: "active" },
+      where: { status: "active", tenant: { slug: { in: DEMO_SLUGS } } },
       include: { tenant: true },
       orderBy: { createdAt: "asc" },
     }),
     db.contact.findMany({
+      where: { tenant: { slug: { in: DEMO_SLUGS } } },
       include: { tenant: { include: { numbers: true } } },
       orderBy: { createdAt: "asc" },
+      take: 12,
     }),
   ]));
 

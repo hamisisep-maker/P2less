@@ -84,11 +84,9 @@
 /* Landing page audience orbit — the ring spins slowly while each badge
    counter-spins at the same speed the opposite direction, so labels stay
    upright while their position orbits. See src/app/audience-orbit.tsx. */
-@keyframes orbit-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-@keyframes orbit-spin-reverse { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
-.orbit-ring { animation: orbit-spin 42s linear infinite; }
-.orbit-counter { animation: orbit-spin-reverse 42s linear infinite; }
+@keyframes spoke-flow { from { stroke-dashoffset: 30; } to { stroke-dashoffset: 0; } }
+.orbit-spoke { animation: spoke-flow 1.8s linear infinite; }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-in, .animate-shimmer, .pulse-dot::before, .orbit-ring, .orbit-counter { animation: none !important; }
+  .animate-in, .animate-shimmer, .pulse-dot::before, .orbit-spoke { animation: none !important; }
 }

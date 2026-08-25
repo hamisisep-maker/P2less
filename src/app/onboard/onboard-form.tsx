@@ -116,7 +116,7 @@ export function OnboardForm() {
           {otpError?.error && <div className="rounded-lg bg-rose-soft px-3 py-2 text-sm text-rose">{otpError.error}</div>}
           <button type="submit" disabled={confirmOtpPending} className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-2.5 font-medium text-white hover:bg-accent-ink disabled:opacity-60">
             {confirmOtpPending && <Loader2 size={16} className="animate-spin" />}
-            {confirmOtpPending ? "Verifying…" : "Verify & create workspace"}
+            {confirmOtpPending ? "Verifying…" : "Verify and create workspace"}
           </button>
           <p className="text-center text-[11px] text-faint">Code expires in 5 minutes.</p>
         </form>

@@ -1,39 +1,74 @@
-import type { Audience } from "@/lib/landing-content";
+import { Store, GraduationCap, Landmark, Building2, Code2 } from "lucide-react";
+import type { Audience, AudienceKey } from "@/lib/landing-content";
 
-// Pure-CSS orbit: badges are placed evenly around a circle via a static
-// rotate→translate→rotate transform, then the whole ring spins slowly while
-// each badge counter-spins at the same speed in the opposite direction — the
-// standard trick that keeps every label upright while its POSITION orbits.
-// `prefers-reduced-motion` is handled once, globally, in globals.css (same
-// convention as widget.js's own pulse/wiggle animations).
+const ICONS: Record<AudienceKey, typeof Store> = {
+  business: Store,
+  institutions: GraduationCap,
+  sacco: Building2,
+  government: Landmark,
+  developers: Code2,
+};
+
+// Fixed radial layout (no spin) — a static hub with connecting spokes and a
+// traveling pulse on each line, standing in for "every organization talks to
+// one platform" instead of the generic slowly-rotating badge ring this
+// replaced. Positions are hand-placed per audience count (5 today) rather
+// than computed from an angle, so the layout reads intentionally, not
+// mechanically evenly spaced.
+const POSITIONS = [
+  { x: 50, y: 8 },    // top
+  { x: 88, y: 32 },   // upper right
+  { x: 76, y: 78 },   // lower right
+  { x: 24, y: 78 },   // lower left
+  { x: 12, y: 32 },   // upper left
+];
+
 export function AudienceOrbit({ audiences }: { audiences: Audience[] }) {
-  const n = audiences.length;
   return (
-    <div className="orbit-wrap relative mx-auto h-[280px] w-[280px] sm:h-[340px] sm:w-[340px]">
-      <div className="grid absolute inset-0 place-items-center rounded-full border border-line bg-surface shadow-[var(--shadow-card)]">
-        <div className="text-center">
-          <div className="font-display text-lg font-bold text-accent-ink">P2</div>
-          <div className="text-[11px] text-faint">one platform</div>
-        </div>
-      </div>
-      <div className="orbit-ring absolute inset-0">
+    <div className="relative mx-auto h-[300px] w-full max-w-[420px] sm:h-[360px]">
+      <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
         {audiences.map((a, i) => {
-          const angle = (360 / n) * i;
+          const p = POSITIONS[i % POSITIONS.length];
           return (
-            <div
+            <line
               key={a.key}
-              className="absolute left-1/2 top-1/2 h-0 w-0"
-              style={{ transform: `rotate(${angle}deg) translateX(min(130px,38vw)) rotate(${-angle}deg)` }}
-            >
-              <div className="orbit-counter -translate-x-1/2 -translate-y-1/2">
-                <div className="whitespace-nowrap rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-medium shadow-[var(--shadow-card)]">
-                  {a.label}
-                </div>
-              </div>
-            </div>
+              x1="50"
+              y1="50"
+              x2={p.x}
+              y2={p.y}
+              stroke="var(--color-line)"
+              strokeWidth="0.6"
+              strokeDasharray="2 3"
+              className="orbit-spoke"
+              style={{ animationDelay: `${i * 0.4}s` }}
+            />
           );
         })}
+      </svg>
+
+      <div className="absolute left-1/2 top-1/2 grid h-16 w-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-line bg-surface shadow-[var(--shadow-card)] sm:h-20 sm:w-20">
+        <div className="text-center">
+          <div className="font-display text-base font-bold text-accent-ink sm:text-lg">P2L</div>
+          <div className="hidden text-[9px] text-faint sm:block">one platform</div>
+        </div>
       </div>
+
+      {audiences.map((a, i) => {
+        const p = POSITIONS[i % POSITIONS.length];
+        const Icon = ICONS[a.key];
+        return (
+          <div
+            key={a.key}
+            className="animate-in absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1.5"
+            style={{ left: `${p.x}%`, top: `${p.y}%`, animationDelay: `${i * 90}ms` }}
+          >
+            <div className="grid h-10 w-10 place-items-center rounded-full border border-line bg-surface text-accent shadow-[var(--shadow-card)] transition-all duration-300 hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-[var(--shadow-card-hover)] sm:h-12 sm:w-12">
+              <Icon size={18} strokeWidth={2} />
+            </div>
+            <div className="whitespace-nowrap text-[11px] font-medium text-muted sm:text-xs">{a.label}</div>
+          </div>
+        );
+      })}
     </div>
   );
 }

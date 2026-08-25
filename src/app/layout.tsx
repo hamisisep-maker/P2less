@@ -7,8 +7,8 @@ const display = Plus_Jakarta_Sans({ subsets: ["latin"], variable: "--font-displa
 const body = Inter({ subsets: ["latin"], variable: "--font-body", weight: ["400", "500", "600"] });
 
 export const metadata: Metadata = {
-  title: "P2Less — Conversational Access Platform",
-  description: "Stop logging into systems. Start talking to them.",
+  title: "P2Less: Conversational Access Platform",
+  description: "Turn the number your customers already message into a real, verified assistant.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

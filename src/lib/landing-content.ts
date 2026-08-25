@@ -137,8 +137,8 @@ export type Audience = {
 export const AUDIENCES: Audience[] = [
   {
     key: "business",
-    label: "Retail & Business",
-    headline: "Chatbot for retail & business",
+    label: "Retail and Business",
+    headline: "Chatbot for retail and business",
     painPoint: "Customers ask \"where's my order\" a hundred times a day, and every new product means another manual social media post.",
     capabilities: [
       "Real order status, pulled from your own retail system, answered instantly",
@@ -150,8 +150,8 @@ export const AUDIENCES: Audience[] = [
   },
   {
     key: "institutions",
-    label: "Schools & Hospitals",
-    headline: "Chatbot for schools & hospitals",
+    label: "Schools and Hospitals",
+    headline: "Chatbot for schools and hospitals",
     painPoint: "Parents and patients call the front office for the same handful of answers, and after-hours means silence.",
     capabilities: [
       "Grounded answers to fees, term dates, visiting hours, from FAQs your staff actually approved",
@@ -163,8 +163,8 @@ export const AUDIENCES: Audience[] = [
   },
   {
     key: "sacco",
-    label: "SACCOs & Cooperatives",
-    headline: "Automation for SACCOs & cooperatives",
+    label: "SACCOs and Cooperatives",
+    headline: "Automation for SACCOs and cooperatives",
     painPoint: "Members across many branches all need the same self-service, and your core system wasn't built for chat.",
     capabilities: [
       "One number, many branches, each correctly scoped to its own members and permissions",
@@ -177,7 +177,7 @@ export const AUDIENCES: Audience[] = [
   {
     key: "government",
     label: "Government",
-    headline: "Chatbot for government & institutions",
+    headline: "Chatbot for government and institutions",
     painPoint: "Public-facing services need to scale without compromising who can see what, or losing the paper trail.",
     capabilities: [
       "Full audit trail on every privileged action. Nothing happens silently",

@@ -45,7 +45,7 @@ export function SidebarShell({ navItems, exactRoot, footer }: { navItems: readon
             "bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))]",
           )}
         >
-          P2
+          P2L
         </span>
         {!collapsed && (
           <div className="leading-tight">

@@ -76,7 +76,7 @@ export function Logo({ dark = false }: { dark?: boolean }) {
           "bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))]",
         )}
       >
-        P2
+        P2L
       </span>
       <div className="leading-tight">
         <div className={clsx("font-display font-bold", dark && "text-white")}>P2Less</div>
