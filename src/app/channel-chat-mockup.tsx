@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Wifi, Signal, BatteryFull, Mic, Lock, XCircle, CheckCircle2 } from "lucide-react";
+import { Wifi, Signal, BatteryFull, Mic, Lock, XCircle, CheckCircle2, Package } from "lucide-react";
 
-type Message = { from: "them" | "me"; text: string; time: string; kind?: "text" | "stk" | "cancelled" | "confirmed"; amount?: number };
+type Product = { name: string; price: string; color: string };
+type Message = { from: "them" | "me"; text: string; time: string; kind?: "text" | "stk" | "cancelled" | "confirmed" | "images"; amount?: number; products?: Product[] };
 type Channel = { name: string; color: string; bubble: string; icon: string };
 
 const ICON_PATHS: Record<string, string> = {
@@ -55,11 +56,38 @@ const SCENES: Scene[] = [
     ],
   },
   {
-    org: "Retail shop", channel: "instagram", customer: "Joshua",
+    org: "Retail shop", channel: "whatsapp", customer: "Joshua",
     messages: [
-      { from: "them", text: "Is the blue jacket still in stock?", time: "3:20pm" },
-      { from: "me", text: "Yes, 3 left in size M.", time: "3:20pm" },
-      { from: "them", text: "I'll take one.", time: "3:21pm" },
+      { from: "them", text: "Do you have any jackets available?", time: "3:20pm" },
+      {
+        from: "me", text: "Here's what we have in stock:", time: "3:20pm", kind: "images",
+        products: [
+          { name: "Blue Jacket", price: "KES 3,500", color: "#3b82f6" },
+          { name: "Black Jacket", price: "KES 3,200", color: "#1f2937" },
+        ],
+      },
+      { from: "them", text: "I'll take the blue one. Deliver to Kilimani.", time: "3:21pm" },
+      { from: "me", text: "Got it. Finding a rider near you…", time: "3:21pm" },
+      { from: "me", text: "Assigned to Peter. Arriving in 25 minutes.", time: "3:22pm" },
+    ],
+  },
+  {
+    org: "Hotel", channel: "instagram", customer: "Fatuma",
+    messages: [
+      { from: "them", text: "What food do you have today?", time: "12:30pm" },
+      { from: "me", text: "Today's menu: Pilau, Grilled Tilapia, Chicken Curry.", time: "12:30pm" },
+      { from: "them", text: "Grilled Tilapia for 2, please.", time: "12:31pm" },
+      { from: "me", text: "Pay KES 2,400 to confirm your order.", time: "12:31pm", kind: "stk", amount: 2400 },
+      { from: "me", text: "Payment confirmed. Your order is being prepared!", time: "12:32pm", kind: "confirmed" },
+    ],
+  },
+  {
+    org: "Landlord", channel: "whatsapp", customer: "David",
+    messages: [
+      { from: "them", text: "Can I get my water bill?", time: "6:05pm" },
+      { from: "me", text: "Sure, what's your house number?", time: "6:05pm" },
+      { from: "them", text: "House B4", time: "6:06pm" },
+      { from: "me", text: "Your current water bill for House B4 is KES 850.", time: "6:06pm" },
     ],
   },
   {
@@ -204,6 +232,27 @@ export function ChannelChatMockup() {
               >
                 <div className="animate-in mx-auto rounded-full bg-black/5 px-3 py-1 text-center text-[10px] text-black/50">New conversation</div>
                 {visible.map((m, i) => {
+                  if (m.kind === "images") {
+                    return (
+                      <div key={i} className="animate-in ml-auto w-fit max-w-[85%] rounded-lg bg-white p-2 shadow-sm" style={{ background: channel.bubble }}>
+                        <div className="mb-1.5 px-0.5 text-[13px]">{m.text}</div>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {(m.products ?? []).map((p) => (
+                            <div key={p.name} className="overflow-hidden rounded-md bg-white">
+                              <div className="grid h-14 place-items-center" style={{ background: p.color }}>
+                                <Package size={20} className="text-white/80" />
+                              </div>
+                              <div className="px-1.5 py-1 text-[10px]">
+                                <div className="truncate font-medium text-ink">{p.name}</div>
+                                <div className="text-black/50">{p.price}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-1 px-0.5 text-right text-[10px] text-black/40">{m.time}</div>
+                      </div>
+                    );
+                  }
                   if (m.kind === "stk") {
                     return (
                       <div key={i} className="animate-in ml-auto w-fit max-w-[85%] rounded-lg border border-green/30 bg-white px-3 py-2.5 text-[12px] shadow-sm">
