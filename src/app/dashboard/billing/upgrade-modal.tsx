@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/modal";
-import { createUpgradeInvoiceAction, initiateInvoiceStkPaymentAction } from "@/lib/invoicing";
+import { createUpgradeInvoiceAction, initiateInvoiceStkPaymentAction, getPaybillInfo } from "@/lib/invoicing";
 
 const kes = (n: number) => `KES ${n.toLocaleString("en-US")}`;
 
@@ -20,7 +20,7 @@ type InvoiceView = {
   fromPlan: { name: string } | null; toPlan: { name: string; limits: unknown };
 };
 
-type Step = "loading" | "breakdown" | "phone" | "waiting" | "paid" | "failed" | "error";
+type Step = "loading" | "breakdown" | "phone" | "waiting" | "paybill" | "paybill_partial" | "paybill_pending" | "paid" | "failed" | "error";
 
 export function UpgradeModal({ planId, planName, priceMonthly }: { planId: string; planName: string; priceMonthly: number }) {
   const router = useRouter();
@@ -30,12 +30,16 @@ export function UpgradeModal({ planId, planName, priceMonthly }: { planId: strin
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [phone, setPhone] = useState("");
   const [ref, setRef] = useState<string | null>(null);
+  const [paybill, setPaybill] = useState<{ available: boolean; shortcode?: string }>({ available: false });
+  const [copied, setCopied] = useState(false);
+  const [paidSoFar, setPaidSoFar] = useState(0);
 
   const start = async () => {
     setOpen(true);
     setStep("loading");
     setErrorMsg(null);
-    const result = await createUpgradeInvoiceAction(planId);
+    const [result, pb] = await Promise.all([createUpgradeInvoiceAction(planId), getPaybillInfo()]);
+    setPaybill(pb);
     if ("error" in result) {
       setStep("error");
       setErrorMsg(result.error);
@@ -81,6 +85,33 @@ export function UpgradeModal({ planId, planName, priceMonthly }: { planId: strin
     }, 3000);
   };
 
+  const startPaybill = () => {
+    if (!invoice) return;
+    setStep("paybill");
+    // Paybill is out-of-band — no "initiate" step, only the invoiceId to
+    // poll by. A partial payment must never be shown as "upgraded" (review
+    // requirement) — the invoice status endpoint's own paidSoFarKes is the
+    // only source of truth, never inferred from "a payment was detected".
+    const started = Date.now();
+    const t = setInterval(async () => {
+      try {
+        const r = await fetch(`/api/invoices/status?id=${encodeURIComponent(invoice.id)}`);
+        const d = (await r.json()) as { status?: string; paidSoFarKes?: number };
+        if (d.status === "paid") { setStep("paid"); clearInterval(t); router.refresh(); return; }
+        if ((d.paidSoFarKes ?? 0) > 0) { setPaidSoFar(d.paidSoFarKes ?? 0); setStep("paybill_partial"); }
+      } catch { /* keep polling */ }
+      if (Date.now() - started > 120_000) { clearInterval(t); setStep((s) => (s === "paid" ? s : "paybill_pending")); }
+    }, 4000);
+  };
+
+  const copyInvoiceNumber = () => {
+    if (!invoice) return;
+    navigator.clipboard.writeText(invoice.invoiceNumber).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  };
+
   return (
     <>
       <div className="flex items-center justify-between gap-3 rounded-xl border border-line-soft px-3.5 py-2.5">
@@ -107,7 +138,7 @@ export function UpgradeModal({ planId, planName, priceMonthly }: { planId: strin
           </div>
         )}
 
-        {invoice && (step === "breakdown" || step === "phone" || step === "waiting" || step === "failed") && (
+        {invoice && step !== "loading" && step !== "error" && step !== "paid" && (
           <div>
             <table className="w-full text-sm">
               <tbody>
@@ -135,10 +166,21 @@ export function UpgradeModal({ planId, planName, priceMonthly }: { planId: strin
                   <span>M-Pesa STK Push</span>
                   <span className="text-xs text-green">Available</span>
                 </button>
-                <div className="flex w-full items-center justify-between rounded-xl border border-line-soft px-3.5 py-2.5 text-sm font-medium opacity-50">
-                  <span>M-Pesa Paybill</span>
-                  <span className="text-xs text-faint">Coming soon</span>
-                </div>
+                {paybill.available ? (
+                  <button
+                    type="button"
+                    onClick={startPaybill}
+                    className="flex w-full items-center justify-between rounded-xl border border-line-soft px-3.5 py-2.5 text-sm font-medium transition-colors hover:border-accent hover:bg-accent-soft"
+                  >
+                    <span>M-Pesa Paybill</span>
+                    <span className="text-xs text-green">Available</span>
+                  </button>
+                ) : (
+                  <div className="flex w-full items-center justify-between rounded-xl border border-line-soft px-3.5 py-2.5 text-sm font-medium opacity-50">
+                    <span>M-Pesa Paybill</span>
+                    <span className="text-xs text-faint">Coming soon</span>
+                  </div>
+                )}
                 <div className="flex w-full items-center justify-between rounded-xl border border-line-soft px-3.5 py-2.5 text-sm font-medium opacity-50">
                   <span>Visa / Card</span>
                   <span className="text-xs text-faint">Coming soon</span>
@@ -170,6 +212,49 @@ export function UpgradeModal({ planId, planName, priceMonthly }: { planId: strin
 
             {step === "waiting" && (
               <p className="mt-5 text-sm text-amber">📲 STK push sent{ref ? ` (ref ${ref})` : ""} — enter your M-Pesa PIN on your phone to approve.</p>
+            )}
+
+            {(step === "paybill" || step === "paybill_partial" || step === "paybill_pending") && (
+              <div className="mt-5 rounded-xl border border-line-soft p-4">
+                <p className="mb-3 text-sm font-semibold">Pay with M-Pesa Paybill</p>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted">Paybill Number</span>
+                    <span className="font-mono font-semibold">{paybill.shortcode}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted">Account Number</span>
+                    <span className="flex items-center gap-2">
+                      <span className="font-mono text-base font-bold text-accent-ink">{invoice.invoiceNumber}</span>
+                      <button type="button" onClick={copyInvoiceNumber} className="rounded-md border border-line-soft px-2 py-0.5 text-xs hover:bg-surface-2">
+                        {copied ? "Copied" : "Copy"}
+                      </button>
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted">Amount</span>
+                    <span className="font-semibold">{kes(invoice.payableKes)}</span>
+                  </div>
+                </div>
+                <ol className="mt-4 list-decimal space-y-1 pl-5 text-xs text-muted">
+                  <li>Open M-Pesa</li>
+                  <li>Select Lipa na M-Pesa</li>
+                  <li>Select Pay Bill</li>
+                  <li>Enter the Paybill number above</li>
+                  <li>Enter the invoice number above as the Account Number</li>
+                  <li>Enter {kes(invoice.payableKes)}</li>
+                  <li>Confirm payment</li>
+                </ol>
+                <p className="mt-3 text-xs font-medium text-rose">Important: enter the invoice number exactly as shown above as the Account Number.</p>
+
+                {step === "paybill" && <p className="mt-4 text-sm text-amber">Waiting for payment…</p>}
+                {step === "paybill_partial" && (
+                  <p className="mt-4 text-sm text-amber">We received {kes(paidSoFar)} toward this invoice — {kes(invoice.payableKes - paidSoFar)} still due.</p>
+                )}
+                {step === "paybill_pending" && (
+                  <p className="mt-4 text-sm text-muted">Still waiting — you can close this safely, we&apos;ll apply it automatically the moment it arrives, and you&apos;ll see it on your dashboard.</p>
+                )}
+              </div>
             )}
 
             {step === "failed" && (

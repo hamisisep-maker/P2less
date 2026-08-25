@@ -713,6 +713,14 @@ model Payment {
   paidAt      DateTime?
 
   @@index([tenantId])
+  // Paybill, 2026-08-25 — defense-in-depth beneath the existing InboundEvent
+  // webhook-dedup layer: even if a future code path ever created a Payment
+  // for the same real provider transaction outside the callback route, the
+  // database itself refuses the duplicate. Nullable-safe — SQLite/Prisma
+  // allow unlimited NULLs under a unique index, only a real non-null
+  // duplicate (provider, providerRef) pair is rejected. Verified no existing
+  // duplicates before this shipped (both local and production).
+  @@unique([provider, providerRef])
 }
 
 /// Invoice-centric paid-upgrade flow, 2026-08-25 — the PRIMARY billing
@@ -726,6 +734,17 @@ model Payment {
 model Invoice {
   id            String   @id @default(cuid())
   invoiceNumber String   @unique // "INV-2026-000123" — src/lib/invoicing.ts's nextInvoiceNumber(), same real sequential-counter pattern as nextTicketNumber()/nextIncidentNumber() (ticket-numbering.ts), not the ad hoc random-suffix pattern Payment.reference uses.
+  // Paybill, 2026-08-25 — invoiceNumber uppercased with all non-alphanumeric
+  // characters stripped ("INV-2026-000123" -> "INV2026000123"), computed
+  // once at creation. The Paybill C2B confirmation route normalizes the
+  // payer-typed BillRefNumber the identical way and looks it up DIRECTLY
+  // against this unique column — a real DB-backed exact match, never a
+  // scan-then-compare-in-JS (an earlier draft of this feature did exactly
+  // that and was rejected in review: with more than one awaiting invoice in
+  // the table it could silently match the wrong one). Tolerates formatting
+  // differences (dashes, spaces, case) while a genuinely different invoice
+  // number still resolves to nothing — never fuzzy-matched.
+  normalizedInvoiceNumber String @unique
   tenantId      String
   tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   kind          String   @default("plan_change") // plan_change — covers both a trial tenant's first real plan AND a real upgrade; the internal trial plan prices at 0, so the same proration formula naturally yields 0 credit, no special case needed.

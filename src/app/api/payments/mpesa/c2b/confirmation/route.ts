@@ -1,10 +1,12 @@
 import { db } from "@/lib/db";
 import { parseC2BConfirmation } from "@/lib/mpesa";
-import { randomToken } from "@/lib/crypto";
+import { randomToken, requestId as newRequestId } from "@/lib/crypto";
 import { recordInboundEvent, finishInboundEvent } from "@/lib/inbound-events";
 import { recordChannelOutcome, recordChannelCallback } from "@/lib/payment-channels";
 import { handleSubscriptionPaymentConfirmed } from "@/lib/billing-lifecycle";
 import { enterTenantContext, runCrossTenant } from "@/lib/tenant-context";
+import { settleInvoice, normalizeInvoiceRef, type SettleOutcome } from "@/lib/invoice-settlement";
+import { audit } from "@/lib/audit";
 
 // Daraja C2B "Confirmation" — fires AFTER Safaricom has ALREADY moved the
 // customer's money into the PayBill/Till. Unlike STK Push, P2Less never
@@ -54,6 +56,80 @@ export async function POST(req: Request) {
 
   let relatedPaymentId: string | undefined;
   let relatedTenantId: string | undefined;
+
+  // Invoice-centric paid-upgrade flow, 2026-08-25 — tried FIRST, before the
+  // existing subscription-reference lookup below. A real DB-backed exact
+  // match on the unique normalizedInvoiceNumber column — never a scan, never
+  // fuzzy, never by amount/phone/customer. An earlier draft of this used
+  // findFirst({status:"awaiting_payment"}) + compare-in-JS and was rejected
+  // in review: with more than one awaiting invoice it could silently match
+  // the wrong one. This looks up the ONE real invoice this reference
+  // identifies, with NO status filter — "which invoice is this" and "is it
+  // currently payable" are answered separately, by settleInvoice() itself.
+  const invoice = parsed.billRefNumber
+    ? await runCrossTenant(() => db.invoice.findUnique({ where: { normalizedInvoiceNumber: normalizeInvoiceRef(parsed.billRefNumber!) } }))
+    : null;
+
+  if (invoice) {
+    enterTenantContext(invoice.tenantId);
+    const reference = "C2B-" + randomToken(4).toUpperCase();
+    // Payment-as-evidence and the settlement decision commit or roll back
+    // together as one atomic unit — review requirement: a crash here must
+    // never leave a successful upgrade whose Payment wasn't actually
+    // committed, or a committed Payment with no settlement decision made.
+    const { payment, result } = await db.$transaction(async (tx) => {
+      const p = await tx.payment.create({
+        data: {
+          tenantId: invoice.tenantId, invoiceId: invoice.id, reference,
+          amount: parsed.amount, currency: "KES", purpose: "plan_change",
+          method: "mpesa", channelKey, status: "paid", provider: "daraja",
+          providerRef: parsed.transId, paidAt: new Date(),
+        },
+      });
+      const r = await settleInvoice(invoice.id, tx);
+      return { payment: p, result: r };
+    });
+    await recordChannelOutcome(channelKey, true);
+    relatedPaymentId = payment.id;
+    relatedTenantId = invoice.tenantId;
+
+    // Real bug found live: settleInvoice() cannot write its own audit entry
+    // when a caller-supplied tx is still open (audit() opens its OWN
+    // internal transaction for the hash-chain — nesting it inside another
+    // open transaction self-blocked against the same SQLite connection,
+    // consistently timing out at Prisma's 5000ms default). Written here
+    // instead, AFTER the db.$transaction() above has actually committed.
+    if (result.outcome === "settled" && result.auditDetail) {
+      await audit({
+        tenantId: result.auditDetail.tenantId, requestId: newRequestId(), actorType: "system", action: "invoice.settled", target: result.auditDetail.invoiceNumber, success: true,
+        detail: {
+          invoiceNumber: result.auditDetail.invoiceNumber, fromPlan: result.auditDetail.fromPlan, toPlan: result.auditDetail.toPlan,
+          remainingValueKes: result.auditDetail.remainingValueKes, payableKes: result.auditDetail.payableKes, paidTotalKes: result.auditDetail.paidTotalKes,
+          connectorAllowanceChange: result.auditDetail.connectorAllowanceChange,
+        },
+      }).catch(() => {});
+    } else {
+      const AUDIT_ACTION: Record<SettleOutcome, string | null> = {
+        settled: null, insufficient: "invoice.partial_payment_received",
+        already_paid: "invoice.payment_after_settlement",
+        cancelled: "invoice.payment_against_cancelled_invoice",
+        expired: "invoice.payment_against_expired_invoice",
+        not_found: null,
+      };
+      const action = AUDIT_ACTION[result.outcome];
+      if (action) {
+        await audit({
+          tenantId: invoice.tenantId, requestId: newRequestId(), actorType: "system", action, target: invoice.invoiceNumber, success: true,
+          detail: {
+            invoiceNumber: invoice.invoiceNumber, paymentReference: reference, amountReceivedKes: parsed.amount,
+            payableKes: invoice.payableKes, paidSoFarKes: result.paidSoFarKes ?? undefined,
+          },
+        }).catch(() => {});
+      }
+    }
+    await finishInboundEvent(eventRecord.eventRecordId, { processingStatus: "processed", startedAt, responseStatus: 200, relatedPaymentId, relatedTenantId });
+    return Response.json({ ResultCode: 0, ResultDesc: "Accepted" });
+  }
 
   // Deliberately cross-tenant — resolves WHICH tenant this confirmation
   // belongs to, before any context can exist. Found in the same 2026-08-23

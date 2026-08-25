@@ -9,7 +9,7 @@ import { stkPush, isConfigured, classifyMpesaFailure } from "./mpesa";
 import { assertChannelEnabled } from "./payment-channels";
 import { randomToken } from "./crypto";
 import { computeProration } from "./proration";
-import { settleInvoice, nextInvoiceNumber, loadFreshInvoiceForAction } from "./invoice-settlement";
+import { settleInvoice, nextInvoiceNumber, normalizeInvoiceRef, loadFreshInvoiceForAction } from "./invoice-settlement";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Invoice-centric paid-upgrade flow, 2026-08-25 — the Invoice IS the primary
@@ -87,7 +87,7 @@ export async function createUpgradeInvoiceAction(newPlanId: string): Promise<Cre
 
     const invoice = await db.invoice.create({
       data: {
-        invoiceNumber, tenantId, kind: "plan_change",
+        invoiceNumber, normalizedInvoiceNumber: normalizeInvoiceRef(invoiceNumber), tenantId, kind: "plan_change",
         fromPlanId: sub.planId, toPlanId: newPlan.id,
         fromPlanValueKes: sub.plan.priceMonthly,
         usedDays: proration.usedDays, remainingDays: proration.remainingDays, daysInCycle: proration.daysInCycle,
@@ -115,6 +115,19 @@ export async function createUpgradeInvoiceAction(newPlanId: string): Promise<Cre
     }
     return { ok: true, invoice };
   });
+}
+
+/** Paybill, 2026-08-25 — real availability, not assumed. Checks both the
+ *  existing channel gate (assertChannelEnabled, same one STK already uses)
+ *  AND that a real business shortcode is actually configured — never shows
+ *  Paybill as available with no real number to display. */
+export async function getPaybillInfo(): Promise<{ available: boolean; shortcode?: string }> {
+  const channelCheck = await assertChannelEnabled("mpesa_paybill");
+  if (!channelCheck.ok) return { available: false };
+  const channel = await db.paymentChannel.findUnique({ where: { key: "mpesa_paybill" } });
+  const shortcode = (channel?.configJson as { shortcode?: string } | null)?.shortcode;
+  if (!shortcode) return { available: false };
+  return { available: true, shortcode };
 }
 
 type InitiatePaymentResult = { ok: true; ref?: string; checkoutId?: string; mock?: boolean; message: string } | { error: string };

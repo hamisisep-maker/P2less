@@ -9,6 +9,8 @@ import { MaintenanceScreen } from "@/components/maintenance-screen";
 import { resolveVisibleNav } from "@/lib/nav";
 import { getLowBalanceStatus } from "@/lib/prepaid-billing";
 
+const kes = (n: number) => `KES ${n.toLocaleString("en-US")}`;
+
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   return withTenantUser(async (user) => {
     const tenantId = user.tenantId!;
@@ -22,7 +24,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       return <MaintenanceScreen message={message} onLogout={logoutAction} />;
     }
 
-    const [escalated, lowStock, outOfStock, connectorCount, apiKeyCount, webhookCount, productCount, widgetKeyCount, lowBalance] = await Promise.all([
+    const [escalated, lowStock, outOfStock, connectorCount, apiKeyCount, webhookCount, productCount, widgetKeyCount, lowBalance, recentlyAppliedInvoice] = await Promise.all([
       db.conversation.count({ where: { tenantId, status: "escalated" } }),
       db.product.findMany({ where: { tenantId, stockQuantity: { not: null, gt: 0, lte: 5 } }, select: { name: true, stockQuantity: true }, take: 5 }),
       db.product.count({ where: { tenantId, OR: [{ stockQuantity: 0 }, { inStock: false }] } }),
@@ -32,6 +34,19 @@ export default async function DashboardLayout({ children }: { children: React.Re
       db.product.count({ where: { tenantId } }),
       db.widgetKey.count({ where: { tenantId } }),
       getLowBalanceStatus(tenantId),
+      // Paybill, 2026-08-25 — Paybill settlement is genuinely out-of-band
+      // (the customer pays from their own phone at their own pace, more
+      // likely to have closed the tab than with STK's synchronous prompt),
+      // so this is the "returned later" fallback the upgrade modal's own
+      // "you can close this safely" message promises. Only a REAL, fully
+      // settled (status:"paid") invoice ever shows here — a partial payment
+      // never gets a bell entry claiming success, same rule the modal itself
+      // follows.
+      db.invoice.findFirst({
+        where: { tenantId, status: "paid", appliedAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+        orderBy: { appliedAt: "desc" },
+        include: { toPlan: true },
+      }),
     ]);
 
     // Registration reframe Track B — capability-based nav (see nav.ts). Self-
@@ -57,6 +72,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
     const notifications: NotifItem[] = [
       ...(escalated > 0 ? [{ id: "escalated", title: `${escalated} conversation${escalated === 1 ? "" : "s"} escalated`, detail: "Waiting on a human reply", tone: "rose" as const, href: "/dashboard/conversations" }] : []),
+      ...(recentlyAppliedInvoice ? [{ id: `invoice-applied-${recentlyAppliedInvoice.id}`, title: `Your plan was upgraded to ${recentlyAppliedInvoice.toPlan.name}`, detail: `Invoice ${recentlyAppliedInvoice.invoiceNumber} — ${kes(recentlyAppliedInvoice.payableKes)} paid`, tone: "accent" as const, href: "/dashboard/billing" }] : []),
       ...(lowBalanceParts.length > 0 ? [{ id: "low-balance", title: "Balance running low", detail: `${lowBalanceParts.join(" · ")} — top up to avoid an interruption`, tone: "rose" as const, href: "/dashboard/billing" }] : []),
       ...(outOfStock > 0 ? [{ id: "oos", title: `${outOfStock} product${outOfStock === 1 ? "" : "s"} out of stock`, detail: "Customers can't order these right now", tone: "amber" as const, href: "/dashboard/products" }] : []),
       ...lowStock.map((p) => ({ id: `low-${p.name}`, title: `${p.name} running low`, detail: `Only ${p.stockQuantity} left`, tone: "amber" as const, href: "/dashboard/products" })),
