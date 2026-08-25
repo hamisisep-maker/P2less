@@ -490,6 +490,12 @@ model Tenant {
   // not a structured signal — kept as its own column rather than folded
   // into either JSON array. ~500 char practical limit enforced in Zod, not here.
   signupGoal String?
+  // Phase 2 "Explore" hub, 2026-08-25 — set the first time this tenant
+  // finishes OR skips the post-signup Explore wizard. Single source of truth
+  // for "don't auto-redirect to /explore again" — deliberately NOT inferred
+  // from useCases/channelsNeeded being non-null, since those can legitimately
+  // be cleared later from Settings without meaning "go re-explore."
+  exploreCompletedAt DateTime?
   status    String   @default("active") // active | suspended | trial | cancelled
   // White-label branding. Free/basic tenants fall back to P2Less defaults.
   branding  Json? // { assistantName, logoText, primaryColor, welcome, poweredBy, pdfFooter }

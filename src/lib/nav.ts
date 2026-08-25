@@ -4,7 +4,7 @@
 // to work in some dev sessions but breaks in others/production ("Functions
 // cannot be passed directly to Client Components"). A string key is always
 // safe; sidebar-nav.tsx (a client file) owns the actual icon lookup table.
-export type NavIconName = "LayoutDashboard" | "Smartphone" | "Plug" | "MessagesSquare" | "ScrollText" | "Users" | "HelpCircle" | "Package" | "LineChart" | "MapPinned" | "Truck" | "Code2" | "CreditCard" | "Building2" | "Wallet" | "BrainCircuit" | "Settings" | "Boxes" | "ShieldCheck" | "Lock" | "GitMerge" | "HeartPulse" | "AlertTriangle" | "LifeBuoy" | "Globe" | "MessageCircle" | "ClipboardCheck";
+export type NavIconName = "LayoutDashboard" | "Smartphone" | "Plug" | "MessagesSquare" | "ScrollText" | "Users" | "HelpCircle" | "Package" | "LineChart" | "MapPinned" | "Truck" | "Code2" | "CreditCard" | "Building2" | "Wallet" | "BrainCircuit" | "Settings" | "Boxes" | "ShieldCheck" | "Lock" | "GitMerge" | "HeartPulse" | "AlertTriangle" | "LifeBuoy" | "Globe" | "MessageCircle" | "ClipboardCheck" | "Compass";
 
 // Registration reframe Track B (roadmap doc "Registration reframe" section)
 // — capability-based dynamic navigation. Most items are universal ("shared
@@ -15,6 +15,10 @@ export type NavGroup = "commerce" | "integrations" | "developer" | "widget";
 
 export const NAV: { href: string; label: string; icon: NavIconName; group?: NavGroup }[] = [
   { href: "/dashboard", label: "Overview", icon: "LayoutDashboard" },
+  // Phase 2 "Explore" hub, 2026-08-25 — always visible (no `group`), so a
+  // tenant can revisit it any time after their first pass, per the agreed
+  // "one-time on first login, revisitable later via a persistent nav link".
+  { href: "/explore", label: "Explore P2Less", icon: "Compass" },
   { href: "/dashboard/channels", label: "Channels", icon: "Smartphone" },
   { href: "/dashboard/connectors", label: "Integrations", icon: "Plug", group: "integrations" },
   { href: "/dashboard/conversations", label: "Conversations", icon: "MessagesSquare" },

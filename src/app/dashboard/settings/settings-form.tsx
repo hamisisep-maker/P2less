@@ -4,6 +4,7 @@ import { useActionState, useEffect } from "react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui";
 import { updateTenantSettingsAction } from "@/lib/actions";
+import { USE_CASE_OPTIONS, CHANNEL_OPTIONS } from "@/lib/tenant-options";
 
 type Initial = {
   name: string; industry: string;
@@ -13,26 +14,6 @@ type Initial = {
 type State = { ok?: boolean; unchanged?: boolean; error?: string } | null;
 
 const INDUSTRIES = ["school", "hospital", "sacco", "business", "ngo", "government"];
-
-// Same options and copy as /onboard's form (src/app/onboard/onboard-form.tsx)
-// — this is the same self-report, just editable after signup instead of
-// locked in at it. Keep both lists in sync if either changes.
-const USE_CASE_OPTIONS: { value: string; label: string }[] = [
-  { value: "automate_conversations", label: "Automate WhatsApp conversations for my customers" },
-  { value: "sell_products", label: "Sell products & manage orders/delivery" },
-  { value: "connect_systems", label: "Connect my existing software/systems" },
-  { value: "developer_api", label: "I'm a developer — building on the API" },
-  { value: "exploring", label: "Just exploring" },
-];
-const CHANNEL_OPTIONS: { value: string; label: string }[] = [
-  { value: "whatsapp", label: "WhatsApp" },
-  { value: "messenger", label: "Facebook Messenger" },
-  { value: "telegram", label: "Telegram" },
-  { value: "web_chat", label: "Our website (chat widget)" },
-  { value: "sms_interested", label: "SMS (coming soon — let us know you need it)" },
-  { value: "instagram_interested", label: "Instagram (coming soon — let us know you need it)" },
-  { value: "email_interested", label: "Email (coming soon — let us know you need it)" },
-];
 
 export function SettingsForm({ initial, canManage }: { initial: Initial; canManage: boolean }) {
   const [state, action, pending] = useActionState<State, FormData>(updateTenantSettingsAction, null);

@@ -60,14 +60,24 @@ export async function loginAction(_prev: unknown, formData: FormData) {
   // scoped yet. Found in the same 2026-08-23 fail-closed audit as every
   // other identity-resolution lookup — this one is the most critical, since
   // it broke login itself in production.
-  const user = await runCrossTenant(() => db.user.findUnique({ where: { email } }));
+  const user = await runCrossTenant(() =>
+    db.user.findUnique({ where: { email }, include: { tenant: { select: { exploreCompletedAt: true } } } }),
+  );
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
     await recordLoginAttempt(email, false);
     return { error: "Invalid email or password." };
   }
   await recordLoginAttempt(email, true);
   await createSession(user.id, user.tenantId, user.isSuperAdmin);
-  redirect(user.isSuperAdmin || user.adminRoleId ? "/admin" : "/dashboard");
+  // Phase 2 "Explore" hub, 2026-08-25 — a tenant that hasn't finished (or
+  // skipped) Explore yet lands there first, not the dashboard. Platform
+  // staff (super admin/adminRole) are unaffected — they're not a tenant
+  // going through its own onboarding.
+  redirect(
+    user.isSuperAdmin || user.adminRoleId
+      ? "/admin"
+      : user.tenant?.exploreCompletedAt ? "/dashboard" : "/explore",
+  );
 }
 
 export async function logoutAction() {
@@ -1248,5 +1258,34 @@ export async function updateTenantSettingsAction(_prev: unknown, formData: FormD
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/widget");
     return { ok: true };
+  });
+}
+
+// Phase 2 "Explore" hub, 2026-08-25 — a tenant's own first-run setup, not a
+// settings change, so no TENANT_MANAGE gate (unlike updateTenantSettingsAction
+// above): any logged-in member of a brand-new tenant can complete it.
+export async function saveExploreSelectionAction(_prev: unknown, formData: FormData) {
+  return withTenantUser(async (user) => {
+    const useCases = formData.getAll("useCases").map(String);
+    const channelsNeeded = formData.getAll("channelsNeeded").map(String);
+    const signupGoal = String(formData.get("signupGoal") ?? "").trim().slice(0, 500);
+
+    await db.tenant.update({
+      where: { id: user.tenantId! },
+      data: { useCases, channelsNeeded, signupGoal: signupGoal || null, exploreCompletedAt: new Date() },
+    });
+    revalidatePath("/dashboard");
+    redirect("/dashboard");
+  });
+}
+
+// Skipping means "don't ask again," not "record empty interest" — leaves
+// useCases/channelsNeeded/signupGoal exactly as they were (null for a fresh
+// tenant) so the data stays honest.
+export async function skipExploreAction() {
+  return withTenantUser(async (user) => {
+    await db.tenant.update({ where: { id: user.tenantId! }, data: { exploreCompletedAt: new Date() } });
+    revalidatePath("/dashboard");
+    redirect("/dashboard");
   });
 }

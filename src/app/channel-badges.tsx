@@ -1,22 +1,39 @@
 import type { Channel } from "@/lib/landing-content";
 
-// Simple styled monogram marks in each platform's real brand color — not
-// scraped/trademarked logo assets, the same legitimate "works with" pattern
-// most integration pages use. Ties back to the Logo component's own
-// two-letter monogram treatment, so it reads as one consistent visual system.
+// Recognizable brand silhouettes (the standard "works with" icon convention
+// integration pages use), not scraped screenshots or official asset files.
+// Each path is a simplified, widely-reproduced glyph for that platform.
+const ICON_PATHS: Record<string, string> = {
+  WhatsApp:
+    "M12 2C6.48 2 2 6.48 2 12c0 1.85.5 3.58 1.36 5.07L2 22l5.07-1.33A9.94 9.94 0 0 0 12 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm0 18a7.9 7.9 0 0 1-4.24-1.23l-.3-.19-3.05.8.82-2.97-.2-.31A7.94 7.94 0 1 1 12 20zm4.36-5.85c-.23-.12-1.38-.68-1.6-.76-.21-.08-.37-.12-.53.12-.15.23-.6.76-.74.92-.14.15-.27.17-.5.06-.23-.12-.98-.36-1.87-1.15-.69-.62-1.16-1.38-1.3-1.61-.13-.23-.01-.36.1-.47.11-.11.23-.27.35-.41.11-.14.15-.23.23-.39.08-.15.04-.29-.02-.41-.06-.12-.53-1.28-.73-1.75-.19-.46-.39-.4-.53-.4-.14-.01-.29-.01-.45-.01-.15 0-.4.06-.61.29-.21.23-.8.78-.8 1.9s.82 2.2.93 2.36c.12.15 1.62 2.47 3.92 3.47.55.24.98.38 1.31.48.55.18 1.05.15 1.45.09.44-.07 1.38-.57 1.57-1.11.19-.55.19-1.02.14-1.11-.06-.1-.21-.16-.44-.27z",
+  Messenger:
+    "M12 2C6.5 2 2 6.15 2 11.5c0 3.05 1.47 5.77 3.78 7.55V22l3.45-1.9c.9.25 1.85.38 2.77.38 5.5 0 10-4.15 10-9.5S17.5 2 12 2zm1.02 12.79-2.55-2.72-4.98 2.72 5.48-5.82 2.61 2.72 4.9-2.72-5.46 5.82z",
+  Telegram:
+    "M22 3 2.5 10.7c-1.3.53-1.3 1.28-.24 1.6l4.99 1.56 1.93 5.9c.24.66.42.92.85.92.36 0 .53-.16.75-.38l1.8-1.75 3.75 2.77c.69.38 1.19.18 1.36-.64l2.47-11.6c.25-1.03-.39-1.5-1.16-1.15z M8.4 13.9l9.3-5.8c.44-.27.84-.12.51.18l-7.9 7.13-.31 3.3-1.6-4.81z",
+  Email:
+    "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm0 2v.01L12 12l8-5.99V6H4zm16 12V8.24l-7.4 5.55a1 1 0 0 1-1.2 0L4 8.24V18h16z",
+  "Website widget":
+    "M12 2 2 7l10 5 10-5-10-5zM2 12l10 5 10-5M2 17l10 5 10-5",
+  "X (Twitter)":
+    "M17.75 3h3.06l-6.69 7.65L22 21h-6.16l-4.83-6.32L5.5 21H2.44l7.16-8.19L2 3h6.32l4.37 5.78L17.75 3zm-1.08 16.17h1.7L7.4 4.74H5.58l11.09 14.43z",
+};
+
 export function ChannelBadges({ channels }: { channels: Channel[] }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-      {channels.map((c) => (
-        <div key={c.name} className="relative rounded-2xl border border-line bg-surface p-4 text-center">
+      {channels.map((c, i) => (
+        <div
+          key={c.name}
+          className="animate-in relative rounded-2xl border border-line bg-surface p-4 text-center"
+          style={{ animationDelay: `${i * 70}ms` }}
+        >
           {!c.live && (
             <span className="absolute right-2 top-2 rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-medium text-faint">soon</span>
           )}
-          <div
-            className="mx-auto grid h-11 w-11 place-items-center rounded-xl text-sm font-bold text-white"
-            style={{ background: c.color }}
-          >
-            {c.mark}
+          <div className="mx-auto grid h-11 w-11 place-items-center rounded-xl text-white" style={{ background: c.color }}>
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+              <path d={ICON_PATHS[c.name] ?? ""} />
+            </svg>
           </div>
           <div className="mt-2 text-sm font-semibold">{c.name}</div>
           <div className="mt-0.5 text-xs text-muted">{c.blurb}</div>
