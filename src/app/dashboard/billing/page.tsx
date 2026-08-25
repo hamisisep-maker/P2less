@@ -100,7 +100,7 @@ export default async function BillingPage() {
             {upgradeOptions.length > 0 ? (
               <>
                 <h2 className="mb-1 font-display font-semibold">Upgrade your plan</h2>
-                <p className="mb-3 text-xs text-muted">Takes effect immediately — this month's bill switches to the new rate right away. Want to downgrade instead? Contact us.</p>
+                <p className="mb-3 text-xs text-muted">We&apos;re finishing a secure payment flow for self-service upgrades — for now, contact us and we&apos;ll upgrade your plan right away. Want to downgrade instead? Contact us too.</p>
                 <div className="space-y-2">
                   {upgradeOptions.map((p) => (
                     <UpgradePlanButton key={p.id} planId={p.id} planName={p.name} priceMonthly={p.priceMonthly} />

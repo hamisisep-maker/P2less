@@ -129,18 +129,21 @@ export async function startPaymentAction(_prev: unknown, formData: FormData) {
   });
 }
 
-/** Tenant self-service — UPGRADE only, enforced server-side (never trust a
- *  client-submitted planId's direction). Applies immediately: an explicit,
- *  honest "the whole current month bills at the new plan's rate, no
- *  partial-month credit" rule, safe because it only ever increases what's
- *  charged. Downgrades are deliberately NOT self-service — direct user
- *  decision, see admin-actions.ts's changeTenantPlanAction for why (real
- *  gaming risk: changing plan right before the bill is computed could
- *  otherwise shrink what's owed for usage already incurred at the higher
- *  rate). Direction is read from Plan.sort, not priceMonthly — checked the
+/** EMERGENCY STOPGAP, 2026-08-25 — self-service upgrade previously applied
+ *  `planId` immediately on click with NO payment step of any kind (confirmed:
+ *  a bare `db.subscription.update`, no computeBill(), no Payment row, no
+ *  stkPush(), nothing). That is a real, live money-exposure bug — a tenant
+ *  could upgrade to any higher tier for free, indefinitely. Disabled here
+ *  (same "admin-only, contact us" shape already used for downgrades) while
+ *  a proper paid-upgrade flow — payment method selection, backend-computed
+ *  amount, proration of remaining plan value, verified-payment-before-
+ *  activation — is built. Admin-side changeTenantPlanAction (admin-actions.ts)
+ *  is intentionally left as-is: that path requires a human with permission
+ *  and a recorded reason, a legitimate manual override, not a self-service
+ *  bypass. Direction is read from Plan.sort, not priceMonthly — checked the
  *  real seed data first: Enterprise prices at 0, same as Free, but is
  *  obviously the top tier. */
-export async function upgradeSubscriptionPlanAction(_prev: unknown, formData: FormData) {
+export async function upgradeSubscriptionPlanAction(_prev: unknown, formData: FormData): Promise<{ ok?: boolean; planName?: string; error?: string }> {
   return withTenantUser(async (user) => {
     if (!userPermissions(user).includes(PERMISSIONS.BILLING_MANAGE)) return { error: "You don't have billing permission." };
     const tenantId = user.tenantId!;
@@ -152,17 +155,7 @@ export async function upgradeSubscriptionPlanAction(_prev: unknown, formData: Fo
     if (!sub) return { error: "No subscription found." };
     if (!newPlan || !newPlan.active) return { error: "That plan isn't available." };
     if (newPlan.sort <= sub.plan.sort) return { error: "Downgrading isn't self-service — contact us and we'll take care of it." };
-
-    await db.subscription.update({ where: { tenantId }, data: { planId: newPlan.id, pendingPlanId: null } });
-    const { audit } = await import("./audit");
-    const { requestId: newRequestId } = await import("./crypto");
-    await audit({
-      tenantId, requestId: newRequestId(), actorType: "user", actorId: user.id,
-      action: "subscription.plan_upgraded", target: newPlan.id, success: true,
-      detail: { fromPlan: sub.plan.name, toPlan: newPlan.name },
-    });
-    revalidatePath("/dashboard/billing");
-    return { ok: true, planName: newPlan.name };
+    return { error: "Self-service upgrade is temporarily unavailable while we finish a secure payment flow for it. Contact us and we'll upgrade your plan right away." };
   });
 }
 
