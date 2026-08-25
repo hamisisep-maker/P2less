@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Wifi, Signal, BatteryFull, Mic } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Wifi, Signal, BatteryFull, Mic, Lock, XCircle, CheckCircle2 } from "lucide-react";
 
-type Message = { from: "them" | "me"; text: string; time: string };
+type Message = { from: "them" | "me"; text: string; time: string; kind?: "text" | "stk" | "cancelled" | "confirmed"; amount?: number };
 type Channel = { name: string; color: string; bubble: string; icon: string };
 
 const ICON_PATHS: Record<string, string> = {
@@ -33,7 +33,8 @@ type Scene = { org: string; channel: keyof typeof CHANNELS; customer: string; me
 // One scene per channel P2Less answers on, each also standing in for a
 // different kind of organization — generic category names, not fictional
 // branded companies, since this is illustrating the PRODUCT'S range of
-// channels and industries, not any one real customer.
+// channels and industries, not any one real customer. The widget scene is
+// the one exception — that IS the real Hamzone Technologies widget.
 const SCENES: Scene[] = [
   {
     org: "School", channel: "whatsapp", customer: "Khadija",
@@ -68,10 +69,34 @@ const SCENES: Scene[] = [
     ],
   },
   {
-    org: "Government", channel: "x", customer: "Amina",
+    org: "SACCO", channel: "messenger", customer: "Joyce",
     messages: [
-      { from: "them", text: "Is my ID ready for collection?", time: "12:41am" },
-      { from: "me", text: "Yes, ready at your registration center.", time: "12:41am" },
+      { from: "them", text: "Pay my contribution, KES 50.", time: "4:41pm" },
+      { from: "me", text: "Just checking, your monthly contribution is KES 500, not 50. Send KES 500?", time: "4:41pm" },
+      { from: "them", text: "Yes, 500 is correct.", time: "4:42pm" },
+      { from: "me", text: "M-Pesa PIN prompt sent to your phone.", time: "4:42pm", kind: "stk", amount: 500 },
+      { from: "me", text: "Payment was cancelled on your end.", time: "4:43pm", kind: "cancelled" },
+      { from: "them", text: "Sorry, please send it again.", time: "4:43pm" },
+      { from: "me", text: "No problem. M-Pesa PIN prompt sent again.", time: "4:43pm", kind: "stk", amount: 500 },
+      { from: "me", text: "Payment of KES 500 confirmed. Thank you!", time: "4:44pm", kind: "confirmed" },
+    ],
+  },
+  {
+    org: "University", channel: "x", customer: "Amina",
+    messages: [
+      { from: "them", text: "Is my transcript ready for collection?", time: "12:41am" },
+      { from: "me", text: "I'll need to verify it's you first. Code sent.", time: "12:41am" },
+      { from: "them", text: "205817", time: "12:42am" },
+      { from: "me", text: "Verified. Yes, ready at the registrar's office.", time: "12:42am" },
+    ],
+  },
+  {
+    org: "Government", channel: "whatsapp", customer: "Joseph",
+    messages: [
+      { from: "them", text: "Is my ID ready for collection?", time: "2:09pm" },
+      { from: "me", text: "I'll need to verify it's you first. Code sent.", time: "2:09pm" },
+      { from: "them", text: "739104", time: "2:10pm" },
+      { from: "me", text: "Verified. Yes, ready at your registration center.", time: "2:10pm" },
     ],
   },
   {
@@ -85,37 +110,51 @@ const SCENES: Scene[] = [
 
 const STEP_MS = 3200;
 const SCENE_PAUSE_MS = 5200;
+const FADE_OUT_MS = 500;
+const SWITCH_MS = 1100;
+
+type Phase = "chatting" | "leaving" | "switching";
 
 // A generic phone-chat mockup, real product colors and layout, not a
 // screenshot or trademark asset — same "recognizable, not scraped"
 // convention as channel-badges.tsx's icon glyphs. Cycles through one
-// scene per real channel and per audience this product serves, slowly
-// enough to actually read, with the header/channel identity animating
-// in as the org "comes online."
+// scene per real channel and per audience this product serves. Between
+// scenes it doesn't just hard-cut: the conversation fades out, a brief
+// "opening {channel}" screen plays (standing in for switching apps), then
+// the new conversation builds back up from the top, message by message.
 export function ChannelChatMockup() {
   const [sceneIdx, setSceneIdx] = useState(0);
   const [shown, setShown] = useState(0);
-  const [headerKey, setHeaderKey] = useState(0);
+  const [phase, setPhase] = useState<Phase>("chatting");
   const scene = SCENES[sceneIdx];
   const channel = CHANNELS[scene.channel];
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const atEnd = shown >= scene.messages.length;
-    const t = setTimeout(
-      () => {
-        if (atEnd) {
-          setSceneIdx((i) => (i + 1) % SCENES.length);
-          setShown(0);
-          setHeaderKey((k) => k + 1);
-        } else {
-          setShown((n) => n + 1);
-        }
-      },
-      atEnd ? SCENE_PAUSE_MS : STEP_MS,
-    );
-    return () => clearTimeout(t);
-  }, [shown, scene.messages.length]);
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [shown, sceneIdx]);
 
+  useEffect(() => {
+    if (phase === "chatting") {
+      const atEnd = shown >= scene.messages.length;
+      const t = setTimeout(() => (atEnd ? setPhase("leaving") : setShown((n) => n + 1)), atEnd ? SCENE_PAUSE_MS : STEP_MS);
+      return () => clearTimeout(t);
+    }
+    if (phase === "leaving") {
+      const t = setTimeout(() => setPhase("switching"), FADE_OUT_MS);
+      return () => clearTimeout(t);
+    }
+    // switching — advance to the next scene's identity, then start chatting again
+    const t = setTimeout(() => {
+      setSceneIdx((i) => (i + 1) % SCENES.length);
+      setShown(0);
+      setPhase("chatting");
+    }, SWITCH_MS);
+    return () => clearTimeout(t);
+  }, [phase, shown, scene.messages.length]);
+
+  const nextScene = SCENES[(sceneIdx + 1) % SCENES.length];
+  const nextChannel = CHANNELS[nextScene.channel];
   const visible = scene.messages.slice(0, shown);
 
   return (
@@ -125,55 +164,99 @@ export function ChannelChatMockup() {
       <div className="relative rounded-[2.5rem] border-[10px] border-ink bg-ink shadow-[var(--shadow-card-hover)]">
         <div className="absolute left-1/2 top-0 z-10 h-5 w-28 -translate-x-1/2 rounded-b-2xl bg-ink" aria-hidden="true" />
 
-        <div className="flex h-[560px] flex-col overflow-hidden rounded-[1.75rem] bg-white">
-          <div className="flex items-center justify-between px-5 pb-1 pt-2 text-[11px] font-semibold text-white transition-colors duration-500" style={{ background: channel.color }}>
-            <span>9:41</span>
-            <div className="flex items-center gap-1">
-              <Signal size={12} /> <Wifi size={12} /> <BatteryFull size={13} />
-            </div>
-          </div>
-
-          <div key={headerKey} className="header-rise-in flex items-center gap-2.5 px-3 py-2.5 text-white transition-colors duration-500" style={{ background: channel.color }}>
-            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/20">
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d={channel.icon} /></svg>
-            </div>
-            <div className="min-w-0 leading-tight">
-              <div className="truncate text-sm font-semibold">{scene.org}</div>
-              <div className="header-online flex items-center gap-1 text-[10px] text-white/80">
-                <span>{channel.name}</span><span aria-hidden="true">·</span><span>online</span>
+        <div className="relative flex h-[560px] flex-col overflow-hidden rounded-[1.75rem] bg-white">
+          {phase === "switching" ? (
+            <div className="animate-in flex h-full flex-col items-center justify-center gap-3 text-white transition-colors duration-300" style={{ background: nextChannel.color }}>
+              <div className="grid h-14 w-14 place-items-center rounded-2xl bg-white/15">
+                <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d={nextChannel.icon} /></svg>
               </div>
+              <div className="text-sm font-medium">Opening {nextChannel.name}…</div>
             </div>
-          </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between px-5 pb-1 pt-2 text-[11px] font-semibold text-white transition-colors duration-500" style={{ background: channel.color }}>
+                <span>9:41</span>
+                <div className="flex items-center gap-1">
+                  <Signal size={12} /> <Wifi size={12} /> <BatteryFull size={13} />
+                </div>
+              </div>
 
-          <div key={headerKey + "-body"} className="flex flex-1 flex-col justify-end space-y-2 overflow-hidden px-3 py-3" style={{ background: "#ECE5DD" }}>
-            <div className="animate-in mx-auto rounded-full bg-black/5 px-3 py-1 text-center text-[10px] text-black/50">{scene.customer} · new conversation</div>
-            {visible.map((m, i) => (
+              <div key={sceneIdx} className="header-rise-in flex items-center gap-2.5 px-3 py-2.5 text-white transition-colors duration-500" style={{ background: channel.color }}>
+                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/20">
+                  <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d={channel.icon} /></svg>
+                </div>
+                <div className="min-w-0 leading-tight">
+                  <div className="truncate text-sm font-semibold">{scene.org}</div>
+                  <div className="header-online flex items-center gap-1 text-[10px] text-white/80">
+                    <span>{channel.name}</span><span aria-hidden="true">·</span><span>online</span>
+                  </div>
+                </div>
+              </div>
+
               <div
-                key={i}
-                className={"animate-in flex max-w-[80%] flex-wrap items-end gap-1.5 rounded-lg px-3 py-2 text-[13px] leading-snug shadow-sm " + (m.from === "me" ? "ml-auto rounded-tr-none" : "rounded-tl-none bg-white")}
-                style={m.from === "me" ? { background: channel.bubble } : undefined}
+                key={sceneIdx + "-body"}
+                ref={scrollRef}
+                className="chat-scroll flex flex-1 flex-col space-y-2 overflow-y-auto px-3 py-3 transition-opacity duration-500"
+                style={{ background: "#ECE5DD", opacity: phase === "leaving" ? 0 : 1 }}
               >
-                <span>{m.text}</span>
-                <span className="ml-auto shrink-0 text-[10px] text-black/40">{m.time}</span>
+                <div className="animate-in mx-auto rounded-full bg-black/5 px-3 py-1 text-center text-[10px] text-black/50">{scene.customer} · new conversation</div>
+                {visible.map((m, i) => {
+                  if (m.kind === "stk") {
+                    return (
+                      <div key={i} className="animate-in ml-auto w-fit max-w-[85%] rounded-lg border border-green/30 bg-white px-3 py-2.5 text-[12px] shadow-sm">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-green">
+                          <Lock size={11} /> M-Pesa PIN prompt
+                        </div>
+                        <div className="mt-1 text-ink">Pay <b>KES {m.amount}</b> to complete this request.</div>
+                        <div className="mt-1.5 text-right text-[10px] text-black/40">{m.time}</div>
+                      </div>
+                    );
+                  }
+                  if (m.kind === "cancelled") {
+                    return (
+                      <div key={i} className="animate-in mx-auto flex w-fit max-w-[85%] items-center gap-1.5 rounded-full bg-rose-soft px-3 py-1.5 text-[11px] text-rose">
+                        <XCircle size={13} /> {m.text}
+                      </div>
+                    );
+                  }
+                  if (m.kind === "confirmed") {
+                    return (
+                      <div key={i} className="animate-in ml-auto flex w-fit max-w-[85%] items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] shadow-sm" style={{ background: channel.bubble }}>
+                        <CheckCircle2 size={14} className="shrink-0 text-green" /> {m.text}
+                        <span className="ml-1 shrink-0 text-[10px] text-black/40">{m.time}</span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div
+                      key={i}
+                      className={"animate-in flex max-w-[80%] flex-wrap items-end gap-1.5 rounded-lg px-3 py-2 text-[13px] leading-snug shadow-sm " + (m.from === "me" ? "ml-auto rounded-tr-none" : "rounded-tl-none bg-white")}
+                      style={m.from === "me" ? { background: channel.bubble } : undefined}
+                    >
+                      <span>{m.text}</span>
+                      <span className="ml-auto shrink-0 text-[10px] text-black/40">{m.time}</span>
+                    </div>
+                  );
+                })}
+                {shown < scene.messages.length && scene.messages[shown]?.from === "me" && (
+                  <div className="ml-auto w-fit rounded-lg px-3 py-2 shadow-sm" style={{ background: channel.bubble }}>
+                    <span className="flex gap-1">
+                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-black/30" style={{ animationDelay: "0ms" }} />
+                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-black/30" style={{ animationDelay: "150ms" }} />
+                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-black/30" style={{ animationDelay: "300ms" }} />
+                    </span>
+                  </div>
+                )}
               </div>
-            ))}
-            {shown < scene.messages.length && scene.messages[shown]?.from === "me" && (
-              <div className="ml-auto w-fit rounded-lg px-3 py-2 shadow-sm" style={{ background: channel.bubble }}>
-                <span className="flex gap-1">
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-black/30" style={{ animationDelay: "0ms" }} />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-black/30" style={{ animationDelay: "150ms" }} />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-black/30" style={{ animationDelay: "300ms" }} />
-                </span>
-              </div>
-            )}
-          </div>
 
-          <div className="flex items-center gap-2 px-3 py-2.5" style={{ background: "#ECE5DD" }}>
-            <div className="flex-1 rounded-full bg-white px-3.5 py-2 text-[11px] text-faint">Message</div>
-            <div className="grid h-8 w-8 place-items-center rounded-full text-white transition-colors duration-500" style={{ background: channel.color }}>
-              <Mic size={14} />
-            </div>
-          </div>
+              <div className="flex items-center gap-2 px-3 py-2.5" style={{ background: "#ECE5DD" }}>
+                <div className="flex-1 rounded-full bg-white px-3.5 py-2 text-[11px] text-faint">Message</div>
+                <div className="grid h-8 w-8 place-items-center rounded-full text-white transition-colors duration-500" style={{ background: channel.color }}>
+                  <Mic size={14} />
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -94,6 +94,12 @@
 @keyframes header-online-fade { from { opacity: 0; } to { opacity: 1; } }
 .header-online { animation: header-online-fade 0.4s ease-out 0.5s both; }
 
+/* Chat mockup's message area — scrolls to reveal new messages (old ones
+   scroll up out of view) without showing a visible scrollbar, matching
+   how a real chat app looks, not a webpage. */
+.chat-scroll { scrollbar-width: none; }
+.chat-scroll::-webkit-scrollbar { display: none; }
+
 @media (prefers-reduced-motion: reduce) {
   .animate-in, .animate-shimmer, .pulse-dot::before, .orbit-spoke, .header-rise-in, .header-online { animation: none !important; }
 }
