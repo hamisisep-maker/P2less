@@ -58,6 +58,9 @@ export const ADMIN_PERMISSIONS = [
   // ── Priority 6: Notification Engine ──────────────────────────────────────
   "notifications.view",
   "notifications.manage", // create/edit/enable/disable NotificationRule rows — was billing.manage_automation-only before this generalized beyond billing events
+
+  // ── Priority 7: Product Intelligence (Phase 4 of the onboarding-restructure initiative) ──
+  "product_intelligence.view", // aggregate/cross-tab/history view of tenants' self-reported useCases/channelsNeeded interest — read-only, no tenant-level mutation capability
 ] as const;
 
 export type AdminPermission = typeof ADMIN_PERMISSIONS[number];
@@ -103,6 +106,8 @@ export const PERMISSION_LABELS: Record<AdminPermission, string> = {
 
   "notifications.view": "View notification rules and delivery status",
   "notifications.manage": "Create, edit, and enable/disable notification rules",
+
+  "product_intelligence.view": "View aggregate product-interest analytics (use-case/channel counts, cross-tabs, history)",
 };
 
 export type BuiltInRoleKey = "super_admin" | "finance_admin" | "operations_admin" | "support_admin" | "security_admin" | "read_only_admin";
@@ -127,7 +132,7 @@ export const BUILT_IN_ROLES: Record<BuiltInRoleKey, { name: string; permissions:
       "models.view", "models.change_primary", "models.edit_pricing",
       "providers.view", "providers.manage", "audit.view",
       "integrations.view", "integrations.manage", "system_health.view", "incidents.view", "incidents.manage", "webhooks.view",
-      "tickets.view", "tickets.manage", "notifications.view", "notifications.manage",
+      "tickets.view", "tickets.manage", "notifications.view", "notifications.manage", "product_intelligence.view",
     ],
   },
   support_admin: {
@@ -147,6 +152,7 @@ export const BUILT_IN_ROLES: Record<BuiltInRoleKey, { name: string; permissions:
     permissions: [
       "tenants.view", "billing.view", "plans.view", "models.view", "providers.view", "audit.view",
       "integrations.view", "system_health.view", "incidents.view", "reconciliation.view", "webhooks.view", "tickets.view", "notifications.view",
+      "product_intelligence.view",
     ],
   },
 };

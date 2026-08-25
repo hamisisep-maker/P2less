@@ -524,6 +524,7 @@ model Tenant {
   otps          OtpChallenge[]
   authSessions  AuthSession[]
   auditLogs     AuditLog[]
+  interestEvents TenantInterestEvent[]
   usageEvents   UsageEvent[]
   documents     Document[]
   subscription  Subscription?
@@ -1557,6 +1558,29 @@ model AuditLog {
 
   @@index([tenantId])
   @@index([requestId])
+}
+
+/// Phase 4, 2026-08-26 — a REAL history of Tenant.useCases/channelsNeeded
+/// changes, not the overwritten JSON snapshot those two columns already are.
+/// Sibling to AuditLog in spirit (tenant-scoped, append-only) but STRUCTURED
+/// columns instead of a JSON detail blob — one row per individual value
+/// added/removed (not one row per save), so "how many tenants added
+/// WhatsApp interest this week" is a plain count(), not a per-row JSON parse.
+/// Written by src/lib/interest-events.ts, called from saveExploreSelectionAction
+/// and updateTenantSettingsAction (src/lib/actions.ts) right after each
+/// diffs old vs new. Read by the admin Product Intelligence dashboard.
+model TenantInterestEvent {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  source    String // explore | settings | backfill
+  field     String // useCases | channelsNeeded
+  value     String // one option value, e.g. "sell_products" or "whatsapp"
+  action    String // added | removed
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([field, value])
 }
 
 /// Usage metering feeds both plan-limit enforcement and future usage billing.

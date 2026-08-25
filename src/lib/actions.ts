@@ -1331,6 +1331,9 @@ export async function updateTenantSettingsAction(_prev: unknown, formData: FormD
     if (unchanged) return { ok: true, unchanged: true };
 
     await db.tenant.update({ where: { id: user.tenantId! }, data: { name, industry, branding: newBranding, useCases, channelsNeeded } });
+    const { recordInterestDiff } = await import("./interest-events");
+    await recordInterestDiff(user.tenantId!, "useCases", (current?.useCases as string[] | null) ?? [], useCases, "settings");
+    await recordInterestDiff(user.tenantId!, "channelsNeeded", (current?.channelsNeeded as string[] | null) ?? [], channelsNeeded, "settings");
     revalidatePath("/dashboard/settings");
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/widget");
@@ -1347,10 +1350,18 @@ export async function saveExploreSelectionAction(_prev: unknown, formData: FormD
     const channelsNeeded = formData.getAll("channelsNeeded").map(String);
     const signupGoal = String(formData.get("signupGoal") ?? "").trim().slice(0, 500);
 
+    // Explore is revisitable (persistent nav link, Phase 2), so this isn't
+    // always a first-run "from null" write — fetch current values first so
+    // a real change on a revisit gets recorded, not just the initial set.
+    const current = await db.tenant.findUnique({ where: { id: user.tenantId! }, select: { useCases: true, channelsNeeded: true } });
+
     await db.tenant.update({
       where: { id: user.tenantId! },
       data: { useCases, channelsNeeded, signupGoal: signupGoal || null, exploreCompletedAt: new Date() },
     });
+    const { recordInterestDiff } = await import("./interest-events");
+    await recordInterestDiff(user.tenantId!, "useCases", (current?.useCases as string[] | null) ?? [], useCases, "explore");
+    await recordInterestDiff(user.tenantId!, "channelsNeeded", (current?.channelsNeeded as string[] | null) ?? [], channelsNeeded, "explore");
     revalidatePath("/dashboard");
     redirect("/dashboard");
   });

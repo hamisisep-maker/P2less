@@ -101,6 +101,35 @@ run("npx tsx scripts/seed-products.ts");
   }
 }
 
+// Phase 4, 2026-08-26 — TenantInterestEvent is a brand-new table, so every
+// tenant that already had useCases/channelsNeeded set before this phase
+// shipped has no history at all. Give each such tenant one baseline "added"
+// event per current value, source: "backfill", so the admin trend chart has
+// a coherent starting point instead of a gap. Idempotent via the zero-events
+// check — a tenant that already has ANY real event (from this backfill or a
+// genuine later change) never matches again.
+{
+  const tenants = await db.tenant.findMany({
+    select: { id: true, useCases: true, channelsNeeded: true },
+  });
+  let backfilled = 0;
+  for (const t of tenants) {
+    const useCases = t.useCases ?? [];
+    const channelsNeeded = t.channelsNeeded ?? [];
+    if (useCases.length === 0 && channelsNeeded.length === 0) continue;
+    const existing = await db.tenantInterestEvent.count({ where: { tenantId: t.id } });
+    if (existing > 0) continue;
+    await db.tenantInterestEvent.createMany({
+      data: [
+        ...useCases.map((value) => ({ tenantId: t.id, source: "backfill", field: "useCases", value, action: "added" })),
+        ...channelsNeeded.map((value) => ({ tenantId: t.id, source: "backfill", field: "channelsNeeded", value, action: "added" })),
+      ],
+    });
+    backfilled++;
+  }
+  if (backfilled) console.log(`[prod-start] TenantInterestEvent backfill: ${backfilled} tenant(s) given a baseline history.`);
+}
+
 // Reconcile which tenant owns the REAL live WhatsApp number(s) from env — this
 // runs on EVERY boot (not just first-seed) so it also corrects a value the seed
 // assigned before an env var existed. A physical number can only route to ONE
