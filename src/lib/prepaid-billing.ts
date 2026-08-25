@@ -2,6 +2,9 @@ import "server-only";
 import { db } from "./db";
 import { getSettingNumber } from "./platform-settings";
 import { checkLimit } from "./usage";
+import { sendSms, smsEnabled } from "./sms";
+import { sendEmail } from "./notification-channels";
+import { resolveTenantRecipientEmail } from "./notifications";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Prepaid billing, 2026-08-25 — the gate that makes the whole redesign real:
@@ -76,6 +79,7 @@ export async function debitMessageBalance(tenantId: string): Promise<void> {
   if (!sub || isGateExempt(sub)) return;
   const price = await getSettingNumber("price_conversation_kes");
   await db.subscription.update({ where: { tenantId }, data: { messageBalanceKes: { decrement: price } } });
+  checkAndNotifyLowBalance(tenantId).catch(() => {});
 }
 
 /** Same shape as debitMessageBalance, for the AI balance. */
@@ -84,6 +88,93 @@ export async function debitAiBalance(tenantId: string): Promise<void> {
   if (!sub || isGateExempt(sub)) return;
   const price = await getSettingNumber("price_ai_kes");
   await db.subscription.update({ where: { tenantId }, data: { aiBalanceKes: { decrement: price } } });
+  checkAndNotifyLowBalance(tenantId).catch(() => {});
+}
+
+/** Low-balance notification, 2026-08-25 — fired from BOTH debit functions
+ *  (never awaited by either — a notification send must never slow down or
+ *  risk a real customer reply) so a balance getting low from EITHER kind of
+ *  usage is always caught, and so a message crossing low while AI is already
+ *  low (or vice versa) still only ever sends ONE combined notification, not
+ *  two separate ones close together.
+ *
+ *  Per-balance messageLowBalanceNotifiedAt/aiLowBalanceNotifiedAt each track
+ *  their OWN crossing independently: cleared as soon as this check next runs
+ *  (i.e. the next real message/AI call) after a top-up brings that balance
+ *  back above its threshold — there's no top-up flow yet to hook a clear into
+ *  directly (that's the next stage), so it's re-evaluated here, on the only
+ *  event that currently touches these balances at all — so a later real
+ *  crossing notifies
+ *  again), and only set once per crossing (so it doesn't fire on every
+ *  single message while sitting below the line). A send only fires when at
+ *  least one of the two newly crosses in THIS call — but if the other
+ *  balance is ALSO currently low (already notified earlier and still not
+ *  topped up), it's mentioned in the same message rather than causing its
+ *  own separate send. */
+async function checkAndNotifyLowBalance(tenantId: string): Promise<void> {
+  const sub = await db.subscription.findUnique({
+    where: { tenantId },
+    select: {
+      messageBalanceKes: true, aiBalanceKes: true,
+      messageLowBalanceNotifiedAt: true, aiLowBalanceNotifiedAt: true,
+      billingPhone: true,
+    },
+  });
+  if (!sub) return;
+  const [msgThreshold, aiThreshold] = await Promise.all([
+    getSettingNumber("low_balance_threshold_messages_kes"),
+    getSettingNumber("low_balance_threshold_ai_kes"),
+  ]);
+  const messageLow = sub.messageBalanceKes <= msgThreshold;
+  const aiLow = sub.aiBalanceKes <= aiThreshold;
+  const newMessageCrossing = messageLow && !sub.messageLowBalanceNotifiedAt;
+  const newAiCrossing = aiLow && !sub.aiLowBalanceNotifiedAt;
+
+  // Always keep the two flags true to CURRENT state — clears the moment a
+  // top-up brings a balance back above its threshold, regardless of whether
+  // a notification fires this call, so the next real crossing notifies again.
+  const data: { messageLowBalanceNotifiedAt?: Date | null; aiLowBalanceNotifiedAt?: Date | null } = {};
+  if (messageLow !== !!sub.messageLowBalanceNotifiedAt) data.messageLowBalanceNotifiedAt = messageLow ? new Date() : null;
+  if (aiLow !== !!sub.aiLowBalanceNotifiedAt) data.aiLowBalanceNotifiedAt = aiLow ? new Date() : null;
+  if (Object.keys(data).length > 0) await db.subscription.update({ where: { tenantId }, data });
+
+  if (!newMessageCrossing && !newAiCrossing) return;
+
+  const tenant = await db.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
+  const lines: string[] = [];
+  if (messageLow) lines.push(`Message balance: KES ${sub.messageBalanceKes.toLocaleString("en-US")} remaining (threshold KES ${msgThreshold}).`);
+  if (aiLow) lines.push(`AI understanding balance: KES ${sub.aiBalanceKes.toLocaleString("en-US")} remaining (threshold KES ${aiThreshold}).`);
+  const body = `${tenant?.name ?? "Your organization"}'s P2Less balance is running low.\n\n${lines.join("\n")}\n\nTop up from your dashboard's Billing page to avoid an interruption in service.`;
+
+  if (sub.billingPhone && smsEnabled()) {
+    const sent = await sendSms(sub.billingPhone, body).catch((e) => ({ ok: false as const, error: String(e) }));
+    if (!sent.ok) console.error(`[low-balance] SMS send failed for tenant ${tenantId}: ${sent.error}`);
+  }
+  const email = await resolveTenantRecipientEmail(tenantId);
+  if (email) {
+    const sent = await sendEmail({ to: email, subject: `${tenant?.name ?? "P2Less"} — balance running low`, text: body }).catch((e) => ({ ok: false as const, error: String(e) }));
+    if (!sent.ok) console.error(`[low-balance] Email send failed for tenant ${tenantId}: ${sent.error}`);
+  } else {
+    console.error(`[low-balance] No recipient email on file for tenant ${tenantId}.`);
+  }
+}
+
+/** For the dashboard notification bell (src/app/dashboard/layout.tsx) — real
+ *  current low-balance state, or null for a gate-exempt subscription
+ *  (Enterprise/trial), which never shows this warning at all. */
+export async function getLowBalanceStatus(tenantId: string): Promise<{ messageLow: boolean; aiLow: boolean; messageBalanceKes: number; aiBalanceKes: number } | null> {
+  const sub = await loadGatedSub(tenantId);
+  if (!sub || isGateExempt(sub)) return null;
+  const [msgThreshold, aiThreshold] = await Promise.all([
+    getSettingNumber("low_balance_threshold_messages_kes"),
+    getSettingNumber("low_balance_threshold_ai_kes"),
+  ]);
+  return {
+    messageLow: sub.messageBalanceKes <= msgThreshold,
+    aiLow: sub.aiBalanceKes <= aiThreshold,
+    messageBalanceKes: sub.messageBalanceKes,
+    aiBalanceKes: sub.aiBalanceKes,
+  };
 }
 
 /** One-time boot-time migration (called from scripts/prod-start.mjs on EVERY

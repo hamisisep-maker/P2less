@@ -7,6 +7,7 @@ import { NotificationBell, UserMenu, LiveClock, type NotifItem } from "@/compone
 import { SidebarShell } from "@/components/sidebar-shell";
 import { MaintenanceScreen } from "@/components/maintenance-screen";
 import { resolveVisibleNav } from "@/lib/nav";
+import { getLowBalanceStatus } from "@/lib/prepaid-billing";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   return withTenantUser(async (user) => {
@@ -21,7 +22,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       return <MaintenanceScreen message={message} onLogout={logoutAction} />;
     }
 
-    const [escalated, lowStock, outOfStock, connectorCount, apiKeyCount, webhookCount, productCount, widgetKeyCount] = await Promise.all([
+    const [escalated, lowStock, outOfStock, connectorCount, apiKeyCount, webhookCount, productCount, widgetKeyCount, lowBalance] = await Promise.all([
       db.conversation.count({ where: { tenantId, status: "escalated" } }),
       db.product.findMany({ where: { tenantId, stockQuantity: { not: null, gt: 0, lte: 5 } }, select: { name: true, stockQuantity: true }, take: 5 }),
       db.product.count({ where: { tenantId, OR: [{ stockQuantity: 0 }, { inStock: false }] } }),
@@ -30,6 +31,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       db.webhook.count({ where: { tenantId } }),
       db.product.count({ where: { tenantId } }),
       db.widgetKey.count({ where: { tenantId } }),
+      getLowBalanceStatus(tenantId),
     ]);
 
     // Registration reframe Track B — capability-based nav (see nav.ts). Self-
@@ -44,8 +46,18 @@ export default async function DashboardLayout({ children }: { children: React.Re
       hasWidgetKey: widgetKeyCount > 0,
     });
 
+    // Prepaid billing, 2026-08-25 — ONE combined bell item even when both
+    // balances are low (same "one notification, not two" rule the SMS/email
+    // side follows, prepaid-billing.ts's checkAndNotifyLowBalance), named
+    // separately in the detail text so it's never ambiguous which balance
+    // needs a top-up.
+    const lowBalanceParts: string[] = [];
+    if (lowBalance?.messageLow) lowBalanceParts.push(`Messages: KES ${lowBalance.messageBalanceKes.toLocaleString("en-US")}`);
+    if (lowBalance?.aiLow) lowBalanceParts.push(`AI understanding: KES ${lowBalance.aiBalanceKes.toLocaleString("en-US")}`);
+
     const notifications: NotifItem[] = [
       ...(escalated > 0 ? [{ id: "escalated", title: `${escalated} conversation${escalated === 1 ? "" : "s"} escalated`, detail: "Waiting on a human reply", tone: "rose" as const, href: "/dashboard/conversations" }] : []),
+      ...(lowBalanceParts.length > 0 ? [{ id: "low-balance", title: "Balance running low", detail: `${lowBalanceParts.join(" · ")} — top up to avoid an interruption`, tone: "rose" as const, href: "/dashboard/billing" }] : []),
       ...(outOfStock > 0 ? [{ id: "oos", title: `${outOfStock} product${outOfStock === 1 ? "" : "s"} out of stock`, detail: "Customers can't order these right now", tone: "amber" as const, href: "/dashboard/products" }] : []),
       ...lowStock.map((p) => ({ id: `low-${p.name}`, title: `${p.name} running low`, detail: `Only ${p.stockQuantity} left`, tone: "amber" as const, href: "/dashboard/products" })),
     ];
