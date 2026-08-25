@@ -973,6 +973,7 @@ model User {
   userRoles UserRole[]
   sessions  UserSession[]
   assignedTickets SupportTicket[]
+  passwordResetTokens PasswordResetToken[]
 
   @@unique([email])
   @@index([tenantId])
@@ -1015,6 +1016,26 @@ model UserSession {
   revokedAt    DateTime?
 
   @@index([userId])
+}
+
+/// Forgot-password reset links, 2026-08-25. Same discipline as OtpChallenge
+/// (src/lib/otp.ts): the token itself is only ever known to the recipient's
+/// inbox — this table stores a sha256 hash of it, never the plaintext, so a
+/// DB read alone can never produce a working reset link. Single-use
+/// (consumedAt) and short-lived (expiresAt), checked in that order by
+/// confirmPasswordResetAction.
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String
+  ip         String?
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
 }
 
 /// Every login attempt, success or failure — the real evidence behind

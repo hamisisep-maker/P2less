@@ -1076,6 +1076,83 @@ export async function changePasswordAction(_prev: unknown, formData: FormData) {
   });
 }
 
+// ── Forgot password, 2026-08-25 — real reset-link flow, none existed
+// before. Same discipline as phone OTP (otp.ts): the plaintext token is
+// only ever known to the recipient's inbox, never stored — PasswordResetToken
+// keeps a sha256 hash, single-use (consumedAt), short-lived (expiresAt). ────
+const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
+
+const requestResetSchema = z.object({ email: z.string().email() });
+
+export async function requestPasswordResetAction(_prev: unknown, formData: FormData) {
+  const parsed = requestResetSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: "Enter a valid email address." };
+  const email = parsed.data.email.toLowerCase().trim();
+
+  const { ip } = await clientMeta();
+  const ipLimit = rateLimit(`reset:ip:${ip ?? "unknown"}`, { max: 5, windowMs: 60 * 60_000 });
+  const emailLimit = rateLimit(`reset:email:${email}`, { max: 3, windowMs: 60 * 60_000 });
+  if (!ipLimit.ok || !emailLimit.ok) return { error: "Too many reset requests. Please try again later." };
+
+  // Deliberately the SAME response whether or not an account exists — never
+  // let this endpoint answer "is this email registered", same reasoning as
+  // loginAction's single "Invalid email or password" for both failure modes.
+  const genericOk = { ok: true as const, message: "If an account exists for that email, we've sent a reset link." };
+
+  const user = await runCrossTenant(() => db.user.findUnique({ where: { email } }));
+  if (!user || user.deactivatedAt) return genericOk;
+
+  const plaintext = randomToken(24);
+  await db.passwordResetToken.create({
+    data: { userId: user.id, tokenHash: sha256(plaintext), ip: ip ?? undefined, expiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MS) },
+  });
+
+  const base = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+  const link = `${base}/reset-password?token=${plaintext}`;
+  const { isEmailConfigured, sendEmail } = await import("./notification-channels");
+  if (isEmailConfigured()) {
+    await sendEmail({
+      to: user.email,
+      subject: "Reset your P2Less password",
+      text: `Hi ${user.name},\n\nSomeone requested a password reset for your P2Less account. If this was you, set a new password here:\n\n${link}\n\nThis link expires in 30 minutes. If you didn't request this, you can safely ignore this email.`,
+    }).catch(() => {});
+  }
+  return genericOk;
+}
+
+const confirmResetSchema = z.object({
+  token: z.string().min(1),
+  newPassword: z.string().min(8, "New password must be at least 8 characters."),
+});
+
+export async function confirmPasswordResetAction(_prev: unknown, formData: FormData) {
+  const parsed = confirmResetSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  const { token, newPassword } = parsed.data;
+
+  const record = await runCrossTenant(() => db.passwordResetToken.findFirst({ where: { tokenHash: sha256(token) } }));
+  if (!record) return { error: "This reset link is invalid." };
+  if (record.consumedAt) return { error: "This reset link has already been used. Request a new one." };
+  if (record.expiresAt < new Date()) return { error: "This reset link has expired. Request a new one." };
+
+  const user = await runCrossTenant(() => db.user.findUnique({ where: { id: record.userId } }));
+  if (!user || user.deactivatedAt) return { error: "This reset link is no longer valid." };
+
+  const newHash = await hashPassword(newPassword);
+  await runCrossTenant(() => db.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: user.id }, data: { passwordHash: newHash, passwordChangedAt: new Date() } });
+    await tx.passwordResetToken.update({ where: { id: record.id }, data: { consumedAt: new Date() } });
+    // Defense in depth — invalidate any OTHER outstanding reset links for
+    // this user, and log out every other active session, the same "one
+    // successful reset closes every other door" rule most auth systems use.
+    await tx.passwordResetToken.updateMany({ where: { userId: user.id, consumedAt: null, id: { not: record.id } }, data: { consumedAt: new Date() } });
+    await tx.userSession.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
+  }));
+
+  await createSession(user.id, user.tenantId, user.isSuperAdmin);
+  redirect(user.isSuperAdmin || user.adminRoleId ? "/admin" : "/dashboard");
+}
+
 // ── Settings — real gap found 2026-08-23: Tenant.name/industry/branding are
 // all live-consumed (conversation greetings, generated PDFs, the widget
 // embed snippet) but were writable exactly once, at signup, with zero edit

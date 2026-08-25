@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import Link from "next/link";
 import { loginAction } from "@/lib/actions";
 import { PasswordInput } from "@/components/password-input";
 
@@ -17,7 +18,10 @@ export function LoginForm({ accounts }: { accounts: Account[] }) {
         <input name="email" type="email" required defaultValue={isDemo ? accounts[0]?.email : undefined} className="mt-1 w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm outline-none focus:border-accent" />
       </div>
       <div>
-        <label className="text-sm font-medium">Password</label>
+        <div className="flex items-center justify-between">
+          <label className="text-sm font-medium">Password</label>
+          <Link href="/forgot-password" className="text-xs text-accent hover:underline">Forgot password?</Link>
+        </div>
         <PasswordInput name="password" required defaultValue={isDemo ? "password" : undefined} className="mt-1 w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm outline-none focus:border-accent" />
       </div>
       {state?.error && <div className="rounded-lg bg-rose-soft px-3 py-2 text-sm text-rose">{state.error}</div>}
