@@ -10,19 +10,19 @@ const BACK_PATH = "M 320 480 C 260 430, 250 370, 210 320 C 160 260, 160 150, 70 
 export function AuthFlowBackground() {
   return (
     <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 400 600" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-      <path d={OUT_PATH} fill="none" stroke="white" strokeOpacity="0.14" strokeWidth="1.5" strokeDasharray="3 7" strokeLinecap="round" />
+      <path d={OUT_PATH} fill="none" stroke="white" strokeOpacity="0.05" strokeWidth="1" strokeDasharray="2 8" strokeLinecap="round" />
 
-      <circle cx="70" cy="90" r="5" fill="white" fillOpacity="0.22" />
-      <circle cx="210" cy="320" r="6" fill="white" fillOpacity="0.28" />
-      <circle cx="320" cy="480" r="5" fill="white" fillOpacity="0.22" />
+      <circle cx="70" cy="90" r="4" fill="white" fillOpacity="0.08" />
+      <circle cx="210" cy="320" r="4.5" fill="white" fillOpacity="0.1" />
+      <circle cx="320" cy="480" r="4" fill="white" fillOpacity="0.08" />
 
-      <circle r="4" fill="var(--color-accent)" fillOpacity="0.9">
-        <animateMotion dur="4.5s" repeatCount="indefinite" path={OUT_PATH} />
-        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.08;0.85;1" dur="4.5s" repeatCount="indefinite" />
+      <circle r="3" fill="var(--color-accent)" fillOpacity="0.35">
+        <animateMotion dur="5.5s" repeatCount="indefinite" path={OUT_PATH} />
+        <animate attributeName="opacity" values="0;0.35;0.35;0" keyTimes="0;0.08;0.85;1" dur="5.5s" repeatCount="indefinite" />
       </circle>
-      <circle r="3.5" fill="var(--color-accent)" fillOpacity="0.55">
-        <animateMotion dur="4.5s" begin="2.25s" repeatCount="indefinite" path={BACK_PATH} />
-        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.08;0.85;1" dur="4.5s" begin="2.25s" repeatCount="indefinite" />
+      <circle r="2.5" fill="var(--color-accent)" fillOpacity="0.2">
+        <animateMotion dur="5.5s" begin="2.75s" repeatCount="indefinite" path={BACK_PATH} />
+        <animate attributeName="opacity" values="0;0.2;0.2;0" keyTimes="0;0.08;0.85;1" dur="5.5s" begin="2.75s" repeatCount="indefinite" />
       </circle>
     </svg>
   );
