@@ -484,6 +484,12 @@ model Tenant {
   // not built yet (SMS, Instagram) without pretending they're active —
   // e.g. ["whatsapp","messenger","sms_interested"].
   channelsNeeded Json?
+  // Registration reframe, 2026-08-25 — optional free-text answer to "what
+  // are you hoping to achieve with P2Less?", captured alongside the
+  // structured useCases/channelsNeeded signals. Qualitative customer voice,
+  // not a structured signal — kept as its own column rather than folded
+  // into either JSON array. ~500 char practical limit enforced in Zod, not here.
+  signupGoal String?
   status    String   @default("active") // active | suspended | trial | cancelled
   // White-label branding. Free/basic tenants fall back to P2Less defaults.
   branding  Json? // { assistantName, logoText, primaryColor, welcome, poweredBy, pdfFooter }
@@ -929,6 +935,11 @@ model User {
   // this is safe to add without backfilling existing rows.
   emailCanonical String? @unique
   passwordHash String
+  // Verified contact number, 2026-08-25 — for the admin's own identity, NOT
+  // a channel address. Populated at /onboard signup (phone OTP verifies this
+  // number specifically now, decoupled from WhatsApp entirely); nullable for
+  // every other user-creation path (invited staff, super admin).
+  phone        String?
   // Offboarding a staff account (Gap found in 2026-08-23 security review: no
   // path existed to revoke a departed employee's dashboard access to
   // student/patient/payroll data). Checked in getCurrentUser() so it takes
@@ -1131,7 +1142,11 @@ model WhatsAppNumber {
   branch             Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
   // The public E.164 number users message (e.g. +254711562526). Globally unique
   // across the platform — this is what routes an inbound message to a tenant.
-  phoneNumber        String   @unique
+  // Nullable, 2026-08-25 — onboarding no longer reserves a WhatsApp number
+  // automatically; a row can now exist in "connecting" state with the real
+  // number not yet known, same nullable-until-known precedent Channel.address
+  // already established.
+  phoneNumber        String?  @unique
   // What the user sees as the sender identity — the ORGANIZATION, not "P2Less".
   displayName        String
   department         String? // General | HR | Finance | Support | Admissions …

@@ -315,7 +315,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     // branding, matching the comment's own stated intent), falling back to
     // the number's own displayName only when neither branding source set one.
     assistant = branding.assistantName ?? num.displayName; // e.g. "Hamzone Technologies"
-    fromIdentity = { number: num.phoneNumber, name: num.displayName };
+    fromIdentity = { number: num.phoneNumber ?? "", name: num.displayName }; // real inbound traffic implies a real number; empty only during the "connecting" window, which can't receive messages anyway
     branchLookup = { branchId: num.branchId, tenantId: tenant.id };
   }
   // Every AI call from here on (understand/smallTalk/humanizeReply/etc., deep

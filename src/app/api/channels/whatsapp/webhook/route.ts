@@ -179,7 +179,7 @@ async function processEvents(payload: WaPayload): Promise<void> {
         if (!text.trim() && !attachment) continue;
 
         await handleInbound({
-          toNumber: orgNumber.phoneNumber, // the organization's own number
+          toNumber: orgNumber.phoneNumber ?? undefined, // the organization's own number — real inbound traffic implies this is set, but the field is nullable during the "connecting" window
           fromNumber: m.from, // the sender
           channelType: "whatsapp",
           text,

@@ -26,13 +26,17 @@ export default async function DemoPage() {
     }),
   ]));
 
-  const orgs = numbers.map((n) => ({
-    number: n.phoneNumber,
-    name: n.displayName,
-    department: n.department ?? "",
-    slug: n.tenant.slug,
-    industry: n.tenant.industry,
-  }));
+  // A number mid-connection (verificationStatus: "connecting", no real
+  // phoneNumber yet) can't be simulated against — nothing to route to.
+  const orgs = numbers
+    .filter((n): n is typeof n & { phoneNumber: string } => n.phoneNumber !== null)
+    .map((n) => ({
+      number: n.phoneNumber,
+      name: n.displayName,
+      department: n.department ?? "",
+      slug: n.tenant.slug,
+      industry: n.tenant.industry,
+    }));
 
   const senders = contacts.map((c) => {
     const g = (c.grants as Record<string, { name: string }[]> | null) ?? {};

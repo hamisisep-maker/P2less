@@ -29,9 +29,12 @@ import { buildMessengerConnectLink } from "./messenger";
 import { connectTelegramBot } from "./telegram";
 import { activateEmailChannel } from "./email-channel";
 import { autoPublishProduct, setAutoPublishEnabled } from "./social-publish";
-import {
-  isConfigured as stripeIsConfigured, publishableKey, createSetupIntent, verifySetupIntentSucceeded, createCustomerWithCard,
-} from "./stripe";
+// Stripe card-on-file (createSetupIntent/verifySetupIntentSucceeded/
+// createCustomerWithCard) removed from onboarding, 2026-08-25 — asking for
+// card details before someone has even seen the product reads as
+// suspicious, not reassuring. Kept in stripe.ts, unused today, as the
+// building block for a FUTURE trigger instead: prompting for a card at
+// top-up time or once the free trial is exhausted, not at signup.
 
 /** Real brute-force protection — LoginAttempt was already logged for every
  *  try but never actually consulted before this; a fixed number of recent
@@ -169,36 +172,25 @@ export async function startPaymentAction(_prev: unknown, formData: FormData) {
 // production the WhatsApp number + WABA + token come back from Meta's Embedded
 // Signup popup; here we provision the tenant and mark the number pending, with
 // that Meta step stubbed (see /onboard and docs/ARCHITECTURE for the real hook).
+// Deliberately minimal, 2026-08-25 — identity + workspace creation only.
+// "What do you want P2Less to do" / "which channels do your customers use"
+// (formerly useCases/channelsNeeded here) moved OUT to a separate,
+// sequential, post-signup experience against an already-created tenant
+// (Phase 2 of this initiative, not yet built) — never collected as part of
+// the signup payload itself.
 const provisionSchema = z.object({
   orgName: z.string().min(2),
   industry: z.enum(["school", "hospital", "business", "sacco", "ngo", "government"]),
-  phoneNumber: z.string().min(7),
+  // The admin's own contact number, 2026-08-25 — verified via phone OTP for
+  // IDENTITY purposes, deliberately decoupled from WhatsApp entirely. No
+  // channel of any kind is created from this field; see finalizeOnboarding.
+  adminPhone: z.string().min(7),
   adminName: z.string().min(2),
   adminEmail: z.string().email(),
-  // Registration reframe: what the org said they want P2Less to do,
-  // collected alongside industry. CONTEXT, not a hard gate — same honest
-  // role industry already plays (nothing branches on either to restrict
-  // features). Empty is fine (nothing checked / JS disabled).
-  useCases: z.array(z.string()).default([]),
-  // Registration reframe, continued: WHICH channels the org's own
-  // customers actually use — a distinct question from "what do you want
-  // P2Less to do" (proposal's step 2, "which channels do your users
-  // need?"). Same honest, context-not-gate role as useCases/industry —
-  // captures real demand signal for channels not built yet (SMS, Instagram)
-  // without pretending they're active.
-  channelsNeeded: z.array(z.string()).default([]),
 });
 
-// FormData collapses repeated same-named fields (checkboxes, or the hidden-
-// input round-trip between /onboard's steps) down to just the last value via
-// Object.fromEntries — this restores the array shape for these specific
-// fields before handing off to Zod, everywhere a step's incoming fields get
-// parsed.
-const ARRAY_FIELDS = ["useCases", "channelsNeeded"] as const;
 function formDataWithArrays(formData: FormData): Record<string, unknown> {
-  const base: Record<string, unknown> = Object.fromEntries(formData.entries());
-  for (const field of ARRAY_FIELDS) base[field] = formData.getAll(field).map(String);
-  return base;
+  return Object.fromEntries(formData.entries());
 }
 
 // Closes the most common free-trial-abuse trick: Gmail ignores dots in the
@@ -241,15 +233,23 @@ async function validateOnboardFields(formData: FormData): Promise<{ error: strin
   // Deliberately cross-tenant — these are global uniqueness pre-checks
   // before any tenant exists to create context from. Found in the same
   // 2026-08-23 fail-closed audit as every other pre-context lookup.
+  //
+  // Phone-uniqueness against WhatsAppNumber removed, 2026-08-25 — that check
+  // existed because a WhatsApp number can only route to one tenant, a real
+  // technical constraint that no longer applies once adminPhone is a
+  // generic identity-verification field, not a channel address (one person
+  // can legitimately run multiple orgs on the same personal number, e.g. an
+  // agency). Anti-abuse coverage for repeat signups continues via email
+  // canonicalization below + the per-IP rate limit above + the per-phone
+  // OTP-issuance rate limit (otp.ts) + the IP-clustering anomaly alert
+  // (finalizeOnboarding) — a deliberate narrowing, not a silent drop.
   const clash = await runCrossTenant(async () => {
     if (await db.user.findUnique({ where: { email: d.adminEmail } })) return "email";
     if (await db.user.findUnique({ where: { emailCanonical } })) return "emailCanonical";
-    if (await db.whatsAppNumber.findUnique({ where: { phoneNumber: d.phoneNumber } })) return "phone";
     return null;
   });
   if (clash === "email") return { error: "That email already has an account. Try signing in." };
   if (clash === "emailCanonical") return { error: "That email already has an account (even if it looks slightly different — dots and +tags on the same inbox count as one account). Try signing in, or contact us if this isn't yours." };
-  if (clash === "phone") return { error: "That phone number is already registered on P2Less. Use a different number, or contact us if this is yours." };
   return { data: d, emailCanonical };
 }
 
@@ -277,7 +277,7 @@ export async function requestOnboardOtpAction(_prev: unknown, formData: FormData
   if ("error" in validated) return { error: validated.error };
   const { data: d } = validated;
 
-  const phone = normalizePhone(d.phoneNumber);
+  const phone = normalizePhone(d.adminPhone);
   const { ip } = await clientMeta();
   const issued = await issuePhoneOtp(phone, ip);
   if ("error" in issued) return { error: issued.error };
@@ -299,47 +299,45 @@ export async function requestOnboardOtpAction(_prev: unknown, formData: FormData
 
   return {
     ok: true, step: "otp" as const, challengeId: issued.challengeId, demoCode,
-    orgName: d.orgName, industry: d.industry, phoneNumber: d.phoneNumber, adminName: d.adminName, adminEmail: d.adminEmail, useCases: d.useCases, channelsNeeded: d.channelsNeeded,
+    orgName: d.orgName, industry: d.industry, adminPhone: d.adminPhone, adminName: d.adminName, adminEmail: d.adminEmail,
   };
 }
 
 const confirmOtpSchema = provisionSchema.extend({ challengeId: z.string().min(1), code: z.string().min(1) });
 
-type OtpStepFields = { orgName: string; industry: z.infer<typeof provisionSchema>["industry"]; phoneNumber: string; adminName: string; adminEmail: string; useCases: string[]; channelsNeeded: string[] };
+type OtpStepFields = { orgName: string; industry: z.infer<typeof provisionSchema>["industry"]; adminPhone: string; adminName: string; adminEmail: string };
 type FinalizeOk = { ok: true; email: string; password: string; slug: string };
 
-/** The actual tenant-creation transaction, shared by both the no-card-step
- *  path (Stripe unconfigured) and confirmOnboardCardAction. Identical to
- *  what confirmOnboardOtpAction used to do inline before the card step was
- *  inserted between phone verification and tenant creation. */
+/** The actual tenant-creation transaction — the last step of onboarding,
+ *  called directly once phone OTP verification succeeds. No card step. */
 async function finalizeOnboarding(
   d: z.infer<typeof provisionSchema>,
   emailCanonical: string,
-  card?: { customerId: string; paymentMethodId: string },
 ): Promise<FinalizeOk | { error: string }> {
   const slug = d.orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) + "-" + randomToken(2).toLowerCase();
 
-  // Everything below must succeed together — a partial failure (e.g. a phone
-  // number collision slipping past the check above under a race) must not leave
-  // an orphaned tenant/roles/owner with no WhatsApp number. One transaction.
+  // Everything below must succeed together — a partial failure must not leave
+  // an orphaned tenant/roles/owner. One transaction.
   try {
     // Self-service signup creates a BRAND-NEW tenant's rows (Subscription,
-    // Role, User, WhatsAppNumber, Channel — all tenant-scoped models) before
-    // any tenant context could possibly exist to "enter" — there's no
-    // pre-existing tenant yet. Found broken in production by the 2026-08-23
-    // fail-closed rollout: every create below explicitly sets tenantId
-    // itself already (safe), but the extension's context check ran before
-    // ever looking at that. runCrossTenant is the correct marker here, same
-    // as the public landing/demo pages — genuinely not scoped to an existing
-    // single tenant at the point these writes happen.
+    // Role, User — all tenant-scoped models) before any tenant context
+    // could possibly exist to "enter" — there's no pre-existing tenant yet.
+    // Found broken in production by the 2026-08-23 fail-closed rollout:
+    // every create below explicitly sets tenantId itself already (safe),
+    // but the extension's context check ran before ever looking at that.
+    // runCrossTenant is the correct marker here, same as the public
+    // landing/demo pages — genuinely not scoped to an existing single
+    // tenant at the point these writes happen.
+    //
+    // No channel of any kind (WhatsApp or otherwise) is created here,
+    // 2026-08-25 — onboarding creates identity + workspace only. A channel
+    // connection is a deliberate, later, owner-triggered dashboard action
+    // (see src/app/api/whatsapp/embedded-signup/callback/route.ts).
     const { password } = await runCrossTenant(() => db.$transaction(async (tx) => {
       const tenant = await tx.tenant.create({
         data: {
           name: d.orgName, slug, industry: d.industry, status: "trial",
-          useCases: d.useCases.length > 0 ? d.useCases : undefined,
-          channelsNeeded: d.channelsNeeded.length > 0 ? d.channelsNeeded : undefined,
           branding: { assistantName: d.orgName, poweredBy: "Powered by P2Less" },
-          stripeCustomerId: card?.customerId, stripePaymentMethodId: card?.paymentMethodId,
         },
       });
       const freePlan = (await tx.plan.findUnique({ where: { key: "free" } })) ?? (await tx.plan.findFirst({ orderBy: { sort: "asc" } }));
@@ -355,26 +353,11 @@ async function finalizeOnboarding(
         await tx.role.create({ data: { tenantId: tenant.id, key: r.key, name: r.name, isSystem: r.isSystem, permissions: r.permissions } });
       }
 
-      // Owner login (one-time password shown to the user).
+      // Owner login (one-time password shown to the user). phone is the
+      // same number just verified via OTP — identity, not a channel address.
       const password = randomToken(6);
-      const owner = await tx.user.create({ data: { tenantId: tenant.id, name: d.adminName, email: d.adminEmail, emailCanonical, passwordHash: await hashPassword(password) } });
+      const owner = await tx.user.create({ data: { tenantId: tenant.id, name: d.adminName, email: d.adminEmail, emailCanonical, phone: d.adminPhone, passwordHash: await hashPassword(password) } });
       if (ownerRoleId) await tx.userRole.create({ data: { userId: owner.id, roleId: ownerRoleId } });
-
-      // The organization's WhatsApp number. In production this arrives from Meta's
-      // Embedded Signup (WABA id + phone_number_id + token); here it's pending —
-      // phone ownership was already proven above via the OTP, though, unlike
-      // before this phase.
-      await tx.whatsAppNumber.create({
-        data: { tenantId: tenant.id, phoneNumber: d.phoneNumber, displayName: d.orgName, department: "General", status: "active", verificationStatus: "pending" },
-      });
-      // The generic channel-resource record (see the Channel model's own
-      // comment in schema.prisma) — a real, queryable "this tenant has a
-      // whatsapp channel" row, kept in sync with WhatsAppNumber but not yet
-      // read by anything else (no second real channel exists to make that
-      // worth wiring — see the roadmap doc's "Registration reframe" section).
-      await tx.channel.create({
-        data: { tenantId: tenant.id, type: "whatsapp", address: d.phoneNumber, status: "active" },
-      });
 
       return { password };
     }));
@@ -402,25 +385,24 @@ async function finalizeOnboarding(
     return { ok: true, email: d.adminEmail, password, slug };
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return { error: "That phone number or email is already in use. Please try different details." };
+      return { error: "That email is already in use. Please try different details." };
     }
     console.error("[finalizeOnboarding] failed:", e);
     return { error: "Something went wrong setting up your organization. Please try again." };
   }
 }
 
-type CardStepFields = { setupIntentId: string; clientSecret: string; stripePublishableKey: string };
 export type ConfirmOtpResult =
   | FinalizeOk
-  | ({ ok: true; step: "card" } & CardStepFields & OtpStepFields)
   | ({ error: string; step: "otp"; challengeId: string } & OtpStepFields)
   | { error: string };
 
-/** Step 2: verify the code, re-validate (defensive — real time passed since
- *  step 1), then either start card verification (step 3, if Stripe is
- *  configured) or create the tenant directly (Stripe unconfigured — the
- *  card-on-file deterrent degrades gracefully rather than blocking signup,
- *  same philosophy as every other optional provider in this codebase). */
+/** Step 2 (final step): verify the code, re-validate (defensive — real time
+ *  passed since step 1), then create the tenant directly. No card step —
+ *  removed from onboarding entirely, 2026-08-25: asking for card details
+ *  before someone has seen the product reads as suspicious, not
+ *  reassuring. Card verification belongs later, at top-up time or once the
+ *  free trial is exhausted — a distinct, future, not-yet-built trigger. */
 export async function confirmOnboardOtpAction(_prev: unknown, formData: FormData): Promise<ConfirmOtpResult> {
   const parsed = confirmOtpSchema.safeParse(formDataWithArrays(formData));
   // A malformed resubmission (missing/corrupt hidden fields) has no org data
@@ -438,45 +420,7 @@ export async function confirmOnboardOtpAction(_prev: unknown, formData: FormData
   if ("error" in validated) return { error: validated.error };
   const { data: d, emailCanonical } = validated;
 
-  if (!stripeIsConfigured()) {
-    return finalizeOnboarding(d, emailCanonical);
-  }
-  const setupIntent = await createSetupIntent();
-  if ("error" in setupIntent) return { error: setupIntent.error };
-  return {
-    ok: true, step: "card" as const, setupIntentId: setupIntent.setupIntentId, clientSecret: setupIntent.clientSecret, stripePublishableKey: publishableKey(),
-    orgName: d.orgName, industry: d.industry, phoneNumber: d.phoneNumber, adminName: d.adminName, adminEmail: d.adminEmail, useCases: d.useCases, channelsNeeded: d.channelsNeeded,
-  };
-}
-
-const confirmCardSchema = provisionSchema.extend({ setupIntentId: z.string().min(1) });
-export type ConfirmCardResult =
-  | FinalizeOk
-  | ({ error: string; step: "card" } & CardStepFields & OtpStepFields)
-  | { error: string };
-
-/** Step 3 (only reached if Stripe is configured): re-verify the SetupIntent
- *  server-side — never trust the browser's own "it succeeded" claim alone —
- *  save the verified card against a real Stripe Customer, then create the
- *  tenant exactly as confirmOnboardOtpAction used to do directly. */
-export async function confirmOnboardCardAction(_prev: unknown, formData: FormData): Promise<ConfirmCardResult> {
-  const parsed = confirmCardSchema.safeParse(formDataWithArrays(formData));
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
-  const { setupIntentId, ...rest } = parsed.data;
-
-  const verified = await verifySetupIntentSucceeded(setupIntentId);
-  if (!verified.ok) {
-    return { error: verified.error, step: "card" as const, setupIntentId, clientSecret: verified.clientSecret, stripePublishableKey: publishableKey(), ...rest };
-  }
-
-  const validated = await validateOnboardFields(formData);
-  if ("error" in validated) return { error: validated.error };
-  const { data: d, emailCanonical } = validated;
-
-  const customer = await createCustomerWithCard(d.adminEmail, d.adminName, verified.paymentMethodId);
-  if ("error" in customer) return { error: customer.error };
-
-  return finalizeOnboarding(d, emailCanonical, { customerId: customer.customerId, paymentMethodId: verified.paymentMethodId });
+  return finalizeOnboarding(d, emailCanonical);
 }
 
 // ── Developer platform: API keys + webhooks ───────────────────────────────────

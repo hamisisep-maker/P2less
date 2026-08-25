@@ -47,13 +47,28 @@ export async function GET(req: Request) {
     redirect(`/dashboard/channels?embedded_signup=error&message=${encodeURIComponent(exchange.error)}`);
   }
 
-  // Handshake succeeded. Mark (or create) a pending number for this tenant so
-  // it shows up in the dashboard immediately, even though the real
+  // Handshake succeeded. Mark (or create) a number for this tenant so it
+  // shows up in the dashboard immediately, even though the real
   // wabaId/phoneNumberId aren't known yet — those get filled in once the
   // account_update webhook (or a later manual step) supplies them.
-  const existingPending = await db.whatsAppNumber.findFirst({ where: { tenantId: tenant.id, verificationStatus: "pending" } });
-  if (existingPending) {
-    await db.whatsAppNumber.update({ where: { id: existingPending.id }, data: { verificationStatus: "connecting" } });
+  //
+  // 2026-08-25 — onboarding no longer pre-creates a WhatsAppNumber row (see
+  // finalizeOnboarding, actions.ts), so "existing pending row" is no longer
+  // a safe assumption: this is now the FIRST place a WhatsAppNumber can be
+  // created for a tenant that connects WhatsApp after signup. The real
+  // phoneNumber genuinely isn't known yet at this point — nullable, same
+  // precedent Channel.address already established for "not yet connected."
+  const existing = await db.whatsAppNumber.findFirst({ where: { tenantId: tenant.id } });
+  if (existing) {
+    await db.whatsAppNumber.update({ where: { id: existing.id }, data: { verificationStatus: "connecting" } });
+  } else {
+    await db.whatsAppNumber.create({
+      data: { tenantId: tenant.id, phoneNumber: null, displayName: tenant.name, department: "General", status: "active", verificationStatus: "connecting" },
+    });
+    // .catch() only for the (tenantId, type) unique race — a genuinely
+    // concurrent double-click; the WhatsAppNumber row above is the source
+    // of truth either way.
+    await db.channel.create({ data: { tenantId: tenant.id, type: "whatsapp", address: null, status: "active" } }).catch(() => {});
   }
 
   redirect("/dashboard/channels?embedded_signup=success");
