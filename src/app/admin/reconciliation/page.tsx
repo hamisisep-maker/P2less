@@ -14,7 +14,7 @@ export default async function AdminReconciliationPage() {
     const [channels, unmatched, unknownPayments, tenants] = await Promise.all([
       db.paymentChannel.findMany({ include: { integration: true }, orderBy: { key: "asc" } }),
       db.unmatchedTransaction.findMany({ where: { status: "unmatched" }, orderBy: { occurredAt: "desc" } }),
-      db.payment.findMany({ where: { status: "unknown" }, include: { tenant: { select: { name: true } } }, orderBy: { createdAt: "desc" } }),
+      db.payment.findMany({ where: { status: "unknown" }, include: { tenant: { select: { name: true } }, invoice: { select: { invoiceNumber: true } } }, orderBy: { createdAt: "desc" } }),
       db.tenant.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     ]);
 
@@ -88,7 +88,7 @@ export default async function AdminReconciliationPage() {
             {unknownPayments.map((p) => (
               <UnknownPaymentRow
                 key={p.id}
-                data={{ id: p.id, reference: p.reference, tenantName: p.tenant.name, amount: p.amount, currency: p.currency, channelKey: p.channelKey, purpose: p.purpose, createdAt: p.createdAt }}
+                data={{ id: p.id, reference: p.reference, tenantName: p.tenant.name, amount: p.amount, currency: p.currency, channelKey: p.channelKey, purpose: p.purpose, createdAt: p.createdAt, invoiceNumber: p.invoice?.invoiceNumber ?? null }}
               />
             ))}
           </div>

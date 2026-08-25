@@ -448,6 +448,8 @@ model UnmatchedTransaction {
   rawPayload       Json
   status           String    @default("unmatched") // unmatched | matched | ignored
   matchedTenantId  String?
+  matchedInvoiceId String?   // set instead of matchedTenantId when matched to a specific invoice, not just a tenant's recurring bill
+  matchedInvoice   Invoice?  @relation(fields: [matchedInvoiceId], references: [id])
   matchedPaymentId String?   @unique
   matchedById      String?
   matchedAt        DateTime?
@@ -766,6 +768,7 @@ model Invoice {
   paidAt        DateTime?
   appliedAt     DateTime? // when the plan change actually landed on Subscription
   payments      Payment[]
+  matchedUnmatchedTransactions UnmatchedTransaction[] // manual reconciliation, 2026-08-25 — see UnmatchedTransaction.matchedInvoiceId
 
   @@index([tenantId])
 }

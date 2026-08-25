@@ -254,7 +254,7 @@ export type PaymentEvidence = Awaited<ReturnType<typeof getPaymentEvidence>>;
  *  same convention used throughout this codebase), and the tenant's current
  *  service status. */
 export async function getPaymentEvidence(paymentId: string) {
-  const payment = await db.payment.findUnique({ where: { id: paymentId } });
+  const payment = await db.payment.findUnique({ where: { id: paymentId }, include: { invoice: { select: { invoiceNumber: true } } } });
   if (!payment) return null;
 
   const isMpesaStk = payment.channelKey === "mpesa_stk";
@@ -292,7 +292,7 @@ export async function getPaymentEvidence(paymentId: string) {
   }
 
   return {
-    payment: { id: payment.id, reference: payment.reference, amount: payment.amount, currency: payment.currency, purpose: payment.purpose, channelKey: payment.channelKey, status: payment.status, createdAt: payment.createdAt, paidAt: payment.paidAt, failureCategory: payment.failureCategory, failureReason: payment.failureReason },
+    payment: { id: payment.id, reference: payment.reference, amount: payment.amount, currency: payment.currency, purpose: payment.purpose, channelKey: payment.channelKey, status: payment.status, createdAt: payment.createdAt, paidAt: payment.paidAt, failureCategory: payment.failureCategory, failureReason: payment.failureReason, invoiceNumber: payment.invoice?.invoiceNumber ?? null },
     initiatedAt: payment.createdAt,
     stkRequest: { status: stkRequestStatus, detail: stkRequestDetail },
     callback: { received: !!inboundEvent, receivedAt: inboundEvent?.receivedAt ?? null },

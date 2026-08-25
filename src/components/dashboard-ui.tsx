@@ -109,13 +109,13 @@ export function Tip({ content, children }: { content: React.ReactNode; children:
 }
 
 // ── Modal ─────────────────────────────────────────────────────────────────
-export function Modal({ trigger, title, description, children }: { trigger: React.ReactNode; title: string; description?: string; children: React.ReactNode }) {
+export function Modal({ trigger, title, description, children, contentClassName }: { trigger: React.ReactNode; title: string; description?: string; children: React.ReactNode; contentClassName?: string }) {
   return (
     <DialogPrimitive.Root>
       <DialogPrimitive.Trigger asChild>{trigger}</DialogPrimitive.Trigger>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-ink/50 backdrop-blur-sm data-[state=open]:animate-in" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-line bg-surface p-5 shadow-[var(--shadow-card-hover)] data-[state=open]:animate-in">
+        <DialogPrimitive.Content className={`fixed left-1/2 top-1/2 z-50 w-[92vw] max-h-[85vh] overflow-y-auto -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-line bg-surface p-5 shadow-[var(--shadow-card-hover)] data-[state=open]:animate-in ${contentClassName ?? "max-w-md"}`}>
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
               <DialogPrimitive.Title className="text-base font-semibold">{title}</DialogPrimitive.Title>

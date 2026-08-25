@@ -143,7 +143,7 @@ export default async function TenantOperationsPage({ params }: { params: Promise
                     <div className="mt-1.5 text-xs italic text-muted">Reason: {e!.reason}</div>
                     {e!.reconciliationStatus === "unknown" && hasAdminPermission(admin, "reconciliation.match") && (
                       <div className="mt-2">
-                        <UnknownPaymentRow data={{ id: e!.payment.id, reference: e!.payment.reference, tenantName: summary.tenant.name, amount: e!.payment.amount, currency: e!.payment.currency, channelKey: e!.payment.channelKey, purpose: e!.payment.purpose, createdAt: e!.payment.createdAt }} />
+                        <UnknownPaymentRow data={{ id: e!.payment.id, reference: e!.payment.reference, tenantName: summary.tenant.name, amount: e!.payment.amount, currency: e!.payment.currency, channelKey: e!.payment.channelKey, purpose: e!.payment.purpose, createdAt: e!.payment.createdAt, invoiceNumber: e!.payment.invoiceNumber }} />
                       </div>
                     )}
                   </div>

@@ -6,7 +6,7 @@ import { resolvePaymentUnknownAction } from "@/lib/reconciliation-actions";
 
 export type UnknownPaymentRowData = {
   id: string; reference: string; tenantName: string; amount: number; currency: string;
-  channelKey: string | null; purpose: string; createdAt: Date;
+  channelKey: string | null; purpose: string; createdAt: Date; invoiceNumber: string | null;
 };
 
 export function UnknownPaymentRow({ data }: { data: UnknownPaymentRowData }) {
@@ -20,6 +20,7 @@ export function UnknownPaymentRow({ data }: { data: UnknownPaymentRowData }) {
         </div>
         <div className="mt-1 text-xs text-muted">
           {data.tenantName} · {data.purpose} · {data.channelKey ?? "mpesa_stk"} · sent <span suppressHydrationWarning>{timeAgo(data.createdAt)}</span> — no confirmation received, may still have succeeded
+          {data.invoiceNumber && <> · <span className="font-medium text-accent-ink">→ "Resolve: paid" will settle invoice {data.invoiceNumber}</span></>}
         </div>
       </div>
       <div className="flex items-center gap-2">

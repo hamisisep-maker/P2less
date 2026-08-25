@@ -4,6 +4,7 @@ import { Badge, timeAgo } from "@/components/ui";
 import { ReasonAction } from "@/components/admin/reason-action";
 import { ignoreUnmatchedTransactionAction } from "@/lib/reconciliation-actions";
 import { MatchModal } from "./match-modal";
+import { InvoiceMatchModal } from "./invoice-match-modal";
 
 export type UnmatchedRowData = {
   id: string; channelKey: string; providerRef: string; amount: number; currency: string;
@@ -26,6 +27,7 @@ export function UnmatchedRow({ data, tenants }: { data: UnmatchedRowData; tenant
         </div>
       </div>
       <div className="flex items-center gap-2">
+        <InvoiceMatchModal txId={data.id} providerRef={data.providerRef} defaultQuery={data.reference ?? ""} amountKes={data.amount} />
         <MatchModal txId={data.id} providerRef={data.providerRef} tenants={tenants} />
         <ReasonAction
           label={<span className="rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-muted hover:bg-surface-2">Ignore</span>}

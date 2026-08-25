@@ -170,3 +170,23 @@ async function settleInvoiceInTx(tx: Tx, invoiceId: string, expiryHours: number)
 export async function loadFreshInvoiceForAction(invoiceId: string) {
   return loadFreshInvoice(db, invoiceId);
 }
+
+/** Advisory only — manual-reconciliation UI (2026-08-25). Reuses the exact
+ *  same "sum of paid Payments vs payableKes" threshold settleInvoiceInTx
+ *  applies, so this preview can never drift from what actually happens. It
+ *  is NOT the authority: an admin's UI can show this and then submit
+ *  minutes later, by which point the invoice's real state may have moved —
+ *  the write path (matchUnmatchedTransactionToInvoiceAction /
+ *  resolvePaymentUnknownAction) always reloads fresh and calls the real
+ *  settleInvoice() again regardless of what this returned. */
+export async function previewInvoiceSettlement(invoiceId: string, incomingKes: number) {
+  const invoice = await loadFreshInvoice(db, invoiceId);
+  if (!invoice) return null;
+  const paidSoFarKes = (await db.payment.aggregate({ where: { invoiceId, status: "paid" }, _sum: { amount: true } }))._sum.amount ?? 0;
+  const resultingKes = paidSoFarKes + incomingKes;
+  return {
+    invoice, paidSoFarKes, incomingKes, resultingKes,
+    isTerminal: invoice.status !== "awaiting_payment",
+    wouldSettle: invoice.status === "awaiting_payment" && resultingKes >= invoice.payableKes,
+  };
+}
