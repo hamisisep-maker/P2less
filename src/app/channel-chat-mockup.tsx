@@ -40,8 +40,9 @@ const SCENES: Scene[] = [
     org: "School", channel: "whatsapp", customer: "Khadija",
     messages: [
       { from: "them", text: "What's my child's fee balance?", time: "8:14am" },
-      { from: "me", text: "One moment, checking now.", time: "8:14am" },
-      { from: "me", text: "Balance is KES 12,300 for this term.", time: "8:15am" },
+      { from: "me", text: "I'll need to verify it's you first. Code sent.", time: "8:14am" },
+      { from: "them", text: "601437", time: "8:15am" },
+      { from: "me", text: "Verified. Balance is KES 12,300 for this term.", time: "8:15am" },
     ],
   },
   {
@@ -65,7 +66,9 @@ const SCENES: Scene[] = [
     org: "Wholesale shop", channel: "email", customer: "Hamisi",
     messages: [
       { from: "them", text: "Send me this month's invoice.", time: "3:52am" },
-      { from: "me", text: "Sent, KES 84,200 total for August.", time: "3:52am" },
+      { from: "me", text: "I'll need to verify it's you first. Code sent.", time: "3:52am" },
+      { from: "them", text: "824615", time: "3:53am" },
+      { from: "me", text: "Verified. Sent, KES 84,200 total for August.", time: "3:53am" },
     ],
   },
   {
@@ -199,7 +202,7 @@ export function ChannelChatMockup() {
                 className="chat-scroll flex flex-1 flex-col space-y-2 overflow-y-auto px-3 py-3 transition-opacity duration-500"
                 style={{ background: "#ECE5DD", opacity: phase === "leaving" ? 0 : 1 }}
               >
-                <div className="animate-in mx-auto rounded-full bg-black/5 px-3 py-1 text-center text-[10px] text-black/50">{scene.customer} · new conversation</div>
+                <div className="animate-in mx-auto rounded-full bg-black/5 px-3 py-1 text-center text-[10px] text-black/50">New conversation</div>
                 {visible.map((m, i) => {
                   if (m.kind === "stk") {
                     return (
@@ -230,11 +233,16 @@ export function ChannelChatMockup() {
                   return (
                     <div
                       key={i}
-                      className={"animate-in flex max-w-[80%] flex-wrap items-end gap-1.5 rounded-lg px-3 py-2 text-[13px] leading-snug shadow-sm " + (m.from === "me" ? "ml-auto rounded-tr-none" : "rounded-tl-none bg-white")}
+                      className={"animate-in flex max-w-[80%] flex-col rounded-lg px-3 py-2 text-[13px] leading-snug shadow-sm " + (m.from === "me" ? "ml-auto rounded-tr-none" : "rounded-tl-none bg-white")}
                       style={m.from === "me" ? { background: channel.bubble } : undefined}
                     >
-                      <span>{m.text}</span>
-                      <span className="ml-auto shrink-0 text-[10px] text-black/40">{m.time}</span>
+                      <span className="text-[11px] font-bold" style={{ color: m.from === "me" ? channel.color : "var(--color-rose)" }}>
+                        {m.from === "me" ? scene.org : scene.customer}
+                      </span>
+                      <span className="flex flex-wrap items-end gap-1.5">
+                        <span>{m.text}</span>
+                        <span className="ml-auto shrink-0 text-[10px] text-black/40">{m.time}</span>
+                      </span>
                     </div>
                   );
                 })}
