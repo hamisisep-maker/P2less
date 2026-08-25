@@ -158,17 +158,16 @@ export function OnboardForm() {
 function SuccessScreen({ email, password }: { email: string; password: string }) {
   return (
     <Card className="space-y-4 p-6">
-      <div className="text-2xl">🎉</div>
       <h2 className="text-lg font-semibold">Your P2Less workspace is ready</h2>
-      <p className="text-sm text-muted">Sign in with the one-time credentials below (save them now).</p>
+      <p className="text-sm text-muted">Save these credentials to sign in.</p>
       <div className="space-y-2 rounded-xl bg-surface-2 p-4 text-sm">
         <div className="flex justify-between"><span className="text-muted">Email</span><span className="font-mono">{email}</span></div>
         <div className="flex justify-between"><span className="text-muted">Password</span><span className="font-mono">{password}</span></div>
       </div>
       <div className="rounded-xl border border-line-soft bg-surface-2 p-3 text-xs text-muted">
-        No channel is connected yet. Connect WhatsApp or any other channel from your dashboard whenever you&apos;re ready.
+        Connect WhatsApp or another channel anytime from your dashboard.
       </div>
-      <Link href="/login" className="inline-block rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-white hover:bg-accent-ink">Go to sign in →</Link>
+      <Link href="/login" className="inline-block rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-white hover:bg-accent-ink">Sign in</Link>
     </Card>
   );
 }
