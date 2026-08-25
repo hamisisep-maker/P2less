@@ -7,7 +7,7 @@ import { AudienceTabs } from "./audience-tabs";
 import { ChannelBadges } from "./channel-badges";
 import { FaqAccordion } from "./faq-accordion";
 import { AutomationCards } from "./automation-cards";
-import { WhatsAppPhoneMockup } from "./whatsapp-phone-mockup";
+import { ChannelChatMockup } from "./channel-chat-mockup";
 import { LANDING_FAQS, AUDIENCES, CHANNELS, AUTOMATION_EXAMPLES } from "@/lib/landing-content";
 
 // Queries the DB for real (aggregate-only) stats, so it must render
@@ -110,7 +110,7 @@ export default async function Landing() {
           </div>
 
           <div className="animate-in">
-            <WhatsAppPhoneMockup />
+            <ChannelChatMockup />
             <p className="mt-4 text-center text-xs text-faint">↘ this same assistant is live in the corner of this page</p>
           </div>
         </section>
