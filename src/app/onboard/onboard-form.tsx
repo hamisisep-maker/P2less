@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react";
 import Link from "next/link";
+import { Loader2 } from "lucide-react";
 import { requestOnboardOtpAction, confirmOnboardOtpAction, type RequestOtpResult, type ConfirmOtpResult } from "@/lib/actions";
 import { Card } from "@/components/ui";
 
@@ -96,7 +97,7 @@ export function OnboardForm() {
 
   if (otp) {
     return (
-      <Card className="p-6">
+      <Card className="animate-in p-6">
         <form action={confirmOtpAction} className="space-y-4">
           <input type="hidden" name="orgName" value={otp.orgName} />
           <input type="hidden" name="industry" value={otp.industry} />
@@ -113,11 +114,21 @@ export function OnboardForm() {
           )}
           <div><label className={label}>6-digit code</label><input name="code" required inputMode="numeric" autoComplete="one-time-code" placeholder="123456" maxLength={6} className={field} /></div>
           {otpError?.error && <div className="rounded-lg bg-rose-soft px-3 py-2 text-sm text-rose">{otpError.error}</div>}
-          <button type="submit" disabled={confirmOtpPending} className="w-full rounded-xl bg-accent py-2.5 font-medium text-white hover:bg-accent-ink disabled:opacity-60">
+          <button type="submit" disabled={confirmOtpPending} className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-2.5 font-medium text-white hover:bg-accent-ink disabled:opacity-60">
+            {confirmOtpPending && <Loader2 size={16} className="animate-spin" />}
             {confirmOtpPending ? "Verifying…" : "Verify & create workspace"}
           </button>
           <p className="text-center text-[11px] text-faint">Code expires in 5 minutes.</p>
-          <button type="button" onClick={startOver} className="block w-full text-center text-[11px] text-faint underline hover:text-muted">Not you, or details wrong? Start over</button>
+        </form>
+        <form action={requestAction} className="mt-2 flex items-center justify-center gap-3">
+          <input type="hidden" name="orgName" value={otp.orgName} />
+          <input type="hidden" name="industry" value={otp.industry} />
+          <input type="hidden" name="adminPhone" value={otp.adminPhone} />
+          <input type="hidden" name="adminName" value={otp.adminName} />
+          <input type="hidden" name="adminEmail" value={otp.adminEmail} />
+          <button type="submit" disabled={requestPending} className="text-[11px] text-faint underline hover:text-muted">{requestPending ? "Sending…" : "Resend code"}</button>
+          <span className="text-[11px] text-faint">·</span>
+          <button type="button" onClick={startOver} className="text-[11px] text-faint underline hover:text-muted">Start over</button>
         </form>
       </Card>
     );
@@ -128,12 +139,12 @@ export function OnboardForm() {
     || undefined;
 
   return (
-    <Card className="p-6">
+    <Card className="animate-in p-6">
       <form action={requestAction} className="space-y-5">
         <div><label className={label}>Organization name</label><input name="orgName" required placeholder="Sunrise Bakery" className={field} /></div>
 
         <div>
-          <label className={label}>Industry <span className="font-normal text-faint">(for templates &amp; analytics)</span></label>
+          <label className={label}>Industry</label>
           <select name="industry" className={field} defaultValue="business">
             <option value="school">School</option><option value="hospital">Hospital</option>
             <option value="business">Business</option><option value="sacco">SACCO</option>
@@ -147,9 +158,11 @@ export function OnboardForm() {
           <div><label className={label}>Your email</label><input name="adminEmail" type="email" required placeholder="amina@sunrisebakery.co" className={field} /></div>
         </div>
         {formError && <div className="rounded-lg bg-rose-soft px-3 py-2 text-sm text-rose">{formError}</div>}
-        <button type="submit" disabled={requestPending} className="w-full rounded-xl bg-accent py-2.5 font-medium text-white hover:bg-accent-ink disabled:opacity-60">
+        <button type="submit" disabled={requestPending} className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-2.5 font-medium text-white hover:bg-accent-ink disabled:opacity-60">
+          {requestPending && <Loader2 size={16} className="animate-spin" />}
           {requestPending ? "Sending code…" : "Create my workspace"}
         </button>
+        <p className="text-center text-xs text-muted">Already have an account? <Link href="/login" className="text-accent hover:underline">Sign in</Link></p>
       </form>
     </Card>
   );
@@ -157,7 +170,7 @@ export function OnboardForm() {
 
 function SuccessScreen({ email, password }: { email: string; password: string }) {
   return (
-    <Card className="space-y-4 p-6">
+    <Card className="animate-in space-y-4 p-6">
       <h2 className="text-lg font-semibold">Your P2Less workspace is ready</h2>
       <p className="text-sm text-muted">Save these credentials to sign in.</p>
       <div className="space-y-2 rounded-xl bg-surface-2 p-4 text-sm">

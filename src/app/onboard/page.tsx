@@ -15,9 +15,8 @@ export default async function OnboardPage() {
   const registrationEnabled = (await getSetting("public_registration_enabled")) === "1";
   return (
     <div className="min-h-screen">
-      <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
+      <header className="mx-auto flex max-w-5xl items-center px-6 py-5">
         <Logo />
-        <Link href="/login" className="text-sm text-muted hover:text-ink">Sign in</Link>
       </header>
       <main className="mx-auto grid max-w-5xl gap-10 px-6 py-8 lg:grid-cols-2">
         <div>
@@ -29,7 +28,7 @@ export default async function OnboardPage() {
             {[
               ["Tell us about your organization", "How to reach you and your team."],
               ["Verify your phone", "A quick text confirms it's really you."],
-              ["Start exploring", "Your dashboard is ready. Connect a channel and your systems whenever you're ready."],
+              ["Start exploring", "Your dashboard is ready to use."],
             ].map(([t, d], i) => (
               <li key={t} className="flex gap-3">
                 <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent text-xs font-semibold text-white">{i + 1}</span>
