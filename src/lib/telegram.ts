@@ -45,8 +45,8 @@ export async function connectTelegramBot(tenantId: string, botToken: string): Pr
   const webhookSecret = randomToken(24);
   const channel = await db.channel.upsert({
     where: { tenantId_type: { tenantId, type: "telegram" } },
-    create: { tenantId, type: "telegram", address: String(me.id), status: "active", config: { botUsername: me.username, tokenEnc: encryptJSON({ token }), webhookSecret } },
-    update: { address: String(me.id), status: "active", config: { botUsername: me.username, tokenEnc: encryptJSON({ token }), webhookSecret } },
+    create: { tenantId, type: "telegram", address: String(me.id), status: "active", connectionStatus: "connecting", config: { botUsername: me.username, tokenEnc: encryptJSON({ token }), webhookSecret } },
+    update: { address: String(me.id), status: "active", connectionStatus: "connecting", config: { botUsername: me.username, tokenEnc: encryptJSON({ token }), webhookSecret } },
   });
 
   const webhookUrl = `${base}/api/channels/telegram/webhook/${channel.id}`;
@@ -60,9 +60,13 @@ export async function connectTelegramBot(tenantId: string, botToken: string): Pr
     // The bot itself is saved and real — only the webhook registration failed.
     // Mirrors Messenger's own "Page saved, subscription can be retried"
     // partial-failure shape rather than pretending the whole thing failed.
-    await db.channel.update({ where: { id: channel.id }, data: { status: "pending" } });
+    // `status` stays "active" (the channel IS eligible to route once fixed);
+    // `connectionStatus` carries the "but something's wrong" signal instead.
+    await db.channel.update({ where: { id: channel.id }, data: { connectionStatus: "needs_attention" } });
     return { ok: false, error: setBody?.description || "Bot verified, but registering the webhook with Telegram failed. Try connecting again." };
   }
+
+  await db.channel.update({ where: { id: channel.id }, data: { connectionStatus: "connected" } });
 
   return { ok: true, username: me.username };
 }

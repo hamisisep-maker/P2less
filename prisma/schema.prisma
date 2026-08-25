@@ -1229,7 +1229,13 @@ model Channel {
   tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   type      String // whatsapp | webchat | sms | telegram
   address   String? // the tenant's number/handle on this channel
-  status    String  @default("active") // active | disabled
+  status    String  @default("active") // active | disabled — ROUTING eligibility, not connection progress
+  // Phase 3, 2026-08-26 — a SEPARATE axis from `status` above: where this
+  // channel's own connection actually stands, not whether it's allowed to
+  // route. not_started | connecting | connected | needs_attention | failed.
+  // WhatsApp doesn't use this field — WhatsAppNumber.verificationStatus is
+  // its own source of truth for that one type (see src/lib/channel-status.ts).
+  connectionStatus String @default("not_started")
   config    Json? // provider config (never expose secrets to clients)
 
   conversations Conversation[]

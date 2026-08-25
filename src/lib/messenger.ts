@@ -124,8 +124,8 @@ export async function saveConnectedPage(tenantId: string, page: PageAccount): Pr
   const autoPublishEnabled = (existing?.config as { autoPublishEnabled?: boolean } | null)?.autoPublishEnabled ?? false;
   await db.channel.upsert({
     where: { tenantId_type: { tenantId, type: "messenger" } },
-    create: { tenantId, type: "messenger", address: page.id, status: "active", config: { pageName: page.name, instagramBusinessAccountId, autoPublishEnabled, tokenEnc: encryptJSON({ accessToken: page.access_token }) } },
-    update: { address: page.id, status: "active", config: { pageName: page.name, instagramBusinessAccountId, autoPublishEnabled, tokenEnc: encryptJSON({ accessToken: page.access_token }) } },
+    create: { tenantId, type: "messenger", address: page.id, status: "active", connectionStatus: "connected", config: { pageName: page.name, instagramBusinessAccountId, autoPublishEnabled, tokenEnc: encryptJSON({ accessToken: page.access_token }) } },
+    update: { address: page.id, status: "active", connectionStatus: "connected", config: { pageName: page.name, instagramBusinessAccountId, autoPublishEnabled, tokenEnc: encryptJSON({ accessToken: page.access_token }) } },
   });
 }
 

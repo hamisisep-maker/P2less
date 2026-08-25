@@ -16,7 +16,11 @@ export const CHANNEL_OPTIONS: { value: string; label: string }[] = [
   { value: "messenger", label: "Facebook Messenger" },
   { value: "telegram", label: "Telegram" },
   { value: "web_chat", label: "Our website (chat widget)" },
-  { value: "sms_interested", label: "SMS (coming soon — let us know you need it)" },
-  { value: "instagram_interested", label: "Instagram (coming soon — let us know you need it)" },
-  { value: "email_interested", label: "Email (coming soon — let us know you need it)" },
+  // Phase 3, 2026-08-26 — email was mislabeled "coming soon" here even
+  // though activateEmailChannel() is a real, working connection (Resend
+  // Inbound). SMS/Instagram genuinely aren't built yet, so they stay as
+  // interest-only options.
+  { value: "email", label: "Email" },
+  { value: "sms_interested", label: "SMS (coming soon, let us know you need it)" },
+  { value: "instagram_interested", label: "Instagram (coming soon, let us know you need it)" },
 ];

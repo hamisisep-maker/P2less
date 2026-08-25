@@ -80,6 +80,27 @@ run("npx tsx scripts/seed-products.ts");
   if (pending.length) console.log(`[prod-start] Prepaid balance migration: granted ${pending.length} subscription(s) ${messagesGrant}/${aiGrant} KES starting balance.`);
 }
 
+// Phase 3, 2026-08-26 — Channel.connectionStatus is a new column; every
+// pre-existing Channel row gets Prisma's schema default ("not_started") even
+// though many of them are genuinely already connected. One-time correction
+// from the OLD status field, every boot — naturally idempotent because once
+// a row moves off "not_started" it never matches this WHERE clause again
+// (new rows write connectionStatus explicitly at creation from now on, so
+// they're never stuck at the default in the first place).
+{
+  const activeToConnected = await db.channel.updateMany({
+    where: { connectionStatus: "not_started", status: "active" },
+    data: { connectionStatus: "connected" },
+  });
+  const pendingToNeedsAttention = await db.channel.updateMany({
+    where: { connectionStatus: "not_started", status: "pending" },
+    data: { connectionStatus: "needs_attention" },
+  });
+  if (activeToConnected.count || pendingToNeedsAttention.count) {
+    console.log(`[prod-start] Channel connectionStatus backfill: ${activeToConnected.count} -> connected, ${pendingToNeedsAttention.count} -> needs_attention.`);
+  }
+}
+
 // Reconcile which tenant owns the REAL live WhatsApp number(s) from env — this
 // runs on EVERY boot (not just first-seed) so it also corrects a value the seed
 // assigned before an env var existed. A physical number can only route to ONE

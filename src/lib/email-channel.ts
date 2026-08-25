@@ -45,8 +45,8 @@ export async function activateEmailChannel(tenantId: string): Promise<{ ok: true
   const address = `${tenant.slug}@${domain}`;
   await db.channel.upsert({
     where: { tenantId_type: { tenantId, type: "email" } },
-    create: { tenantId, type: "email", address, status: "active", config: {} },
-    update: { address, status: "active" },
+    create: { tenantId, type: "email", address, status: "active", connectionStatus: "connected", config: {} },
+    update: { address, status: "active", connectionStatus: "connected" },
   });
   return { ok: true, address };
 }

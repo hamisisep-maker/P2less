@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { monthlyUsage } from "@/lib/usage";
 import { Card, Stat, PageHeader, Badge, timeAgo } from "@/components/ui";
 import { Trend, Modal, InfoTip, TrendAreaChart, StatusPieChart, ConversationsTable, IconStat, type ConvoRow } from "@/components/dashboard-ui";
+import { whatsappConnectionStatus, getChannelGaps, type ConnectionStatus } from "@/lib/channel-status";
 
 const TZ = process.env.APP_TIMEZONE || "Africa/Nairobi";
 
@@ -26,6 +27,7 @@ export default async function Overview() {
       msgInPrev, msgOutPrev,
       conversations, connectors, contacts, sub,
       recentEvents, statusGroups, tenantFaqs,
+      firstNumber, messengerChannel, telegramChannel, emailChannel, widgetKeyCount,
     ] = await Promise.all([
       monthlyUsage(tenantId, "message_in"),
       monthlyUsage(tenantId, "message_out"),
@@ -39,9 +41,26 @@ export default async function Overview() {
       db.subscription.findUnique({ where: { tenantId }, include: { plan: true } }),
       db.usageEvent.findMany({ where: { tenantId, type: { in: ["message_in", "message_out"] }, createdAt: { gte: since14 } }, select: { type: true, quantity: true, createdAt: true } }),
       db.conversation.groupBy({ by: ["status"], where: { tenantId }, _count: true }),
-      db.tenant.findUnique({ where: { id: tenantId }, select: { faqs: true } }),
+      db.tenant.findUnique({ where: { id: tenantId }, select: { faqs: true, channelsNeeded: true } }),
+      db.whatsAppNumber.findFirst({ where: { tenantId } }),
+      db.channel.findFirst({ where: { tenantId, type: "messenger" } }),
+      db.channel.findFirst({ where: { tenantId, type: "telegram" } }),
+      db.channel.findFirst({ where: { tenantId, type: "email" } }),
+      db.widgetKey.count({ where: { tenantId } }),
     ]);
     const faqCount = Array.isArray(tenantFaqs?.faqs) ? (tenantFaqs.faqs as { q: string; a: string }[]).filter((f) => f?.q && f?.a).length : 0;
+
+    // Phase 3, 2026-08-26 — "interest ≠ connection": the single highest-
+    // priority channel the tenant said they wanted (Explore/Settings) but
+    // hasn't actually connected yet, if any.
+    const topGap = getChannelGaps({
+      channelsNeeded: (tenantFaqs?.channelsNeeded as string[] | null) ?? [],
+      whatsapp: whatsappConnectionStatus(firstNumber),
+      messenger: (messengerChannel?.connectionStatus as ConnectionStatus | undefined) ?? "not_started",
+      telegram: (telegramChannel?.connectionStatus as ConnectionStatus | undefined) ?? "not_started",
+      email: (emailChannel?.connectionStatus as ConnectionStatus | undefined) ?? "not_started",
+      hasWidgetKey: widgetKeyCount > 0,
+    })[0];
 
     const recent = await db.conversation.findMany({
       where: { tenantId },
@@ -93,6 +112,15 @@ export default async function Overview() {
           subtitle={`${user.tenant?.name} · ${sub?.plan.name ?? "No plan"} plan`}
           action={<Link href="/dashboard/connectors/new" className="flex items-center gap-1.5 rounded-xl bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-4 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-accent-glow)] transition-transform hover:-translate-y-0.5"><Plus size={15} /> Add integration</Link>}
         />
+
+        {topGap && (
+          <Card className="mb-4 border-accent/30 bg-accent-soft p-4 text-sm">
+            <p className="mb-1 font-medium text-accent-ink">Connect {topGap.label}</p>
+            <p className="text-muted">
+              You said your customers use {topGap.label} — it&apos;s not connected yet, so nothing&apos;s answering there. <Link href={topGap.href} className="text-accent hover:underline">Connect it now →</Link>
+            </p>
+          </Card>
+        )}
 
         {faqCount === 0 && (
           <Card className="mb-4 border-amber/30 bg-amber-soft p-4 text-sm">

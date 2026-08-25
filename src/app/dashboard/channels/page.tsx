@@ -10,6 +10,7 @@ import { ConnectTelegramForm } from "./connect-telegram-form";
 import { ConnectEmailButton } from "./connect-email-button";
 import { emailInboundConfigured } from "@/lib/email-channel";
 import { AutoPublishToggle } from "./auto-publish-toggle";
+import { whatsappConnectionStatus, connectionStatusBadge, getChannelGaps, type ConnectionStatus } from "@/lib/channel-status";
 
 // Registration reframe, continued (roadmap doc "Registration reframe" —
 // Track A) — the data model already treats WhatsApp numbers and a
@@ -29,7 +30,7 @@ export default async function ChannelsPage({
     const { embedded_signup: waSignupResult, connect: messengerConnectResult, message } = await searchParams;
     const canConnect = userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE);
 
-    const [numbers, messengerChannel, telegramChannel, emailChannel] = await Promise.all([
+    const [numbers, messengerChannel, telegramChannel, emailChannel, tenant, widgetKeyCount] = await Promise.all([
       db.whatsAppNumber.findMany({
         where: { tenantId: user.tenantId! },
         include: { _count: { select: { conversations: true } } },
@@ -38,10 +39,28 @@ export default async function ChannelsPage({
       db.channel.findFirst({ where: { tenantId: user.tenantId!, type: "messenger" } }),
       db.channel.findFirst({ where: { tenantId: user.tenantId!, type: "telegram" } }),
       db.channel.findFirst({ where: { tenantId: user.tenantId!, type: "email" } }),
+      db.tenant.findUnique({ where: { id: user.tenantId! }, select: { channelsNeeded: true } }),
+      db.widgetKey.count({ where: { tenantId: user.tenantId! } }),
     ]);
     const messengerCfg = messengerChannel?.config as { pageName?: string; instagramBusinessAccountId?: string | null; autoPublishEnabled?: boolean; tokenValid?: boolean; tokenHealthLastCheckedAt?: string } | null;
     const messengerPageName = messengerCfg?.pageName;
     const telegramUsername = (telegramChannel?.config as { botUsername?: string } | null)?.botUsername;
+
+    // Phase 3, 2026-08-26 — "interest ≠ connection" made visible: which
+    // channels the tenant said they wanted (Explore/Settings) are still
+    // genuinely untouched, so those sections get an honest, emphasized
+    // empty state instead of the same flat "not connected" every channel
+    // gets regardless of whether the tenant asked for it.
+    const whatsappStatus: ConnectionStatus = whatsappConnectionStatus(numbers[0]);
+    const messengerStatus: ConnectionStatus = (messengerChannel?.connectionStatus as ConnectionStatus | undefined) ?? "not_started";
+    const telegramStatus: ConnectionStatus = (telegramChannel?.connectionStatus as ConnectionStatus | undefined) ?? "not_started";
+    const emailStatus: ConnectionStatus = (emailChannel?.connectionStatus as ConnectionStatus | undefined) ?? "not_started";
+    const gaps = getChannelGaps({
+      channelsNeeded: (tenant?.channelsNeeded as string[] | null) ?? [],
+      whatsapp: whatsappStatus, messenger: messengerStatus, telegram: telegramStatus, email: emailStatus,
+      hasWidgetKey: widgetKeyCount > 0,
+    });
+    const isGap = (key: string) => gaps.some((g) => g.key === key);
 
     return (
       <div>
@@ -68,7 +87,15 @@ export default async function ChannelsPage({
           </div>
         )}
         <div className="space-y-3">
-          {numbers.length === 0 && <Card className="p-6 text-sm text-muted">No numbers connected yet.</Card>}
+          {numbers.length === 0 && (
+            isGap("whatsapp") ? (
+              <Card className="border-accent/30 bg-accent-soft p-6 text-sm text-accent-ink">
+                You said your customers use WhatsApp. Connect it above to start replying automatically.
+              </Card>
+            ) : (
+              <Card className="p-6 text-sm text-muted">No numbers connected yet.</Card>
+            )
+          )}
           {numbers.map((n) => (
             <Card key={n.id} className="p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -126,7 +153,7 @@ export default async function ChannelsPage({
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">{messengerPageName ?? "Connected Page"}</span>
-                  <Badge tone={messengerChannel.status === "active" ? "green" : "neutral"}>{messengerChannel.status}</Badge>
+                  <Badge tone={connectionStatusBadge(messengerStatus).tone}>{connectionStatusBadge(messengerStatus).label}</Badge>
                   {messengerCfg?.tokenHealthLastCheckedAt && (
                     <Badge tone={messengerCfg.tokenValid ? "green" : "rose"}>{messengerCfg.tokenValid ? "connection healthy" : "connection needs reconnecting"}</Badge>
                   )}
@@ -135,6 +162,10 @@ export default async function ChannelsPage({
               </div>
             </div>
             {canConnect && <AutoPublishToggle enabled={!!messengerCfg?.autoPublishEnabled} hasInstagram={!!messengerCfg?.instagramBusinessAccountId} />}
+          </Card>
+        ) : isGap("messenger") ? (
+          <Card className="border-accent/30 bg-accent-soft p-6 text-sm text-accent-ink">
+            You said your customers use Facebook Messenger. Connect a Page above to start replying automatically.
           </Card>
         ) : (
           <Card className="p-6 text-sm text-muted">No Facebook Page connected yet.</Card>
@@ -160,11 +191,15 @@ export default async function ChannelsPage({
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">{telegramUsername ? `@${telegramUsername}` : "Connected bot"}</span>
-                  <Badge tone={telegramChannel.status === "active" ? "green" : "amber"}>{telegramChannel.status === "active" ? "active" : "needs reconnecting"}</Badge>
+                  <Badge tone={connectionStatusBadge(telegramStatus).tone}>{connectionStatusBadge(telegramStatus).label}</Badge>
                 </div>
                 <div className="mt-1 font-mono text-[11px] text-faint">bot_id: {telegramChannel.address}</div>
               </div>
             </div>
+          </Card>
+        ) : isGap("telegram") ? (
+          <Card className="border-accent/30 bg-accent-soft p-6 text-sm text-accent-ink">
+            You said your customers use Telegram. Connect a bot above to start replying automatically.
           </Card>
         ) : (
           <Card className="p-6 text-sm text-muted">No Telegram bot connected yet.</Card>
@@ -190,11 +225,15 @@ export default async function ChannelsPage({
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-mono font-semibold">{emailChannel.address}</span>
-                  <Badge tone={emailChannel.status === "active" ? "green" : "neutral"}>{emailChannel.status}</Badge>
+                  <Badge tone={connectionStatusBadge(emailStatus).tone}>{connectionStatusBadge(emailStatus).label}</Badge>
                 </div>
                 <div className="mt-1 text-xs text-faint">Share this address with customers who&apos;d rather email than chat.</div>
               </div>
             </div>
+          </Card>
+        ) : isGap("email") ? (
+          <Card className="border-accent/30 bg-accent-soft p-6 text-sm text-accent-ink">
+            You said your customers use email. Activate it above to start replying automatically.
           </Card>
         ) : (
           <Card className="p-6 text-sm text-muted">No email address activated yet.</Card>
