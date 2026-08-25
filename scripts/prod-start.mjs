@@ -25,15 +25,7 @@ function run(cmd) {
   execSync(cmd, { stdio: "inherit" });
 }
 
-// TEMPORARY for this one deploy — Paybill, 2026-08-25, adds
-// Invoice.normalizedInvoiceNumber (@unique) and Payment.[provider,providerRef]
-// (@unique). Independently verified via a temporary debug route against
-// real production data first (see GAP-REGISTER item 7): zero duplicate
-// (provider, providerRef) pairs, zero existing Invoice rows — this is
-// exactly the "genuinely safe but Prisma can't statically prove it" case
-// this comment block already documents. Revert this flag in the very next
-// commit once the boot log confirms a clean sync.
-run("npx prisma db push --skip-generate --accept-data-loss");
+run("npx prisma db push --skip-generate");
 
 const db = new PrismaClient();
 const tenantCount = await db.tenant.count();
