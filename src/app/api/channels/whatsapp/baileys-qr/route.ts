@@ -1,7 +1,7 @@
 import QRCode from "qrcode";
 import { withTenantUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { getPendingQr } from "@/lib/whatsapp-baileys";
+import { getPendingQr, getPendingPairingCode } from "@/lib/whatsapp-baileys";
 
 // Polled by the dashboard's connect/switch Modal while a WhatsApp number is
 // pairing over the unofficial (Baileys) transport — same shape as
@@ -28,6 +28,7 @@ export async function GET(req: Request) {
 
     const qr = await getPendingQr(numberId);
     const qrDataUrl = qr ? await QRCode.toDataURL(qr, { margin: 1, width: 280 }) : null;
-    return Response.json({ connected: false, qr: qrDataUrl });
+    const pairingCode = await getPendingPairingCode(numberId);
+    return Response.json({ connected: false, qr: qrDataUrl, pairingCode });
   });
 }

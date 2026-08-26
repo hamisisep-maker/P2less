@@ -31,6 +31,7 @@ const AUTH_DIR_ROOT = process.env.BAILEYS_AUTH_DIR || "/data/baileys-auth";
 type Registry = {
   sockets: Map<string, WASocket>;
   pendingQr: Map<string, { qr: string; expiresAt: number }>;
+  pendingPairingCode: Map<string, { code: string; expiresAt: number }>;
   starting: Set<string>;
 };
 
@@ -40,7 +41,7 @@ type Registry = {
 // module instance, so a live socket opened from one bundle would look
 // nonexistent from another.
 const holder = globalThis as unknown as { __p2lessBaileys?: Registry };
-holder.__p2lessBaileys ??= { sockets: new Map(), pendingQr: new Map(), starting: new Set() };
+holder.__p2lessBaileys ??= { sockets: new Map(), pendingQr: new Map(), pendingPairingCode: new Map(), starting: new Set() };
 const REGISTRY = holder.__p2lessBaileys;
 
 const QR_TTL_MS = 60_000; // Baileys itself rotates the QR roughly this often
@@ -77,7 +78,12 @@ function extractText(msg: { message?: { conversation?: string | null; extendedTe
  *  startJobPoller) makes repeat calls (e.g. Next dev-mode hot reload, or the
  *  dashboard polling loop re-triggering a connect) a no-op once a socket is
  *  already up or already being brought up. */
-export async function startBaileysConnection(numberId: string): Promise<void> {
+// `pairingPhoneNumber`, when given, requests a typed pairing code instead of
+// relying on the QR — for a phone whose camera can't scan one. E.164 digits,
+// no "+". Baileys emits BOTH a QR (still stored, harmless if unused) and,
+// when asked, a short code the person types into WhatsApp's own "Link with
+// phone number" flow — same underlying pairing handshake either way.
+export async function startBaileysConnection(numberId: string, pairingPhoneNumber?: string): Promise<void> {
   if (REGISTRY.sockets.has(numberId) || REGISTRY.starting.has(numberId)) return;
   REGISTRY.starting.add(numberId);
 
@@ -89,6 +95,28 @@ export async function startBaileysConnection(numberId: string): Promise<void> {
     sock.ev.on("creds.update", () => { void saveCreds(); });
     sock.ev.on("connection.update", (update) => { void handleConnectionUpdate(numberId, sock, update); });
     sock.ev.on("messages.upsert", (payload) => { void handleInboundMessages(numberId, payload); });
+
+    if (pairingPhoneNumber && !state.creds.registered) {
+      const digits = pairingPhoneNumber.replace(/\D/g, "");
+      // requestPairingCode needs the socket's underlying WebSocket handshake
+      // to have completed first — calling it immediately after
+      // makeWASocket() (before that handshake finishes) fails with a real
+      // "Connection Closed" 428, confirmed live. A short retry/backoff
+      // covers the handshake's actual completion time without needing to
+      // hook a specific Baileys-internal readiness event.
+      void (async () => {
+        for (let attempt = 0; attempt < 5; attempt++) {
+          await new Promise((r) => setTimeout(r, attempt === 0 ? 300 : 1500));
+          try {
+            const code = await sock.requestPairingCode(digits);
+            REGISTRY.pendingPairingCode.set(numberId, { code, expiresAt: Date.now() + QR_TTL_MS });
+            return;
+          } catch (e) {
+            if (attempt === 4) console.error(`[whatsapp-baileys:pairing-code-failed ${numberId}]`, e);
+          }
+        }
+      })();
+    }
   } catch (e) {
     console.error(`[whatsapp-baileys:start-failed ${numberId}]`, e);
     REGISTRY.sockets.delete(numberId);
@@ -114,6 +142,7 @@ async function handleConnectionUpdateInner(numberId: string, sock: WASocket, upd
 
   if (update.connection === "open") {
     REGISTRY.pendingQr.delete(numberId);
+    REGISTRY.pendingPairingCode.delete(numberId);
     const phoneNumber = sock.user?.phoneNumber ?? (sock.user?.id ? phoneFromJid(sock.user.id) : null);
     const number = await db.whatsAppNumber.findUnique({ where: { id: numberId } });
     if (!number) return;
@@ -175,6 +204,7 @@ async function handleConnectionUpdateInner(numberId: string, sock: WASocket, upd
 
   if (update.connection === "close") {
     REGISTRY.sockets.delete(numberId);
+    REGISTRY.pendingPairingCode.delete(numberId);
     const statusCode = (update.lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output?.statusCode;
     // A logged-out disconnect (the phone unlinked this device) is terminal —
     // don't auto-reconnect into a fresh QR loop unattended. Any other close
@@ -246,6 +276,12 @@ export async function getPendingQr(numberId: string): Promise<string | null> {
   return entry.qr;
 }
 
+export async function getPendingPairingCode(numberId: string): Promise<string | null> {
+  const entry = REGISTRY.pendingPairingCode.get(numberId);
+  if (!entry || entry.expiresAt < Date.now()) return null;
+  return entry.code;
+}
+
 export async function isBaileysConnected(numberId: string): Promise<boolean> {
   return REGISTRY.sockets.has(numberId);
 }
@@ -287,4 +323,5 @@ export async function stopBaileysConnection(numberId: string): Promise<void> {
   if (sock) await sock.end(undefined);
   REGISTRY.sockets.delete(numberId);
   REGISTRY.pendingQr.delete(numberId);
+  REGISTRY.pendingPairingCode.delete(numberId);
 }

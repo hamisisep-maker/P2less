@@ -533,10 +533,32 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // safety boundary, not a comment — a tenant-wide "if session active,
   // gate everyone" check was the first version and was wrong.
   {
-    const existingParticipant = await db.trainingParticipant.findFirst({
+    let existingParticipant = await db.trainingParticipant.findFirst({
       where: { contactId: contact.id, session: { tenantId: tenant.id, status: "active" } },
       include: { session: true },
     });
+
+    // Open enrollment: a contact with no explicit enrollment (admin allowlist
+    // add, or the join-code path above) is auto-enrolled the first time they
+    // text in, as long as an active session for this tenant has
+    // openEnrollment on. Same maxParticipants cap, enforced atomically, as
+    // the admin-enroll path in training-actions.ts. Falls through into the
+    // identical gate/increment logic below either way — one counting path,
+    // regardless of how the participant got enrolled.
+    if (!existingParticipant) {
+      const openSession = await db.trainingSession.findFirst({ where: { tenantId: tenant.id, status: "active", openEnrollment: true } });
+      if (openSession) {
+        const created = await db.$transaction(async (tx) => {
+          if (openSession.maxParticipants !== null) {
+            const count = await tx.trainingParticipant.count({ where: { sessionId: openSession.id } });
+            if (count >= openSession.maxParticipants) return null;
+          }
+          return tx.trainingParticipant.create({ data: { sessionId: openSession.id, contactId: contact.id } });
+        });
+        if (created) existingParticipant = { ...created, session: openSession };
+      }
+    }
+
     if (existingParticipant) {
       const activeSession = existingParticipant.session;
       // Atomic — SQLite's single-writer semantics make one $transaction

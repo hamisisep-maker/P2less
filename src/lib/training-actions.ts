@@ -24,7 +24,7 @@ function generateJoinCode(): string {
  *  rather than adding new RBAC surface for a v1. Only one active session
  *  per tenant at a time (a real, deliberate v1 simplification, not an
  *  oversight — multiple concurrent sessions is real future scope). */
-export async function createTrainingSessionAction(tenantId: string, name: string, questionsPerParticipant: number, maxParticipants: number | null) {
+export async function createTrainingSessionAction(tenantId: string, name: string, questionsPerParticipant: number, maxParticipants: number | null, openEnrollment: boolean) {
   if (!name?.trim()) return { error: "A session name is required." };
   if (!Number.isInteger(questionsPerParticipant) || questionsPerParticipant < 1) return { error: "Questions per participant must be a positive whole number." };
   if (maxParticipants !== null && (!Number.isInteger(maxParticipants) || maxParticipants < 1)) return { error: "Max participants must be a positive whole number, or left blank for no cap." };
@@ -32,8 +32,8 @@ export async function createTrainingSessionAction(tenantId: string, name: string
     const existing = await db.trainingSession.findFirst({ where: { tenantId, status: "active" } });
     if (existing) return { error: `"${existing.name}" is already active for this tenant — end it before starting a new one.` };
 
-    const session = await db.trainingSession.create({ data: { tenantId, name: name.trim(), questionsPerParticipant, maxParticipants, joinCode: generateJoinCode() } });
-    await logPrivilegedAction({ admin, permission: "tickets.manage", tenantId, action: "admin.training_session_created", target: session.id, detail: { name: session.name, questionsPerParticipant, maxParticipants } });
+    const session = await db.trainingSession.create({ data: { tenantId, name: name.trim(), questionsPerParticipant, maxParticipants, joinCode: generateJoinCode(), openEnrollment } });
+    await logPrivilegedAction({ admin, permission: "tickets.manage", tenantId, action: "admin.training_session_created", target: session.id, detail: { name: session.name, questionsPerParticipant, maxParticipants, openEnrollment } });
     revalidatePath("/admin/quality");
     return { ok: true };
   }, { tenantId });

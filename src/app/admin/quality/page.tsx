@@ -40,7 +40,7 @@ export default async function AdminQualityPage() {
       }),
     ]);
     const activeSessions = activeSessionsRaw.map((s) => ({
-      id: s.id, tenantId: s.tenantId, tenantName: s.tenant.name, name: s.name, questionsPerParticipant: s.questionsPerParticipant, maxParticipants: s.maxParticipants, joinCode: s.joinCode,
+      id: s.id, tenantId: s.tenantId, tenantName: s.tenant.name, name: s.name, questionsPerParticipant: s.questionsPerParticipant, maxParticipants: s.maxParticipants, joinCode: s.joinCode, openEnrollment: s.openEnrollment,
       tenantWhatsAppNumber: s.tenant.numbers[0]?.phoneNumber ?? null,
       participantCount: s.participants.length, questionsUsed: s.participants.reduce((sum, p) => sum + p.questionCount, 0), createdAt: s.createdAt,
       participants: s.participants.map((p) => ({ address: p.contact.address, questionCount: p.questionCount })),

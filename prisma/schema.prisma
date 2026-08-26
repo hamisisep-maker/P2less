@@ -1788,7 +1788,8 @@ model TrainingSession {
   name                   String
   questionsPerParticipant Int     @default(20)
   maxParticipants        Int? // null = no cap; enforced atomically at enrollment (addTrainingParticipantAction)
-  joinCode               String   @unique // random, unguessable — the ONLY way a contact can self-enroll (see conversation.ts); admin-only enrollment is a separate path
+  joinCode               String   @unique // random, unguessable — a second, still-live self-enroll path even when openEnrollment is off; admin-only enrollment is a third path
+  openEnrollment         Boolean  @default(false) // true = any number that texts the connected channel while this session is active is auto-enrolled on first message, no allowlist/join-code needed
   status                 String   @default("active") // active | completed
   createdAt              DateTime @default(now())
   endedAt                DateTime?

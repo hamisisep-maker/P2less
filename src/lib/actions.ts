@@ -1064,16 +1064,20 @@ export async function activateEmailChannelAction(_prev: unknown, _formData: Form
 // re-running startWhatsAppEmbeddedSignupAction for that number once its
 // unofficial connection is stopped, since Meta's own flow already handles
 // "connect a number" regardless of what it was doing before.
-export async function startWhatsAppUnofficialConnectAction(_prev: unknown, _formData: FormData) {
+export async function startWhatsAppUnofficialConnectAction(_prev: unknown, formData: FormData) {
   return withTenantUser(async (user) => {
     if (!userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE)) {
       return { error: "Only an organization owner can connect a WhatsApp number." };
     }
+    // Optional — a phone whose camera can't scan a QR types a pairing code
+    // into WhatsApp's own "Link with phone number" flow instead. See
+    // whatsapp-baileys.ts's startBaileysConnection for how this branches.
+    const pairingPhoneNumber = String(formData.get("pairingPhoneNumber") ?? "").trim() || undefined;
     const number = await db.whatsAppNumber.create({
       data: { tenantId: user.tenantId!, displayName: user.tenant?.name ?? "WhatsApp", transport: "unofficial", verificationStatus: "connecting", phoneNumber: null },
     });
     const { startBaileysConnection } = await import("./whatsapp-baileys");
-    void startBaileysConnection(number.id);
+    void startBaileysConnection(number.id, pairingPhoneNumber);
     revalidatePath("/dashboard/channels");
     return { ok: true as const, numberId: number.id };
   });

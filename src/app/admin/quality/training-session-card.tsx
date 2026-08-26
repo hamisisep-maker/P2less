@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Card, Badge } from "@/components/ui";
 import { createTrainingSessionAction, endTrainingSessionAction, addTrainingParticipantAction } from "@/lib/training-actions";
 
-type ActiveSession = { id: string; tenantId: string; tenantName: string; name: string; questionsPerParticipant: number; maxParticipants: number | null; joinCode: string; tenantWhatsAppNumber: string | null; participantCount: number; questionsUsed: number; createdAt: Date; participants: { address: string; questionCount: number }[] };
+type ActiveSession = { id: string; tenantId: string; tenantName: string; name: string; questionsPerParticipant: number; maxParticipants: number | null; joinCode: string; openEnrollment: boolean; tenantWhatsAppNumber: string | null; participantCount: number; questionsUsed: number; createdAt: Date; participants: { address: string; questionCount: number }[] };
 type TenantOption = { id: string; name: string };
 
 // wa.me pre-fills the message box with the join code — a tester taps the
@@ -15,6 +15,15 @@ type TenantOption = { id: string; name: string };
 function waLink(phoneNumber: string, joinCode: string): string {
   const digits = phoneNumber.replace(/[^0-9]/g, "");
   return `https://wa.me/${digits}?text=${encodeURIComponent(joinCode)}`;
+}
+
+// The open-enrollment link, deliberately with no pre-filled text: it just
+// opens a chat with the number. Nothing is sent, and nobody is enrolled,
+// until the person actually types and sends their own first message —
+// conversation.ts's open-enrollment check is what enrolls them at that point.
+function waLinkPlain(phoneNumber: string): string {
+  const digits = phoneNumber.replace(/[^0-9]/g, "");
+  return `https://wa.me/${digits}`;
 }
 
 function CopyLink({ url }: { url: string }) {
@@ -71,6 +80,7 @@ export function TrainingSessionCard({ tenants, activeSessions }: { tenants: Tena
   const [name, setName] = useState("");
   const [questionsPerParticipant, setQuestionsPerParticipant] = useState(20);
   const [maxParticipants, setMaxParticipants] = useState("");
+  const [openEnrollment, setOpenEnrollment] = useState(false);
 
   return (
     <Card className="mb-4 p-5">
@@ -84,6 +94,7 @@ export function TrainingSessionCard({ tenants, activeSessions }: { tenants: Tena
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone="green" dot>active</Badge>
+                  {s.openEnrollment && <Badge tone="indigo">open enrollment</Badge>}
                   <span className="font-medium">{s.name}</span>
                   <span className="text-xs text-muted">{s.tenantName}</span>
                 </div>
@@ -108,10 +119,17 @@ export function TrainingSessionCard({ tenants, activeSessions }: { tenants: Tena
                 <span>— never guessable, so a real customer&apos;s ordinary message won&apos;t match it.</span>
               </div>
               {s.tenantWhatsAppNumber ? (
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
-                  <span>Share this link (opens WhatsApp with the code pre-filled, one tap to send):</span>
-                  <CopyLink url={waLink(s.tenantWhatsAppNumber, s.joinCode)} />
-                </div>
+                s.openEnrollment ? (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+                    <span>Public link (opens WhatsApp with the number, nothing pre-filled — anyone who sends any message is enrolled automatically):</span>
+                    <CopyLink url={waLinkPlain(s.tenantWhatsAppNumber)} />
+                  </div>
+                ) : (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+                    <span>Share this link (opens WhatsApp with the code pre-filled, one tap to send):</span>
+                    <CopyLink url={waLink(s.tenantWhatsAppNumber, s.joinCode)} />
+                  </div>
+                )
               ) : (
                 <div className="mt-1.5 text-xs text-faint">No active WhatsApp number on this tenant yet — a share link needs one to point to.</div>
               )}
@@ -149,15 +167,20 @@ export function TrainingSessionCard({ tenants, activeSessions }: { tenants: Tena
           <span className="text-xs font-medium text-muted">Max participants</span>
           <input type="number" min={1} value={maxParticipants} onChange={(e) => setMaxParticipants(e.target.value)} placeholder="no cap" className="mt-1 w-24 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs outline-none focus:border-accent" />
         </label>
+        <label className="flex items-center gap-1.5 pb-1.5">
+          <input type="checkbox" checked={openEnrollment} onChange={(e) => setOpenEnrollment(e.target.checked)} className="h-3.5 w-3.5 rounded border-line accent-[var(--color-accent)]" />
+          <span className="text-xs font-medium text-muted">Open enrollment — anyone who texts in is auto-enrolled, no pre-listed numbers or join code needed</span>
+        </label>
         <button
           disabled={pending || !name.trim() || !tenantId}
           onClick={() => startTransition(async () => {
             const cap = maxParticipants.trim() ? Number(maxParticipants) : null;
-            const res = await createTrainingSessionAction(tenantId, name, questionsPerParticipant, cap);
+            const res = await createTrainingSessionAction(tenantId, name, questionsPerParticipant, cap, openEnrollment);
             if (res.error) { toast.error(res.error); return; }
             toast.success("Training session started");
             setName("");
             setMaxParticipants("");
+            setOpenEnrollment(false);
           })}
           className="rounded-lg bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-3.5 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
         >

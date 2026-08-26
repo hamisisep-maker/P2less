@@ -12,6 +12,7 @@ import { Modal } from "@/components/modal";
 export function BaileysQrModal({ open, onClose, numberId }: { open: boolean; onClose: () => void; numberId: string | null }) {
   const router = useRouter();
   const [qr, setQr] = useState<string | null>(null);
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [failed, setFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,6 +20,7 @@ export function BaileysQrModal({ open, onClose, numberId }: { open: boolean; onC
   useEffect(() => {
     if (!open || !numberId) return;
     setQr(null);
+    setPairingCode(null);
     setConnected(false);
     setFailed(false);
     setError(null);
@@ -28,7 +30,7 @@ export function BaileysQrModal({ open, onClose, numberId }: { open: boolean; onC
       try {
         const res = await fetch(`/api/channels/whatsapp/baileys-qr?numberId=${numberId}`);
         if (!res.ok) return;
-        const data = (await res.json()) as { connected: boolean; failed?: boolean; qr?: string | null; phoneNumber?: string; error?: string };
+        const data = (await res.json()) as { connected: boolean; failed?: boolean; qr?: string | null; pairingCode?: string | null; phoneNumber?: string; error?: string };
         if (cancelled) return;
         if (data.connected) {
           setConnected(true);
@@ -36,8 +38,9 @@ export function BaileysQrModal({ open, onClose, numberId }: { open: boolean; onC
         } else if (data.failed) {
           setFailed(true);
           setError(data.error ?? "This number couldn't be connected.");
-        } else if (data.qr) {
-          setQr(data.qr);
+        } else {
+          if (data.qr) setQr(data.qr);
+          if (data.pairingCode) setPairingCode(data.pairingCode);
         }
       } catch {
         if (!cancelled) setError("Couldn't reach the pairing service.");
@@ -57,6 +60,17 @@ export function BaileysQrModal({ open, onClose, numberId }: { open: boolean; onC
         </div>
       ) : failed ? (
         <div className="rounded-lg bg-rose-soft px-4 py-3 text-sm text-rose">{error}</div>
+      ) : pairingCode ? (
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Open WhatsApp on the phone you want to connect &rarr; Settings &rarr; Linked Devices &rarr; Link a Device &rarr; Link with phone number instead, then type this code.
+          </p>
+          <div className="flex justify-center rounded-xl border border-line bg-surface-2 p-6">
+            <span className="font-mono text-3xl font-bold tracking-[0.3em] text-ink">{pairingCode}</span>
+          </div>
+          <p className="text-xs text-faint">The code refreshes automatically if it expires. Keep this open until it connects.</p>
+          {error && <div className="rounded-lg bg-rose-soft px-3 py-2 text-sm text-rose">{error}</div>}
+        </div>
       ) : (
         <div className="space-y-4">
           <p className="text-sm text-muted">
