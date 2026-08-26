@@ -3,5 +3,6 @@ import "server-only";
 // a one-line import here plus its own file — nothing else in the engine changes.
 import "./data-analysis";
 import "./document-intel";
+import "./image-vision";
 
 export { pickTool, allTools, type ToolInput, type ToolResult, type ToolAttachment } from "./registry";

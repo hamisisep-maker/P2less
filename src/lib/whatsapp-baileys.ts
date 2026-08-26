@@ -1,6 +1,6 @@
 import "server-only";
 import path from "node:path";
-import makeWASocket, { useMultiFileAuthState, DisconnectReason, type WASocket, type ConnectionState, type WAMessage, type MessageUpsertType } from "@whiskeysockets/baileys";
+import makeWASocket, { useMultiFileAuthState, DisconnectReason, downloadMediaMessage, type WASocket, type ConnectionState, type WAMessage, type MessageUpsertType } from "@whiskeysockets/baileys";
 import { db } from "./db";
 import { audit } from "./audit";
 import { requestId as newRequestId } from "./crypto";
@@ -57,6 +57,13 @@ function authDir(numberId: string): string {
  *  only covers the classic "<digits>@s.whatsapp.net" shape, which is still
  *  common but not guaranteed going forward — a real limitation, not
  *  papered over. */
+// Minimal no-op logger satisfying Baileys' ILogger contract — only needed
+// to unlock downloadMediaMessage's reuploadRequest option below; this
+// module's own error handling (try/catch around every download) already
+// surfaces real failures via console.error, so there's nothing useful for
+// Baileys' internal logger to add here.
+const silentLogger = { level: "silent", child: () => silentLogger, trace() {}, debug() {}, info() {}, warn() {}, error() {} };
+
 function phoneFromJid(jid: string): string {
   const digits = jid.split("@")[0].split(":")[0].replace(/\D/g, "");
   return "+" + digits;
@@ -70,6 +77,22 @@ function extractText(msg: { message?: { conversation?: string | null; extendedTe
   const m = msg.message;
   if (!m) return null;
   return m.conversation ?? m.extendedTextMessage?.text ?? null;
+}
+
+/** Download a Baileys media message to base64 — the unofficial transport's
+ *  equivalent of transport.ts's fetchWhatsAppMedia (Meta's two-hop id→URL→
+ *  bytes fetch). Baileys hands back the bytes directly, already decrypted;
+ *  reuploadRequest lets it transparently re-fetch media whose direct link
+ *  expired (the exact case the library's own docs call out), same
+ *  reliability the official transport gets from re-hitting the Graph API. */
+async function downloadBaileysMedia(sock: WASocket, msg: WAMessage, mimeType: string): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    const buf = await downloadMediaMessage(msg, "buffer", {}, { reuploadRequest: sock.updateMediaMessage, logger: silentLogger });
+    return { base64: buf.toString("base64"), mimeType };
+  } catch (e) {
+    console.error("[whatsapp-baileys:media-download-failed]", e);
+    return null;
+  }
 }
 
 /** Start (or resume, from persisted auth state) a Baileys connection for one
@@ -231,8 +254,20 @@ async function handleInboundMessagesInner(numberId: string, payload: MessagesUps
   for (const msg of payload.messages) {
     const key = msg.key;
     if (!key || key.fromMe || !key.remoteJid) continue;
-    const text = extractText(msg);
-    if (!text) continue;
+    const m = msg.message;
+    if (!m) continue;
+
+    // Same four inbound shapes the official Meta transport already handles
+    // (text / audio / document / image) — everything else (video, stickers,
+    // location, reactions, ...) this transport doesn't handle yet, same as
+    // the official webhook route's own type-allowlist gate.
+    const imageMsg = m.imageMessage;
+    const audioMsg = m.audioMessage;
+    const documentMsg = m.documentMessage;
+    if (!m.conversation && !m.extendedTextMessage && !imageMsg && !audioMsg && !documentMsg) continue;
+
+    const sockForFetch = REGISTRY.sockets.get(numberId);
+    if (!sockForFetch) continue;
 
     // Blue ticks (read receipt) + "typing…" indicator — the official Meta
     // transport gets both via transport.ts's sendTyping() hitting Graph API
@@ -244,11 +279,42 @@ async function handleInboundMessagesInner(numberId: string, payload: MessagesUps
     // user-visible cue while handleInbound's AI/connector work runs (which
     // can take a few seconds), never worth blocking or failing the actual
     // reply over.
-    const typingSock = REGISTRY.sockets.get(numberId);
-    if (typingSock) {
-      await typingSock.readMessages([key]).catch(() => {});
-      await typingSock.sendPresenceUpdate("composing", key.remoteJid).catch(() => {});
+    await sockForFetch.readMessages([key]).catch(() => {});
+    await sockForFetch.sendPresenceUpdate("composing", key.remoteJid).catch(() => {});
+
+    let text = extractText(msg) ?? "";
+    let attachment: { base64: string; filename: string; mimeType: string } | undefined;
+
+    // Voice notes: download and transcribe, same as the official transport —
+    // so the user can TALK, not just type, regardless of which transport
+    // their number happens to be on.
+    if (audioMsg) {
+      const media = await downloadBaileysMedia(sockForFetch, msg, audioMsg.mimetype || "audio/ogg");
+      const { transcribeAudio } = await import("./ai");
+      const transcript = media ? await transcribeAudio(media.base64, media.mimeType) : null;
+      if (!transcript) {
+        await sockForFetch.sendMessage(key.remoteJid, { text: "Sorry, I couldn't quite catch that voice note 🙏 Could you type it out or send it again?" }).catch(() => {});
+        continue;
+      }
+      text = transcript;
     }
+
+    // Photos and documents: download and pass as an attachment for a tool
+    // (image-vision.ts / document-intel.ts pick it up from there) — same
+    // dispatch conversation.ts's handleInbound already uses for Meta.
+    if (imageMsg || documentMsg) {
+      const mimeType = (imageMsg?.mimetype || documentMsg?.mimetype) || "application/octet-stream";
+      const media = await downloadBaileysMedia(sockForFetch, msg, mimeType);
+      if (!media) {
+        await sockForFetch.sendMessage(key.remoteJid, { text: "I couldn't open that file 🙏 Could you send it again?" }).catch(() => {});
+        continue;
+      }
+      const filename = documentMsg?.fileName || `file.${mimeType.split("/")[1] || "bin"}`;
+      attachment = { base64: media.base64, filename, mimeType: media.mimeType };
+      text = (imageMsg?.caption || documentMsg?.caption || "") ?? "";
+    }
+
+    if (!text.trim() && !attachment) continue;
 
     const { handleInbound } = await import("./conversation");
     const result = await handleInbound({
@@ -257,6 +323,7 @@ async function handleInboundMessagesInner(numberId: string, payload: MessagesUps
       channelType: "whatsapp",
       text,
       displayName: msg.pushName ?? undefined,
+      attachment,
     });
 
     const sock = REGISTRY.sockets.get(numberId);

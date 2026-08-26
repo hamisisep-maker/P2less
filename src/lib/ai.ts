@@ -280,6 +280,58 @@ export async function transcribeAudio(base64: string, mimeType: string): Promise
   return null;
 }
 
+/** Describe/read an image (Gemini is multimodal) — the real gap document-
+ *  intel.ts's own comment names honestly: "if it's a scanned image... I
+ *  can't read that yet." Returns a plain-text description covering both
+ *  any TEXT visible in the image (OCR-style, transcribed verbatim) and what
+ *  the image actually shows, or null if we can't understand it. Same
+ *  key-rotation/cooldown shape as transcribeAudio() right above — same
+ *  provider, same failure mode, same honest-null-on-exhaustion contract. */
+export async function analyzeImage(base64: string, mimeType: string, caption?: string): Promise<string | null> {
+  const keys = getProviderKeys("google");
+  if (keys.length === 0) return null;
+  const model = process.env.GEMINI_STT_MODEL || "gemini-flash-latest"; // same vision-capable model already used for audio
+  const ordered = [...keys].sort((a, b) => Number(isCoolingDown(`google:${keyLabel(a)}`)) - Number(isCoolingDown(`google:${keyLabel(b)}`)));
+  const instruction = `Look at this image and describe it for someone who cannot see it, in the context of a WhatsApp conversation.${caption ? ` The sender's caption was: ${JSON.stringify(caption)}.` : ""}
+- If the image contains readable TEXT (a document, sign, receipt, screenshot, label, etc.), transcribe that text verbatim first, exactly as written.
+- Then briefly describe what else is visible — objects, people (generically, no identity guessing), scene, numbers, colors, anything a reply might need to reference.
+- Be factual. Never invent details you can't actually see. Keep it concise — a few sentences, not an essay, unless the image is text-heavy (e.g. a full document photo), in which case prioritize getting the text right.
+- Output plain text only, no markdown headers.`;
+  for (const key of ordered) {
+    const id = `google:${keyLabel(key)}`;
+    try {
+      const res = await fetchT(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [
+              { text: instruction },
+              { inlineData: { mimeType: mimeType || "image/jpeg", data: base64 } },
+            ] }],
+            generationConfig: { maxOutputTokens: 800, temperature: 0.2 },
+          }),
+        },
+        20_000,
+      );
+      if (!res || !res.ok) {
+        if (res) console.error(`[ai:google:vision] key=${id} status=${res.status} body=${(await res.text()).slice(0, 300)}`);
+        markKeyFailed(id);
+        continue;
+      }
+      markKeyOk(id);
+      const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[]; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
+      recordAiCost("google", model, "analyze_image", j.usageMetadata ? { input: j.usageMetadata.promptTokenCount, output: j.usageMetadata.candidatesTokenCount } : null, undefined, getCredentialId("google", key));
+      const text = j.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      return text && text.length > 0 ? text : null;
+    } catch {
+      markKeyFailed(id);
+    }
+  }
+  return null;
+}
+
 type LLMOpts = { maxTokens?: number; temperature?: number; history?: ChatTurn[]; feature?: string };
 
 /** Real per-request AI cost ledger (AiRequestLog) — looks up whichever

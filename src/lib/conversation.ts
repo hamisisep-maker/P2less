@@ -728,7 +728,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   if (input.attachment) {
     const tool = pickTool({ text, attachment: input.attachment });
     if (!tool) {
-      return emit([{ body: "I got your file 📎 — right now I can analyze *spreadsheets* (send a CSV and I'll break down the trends and totals). More file types are on the way!" }], "open", ctx);
+      return emit([{ body: "I got your file 📎 — right now I can read *photos* (I'll transcribe any text and describe what's in it), *spreadsheets* (CSV — trends and totals), and *PDF/Word documents* (I'll summarize or answer questions about them). More file types are on the way!" }], "open", ctx);
     }
     if (!recognizedFree && contact.credits < tool.cost) {
       return emit([{ body: `The *${tool.name}* tool costs ${tool.cost} credits, and you have ${contact.credits}. Reply *PAY 100* to top up KES 100 (≈ ${creditsForAmount(100)} credits) via M-Pesa and I'll get right on it. 💳` }], "open", ctx);
