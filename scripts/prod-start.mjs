@@ -47,6 +47,16 @@ run("npx tsx scripts/sync-owner-permissions.ts");
 // separate manual seeding step against the remote database.
 run("npx tsx scripts/seed-products.ts");
 
+// Integrations catalog (idempotent upsert, never touches an existing row's
+// `enabled` — see the script's own header comment). Every boot, not just on
+// first seed, so a NEW catalog entry added in code (e.g. whatsapp_baileys,
+// 2026-08-26) actually appears as a real, toggleable row on /admin/
+// integrations without a manual one-off script run against production — a
+// SQLite-on-a-mounted-volume deployment like this one has no remote
+// connection string `railway run` can target from a local machine, so this
+// boot step is the only real way a new catalog entry reaches production.
+run("npx tsx scripts/sync-integrations-catalog.ts");
+
 // Prepaid billing, 2026-08-25 — one-time-per-subscription balance migration.
 // Every subscription that existed before the prepaid-balance gate shipped has
 // messageBalanceKes/aiBalanceKes at their schema default of 0, which would
