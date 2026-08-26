@@ -34,6 +34,18 @@ type Registry = {
   pendingQr: Map<string, { qr: string; expiresAt: number }>;
   pendingPairingCode: Map<string, { code: string; expiresAt: number }>;
   starting: Set<string>;
+  // Real bug found live 2026-08-26: a pairing-code request only ever fired
+  // on the FIRST startBaileysConnection() call for a number. WhatsApp's own
+  // connection is genuinely flaky mid-handshake (confirmed via repeated
+  // "connection closed" seconds after "connected to WA" in production
+  // logs) — every automatic reconnect-on-close retry called
+  // startBaileysConnection(numberId) with NO phone number (that context
+  // never made it into the close handler), so it silently fell back to
+  // QR-only mode after the very first cycle, and even the QR got wiped on
+  // every subsequent close. Remembering the phone number here, keyed by
+  // numberId, lets every retry re-request a pairing code until pairing
+  // actually succeeds or the number is disconnected.
+  pairingPhoneNumbers: Map<string, string>;
 };
 
 // globalThis-backed, same rationale as job-runner.ts's REGISTRY: module-scoped
@@ -42,7 +54,7 @@ type Registry = {
 // module instance, so a live socket opened from one bundle would look
 // nonexistent from another.
 const holder = globalThis as unknown as { __p2lessBaileys?: Registry };
-holder.__p2lessBaileys ??= { sockets: new Map(), pendingQr: new Map(), pendingPairingCode: new Map(), starting: new Set() };
+holder.__p2lessBaileys ??= { sockets: new Map(), pendingQr: new Map(), pendingPairingCode: new Map(), starting: new Set(), pairingPhoneNumbers: new Map() };
 const REGISTRY = holder.__p2lessBaileys;
 
 const QR_TTL_MS = 60_000; // Baileys itself rotates the QR roughly this often
@@ -111,6 +123,14 @@ export async function startBaileysConnection(numberId: string, pairingPhoneNumbe
   if (REGISTRY.sockets.has(numberId) || REGISTRY.starting.has(numberId)) return;
   REGISTRY.starting.add(numberId);
 
+  // Remember an explicitly-given phone number (or recall one from an
+  // earlier call) so every automatic reconnect-on-close retry — which never
+  // passes pairingPhoneNumber itself, see the close handler below — still
+  // knows to request a pairing code instead of silently falling back to
+  // QR-only after the very first cycle.
+  if (pairingPhoneNumber) REGISTRY.pairingPhoneNumbers.set(numberId, pairingPhoneNumber);
+  const effectivePairingPhoneNumber = pairingPhoneNumber ?? REGISTRY.pairingPhoneNumbers.get(numberId);
+
   try {
     const { state, saveCreds } = await useMultiFileAuthState(authDir(numberId));
     const sock = makeWASocket({ auth: state, printQRInTerminal: false });
@@ -120,8 +140,8 @@ export async function startBaileysConnection(numberId: string, pairingPhoneNumbe
     sock.ev.on("connection.update", (update) => { void handleConnectionUpdate(numberId, sock, update); });
     sock.ev.on("messages.upsert", (payload) => { void handleInboundMessages(numberId, payload); });
 
-    if (pairingPhoneNumber && !state.creds.registered) {
-      const digits = pairingPhoneNumber.replace(/\D/g, "");
+    if (effectivePairingPhoneNumber && !state.creds.registered) {
+      const digits = effectivePairingPhoneNumber.replace(/\D/g, "");
       // requestPairingCode needs the socket's underlying WebSocket handshake
       // to have completed first — calling it immediately after
       // makeWASocket() (before that handshake finishes) fails with a real
@@ -167,6 +187,7 @@ async function handleConnectionUpdateInner(numberId: string, sock: WASocket, upd
   if (update.connection === "open") {
     REGISTRY.pendingQr.delete(numberId);
     REGISTRY.pendingPairingCode.delete(numberId);
+    REGISTRY.pairingPhoneNumbers.delete(numberId); // pairing succeeded — nothing left to remember
     const phoneNumber = sock.user?.phoneNumber ?? (sock.user?.id ? phoneFromJid(sock.user.id) : null);
     const number = await db.whatsAppNumber.findUnique({ where: { id: numberId } });
     if (!number) return;
@@ -447,6 +468,7 @@ export async function stopBaileysConnection(numberId: string): Promise<void> {
  *  looks dead. */
 export async function forgetBaileysAuthState(numberId: string): Promise<void> {
   await stopBaileysConnection(numberId);
+  REGISTRY.pairingPhoneNumbers.delete(numberId); // a genuinely fresh start — the caller passes a new number (or none) explicitly
   await rm(authDir(numberId), { recursive: true, force: true }).catch((e) => {
     console.error(`[whatsapp-baileys:forget-auth-failed ${numberId}]`, e);
   });
