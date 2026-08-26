@@ -234,6 +234,17 @@ async function handleInboundMessagesInner(numberId: string, payload: MessagesUps
     const text = extractText(msg);
     if (!text) continue;
 
+    // "Typing…" indicator — the official Meta transport gets this via
+    // transport.ts's sendTyping() hitting Graph API directly; Baileys has no
+    // equivalent REST call, it's a presence update over the same socket.
+    // Best-effort: a real user-visible cue while handleInbound's AI/connector
+    // work runs (which can take a few seconds), never worth blocking or
+    // failing the actual reply over.
+    const typingSock = REGISTRY.sockets.get(numberId);
+    if (typingSock) {
+      await typingSock.sendPresenceUpdate("composing", key.remoteJid).catch(() => {});
+    }
+
     const { handleInbound } = await import("./conversation");
     const result = await handleInbound({
       toNumber: number.phoneNumber,
@@ -250,6 +261,7 @@ async function handleInboundMessagesInner(numberId: string, payload: MessagesUps
         console.error(`[whatsapp-baileys:send-failed ${numberId}]`, e);
       });
     }
+    await sock.sendPresenceUpdate("paused", key.remoteJid).catch(() => {});
   }
 }
 
