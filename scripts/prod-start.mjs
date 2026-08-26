@@ -292,16 +292,23 @@ if (tp.slug && tp.phone && tp.name && tp.admissionId) {
 // for P2Less that never actually finished pairing (phoneNumber still null).
 // Every redeploy's rehydrateAllBaileysConnections() was retrying every one
 // of these on every boot — real log noise, and real UI clutter on
-// /dashboard/channels. Safe to delete: a row with no phoneNumber never
-// carried real traffic (0 conversations, nothing to preserve). Scoped
-// tightly (P2Less tenant, unofficial transport, phoneNumber null) so it can
-// never touch a real customer's connected number or an in-progress one that
-// already has a number attached.
+// /dashboard/channels.
+//
+// Real incident, 2026-08-26: this originally deleted EVERY phoneNumber:null
+// row unconditionally — including one whose pairing had just been RESET
+// seconds earlier via "Forget & pair again" (which deliberately nulls
+// phoneNumber to force a fresh handshake) and was still mid-pairing when a
+// deploy's boot happened to land. The row got deleted before pairing could
+// finish, silently orphaning its real conversation history (Conversation.
+// numberId is a nullable FK — Prisma's default SetNull meant no messages
+// were actually lost, but the connection itself had to be rebuilt from
+// scratch). Now scoped to rows old enough that they're genuinely abandoned
+// test debris, not a pairing attempt still in flight.
 {
   const p2less = await db.tenant.findFirst({ where: { name: "P2Less" } });
   if (p2less) {
     const { count } = await db.whatsAppNumber.deleteMany({
-      where: { tenantId: p2less.id, transport: "unofficial", phoneNumber: null },
+      where: { tenantId: p2less.id, transport: "unofficial", phoneNumber: null, createdAt: { lt: new Date(Date.now() - 15 * 60 * 1000) } },
     });
     if (count > 0) console.log(`[prod-start] Cleaned up ${count} unfinished P2Less unofficial-transport pairing attempt(s).`);
   }
