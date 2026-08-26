@@ -233,103 +233,90 @@ export async function complete(system: string, user: string, maxTokens = 900, te
   return callLLM(system, user, { maxTokens, temperature, feature: "tool_complete" });
 }
 
-/** Transcribe a WhatsApp voice note to text (Gemini is multimodal). Returns the
- *  spoken text in its original language, or null if we can't understand it. Lets
- *  users TALK to the assistant, not just type. Needs a Gemini key + audio-capable
- *  model (lite models may not accept audio, so use a full flash model for STT). */
-export async function transcribeAudio(base64: string, mimeType: string): Promise<string | null> {
+// Models tried in order for a multimodal (audio/image) call — the STT-
+// tuned model first (best quality for this use case when it's healthy), then
+// the platform's regular primary chat model as a real fallback. Found live
+// 2026-08-26: GEMINI_STT_MODEL ("gemini-flash-latest") was timing out
+// outright from production while the primary GEMINI_MODEL
+// ("gemini-flash-lite-latest") answered ordinary chat calls fine seconds
+// later — a real, provider-side model-specific issue, not a code bug (same
+// request shape, same endpoint, same key). Rather than go dark on
+// voice/image entirely whenever the STT-tuned model has a bad day, try the
+// confirmed-working model too before giving up. De-duped, so if an admin
+// ever points both env vars at the same model this doesn't double-try it.
+function multimodalModelCandidates(): string[] {
+  const candidates = [process.env.GEMINI_STT_MODEL || "gemini-flash-latest", process.env.GEMINI_MODEL || "gemini-flash-lite-latest"];
+  return Array.from(new Set(candidates));
+}
+
+/** Shared low-level call for both transcribeAudio and analyzeImage — same
+ *  key-rotation/cooldown shape as callOnce's google branch, extended with a
+ *  model fallback (see multimodalModelCandidates above). Returns the raw
+ *  response text, or null if every model×key combination failed. */
+async function callGeminiMultimodal(instruction: string, mimeType: string, base64: string, opts: { maxOutputTokens: number; temperature: number; feature: string; logTag: string }): Promise<string | null> {
   const keys = getProviderKeys("google");
   if (keys.length === 0) return null;
-  const model = process.env.GEMINI_STT_MODEL || "gemini-flash-latest";
-  // Same multi-key rotation as callOnce's google branch: skip keys already in
-  // cooldown from a recent failure, try the rest in order (bounded by however
-  // many keys are actually configured — no point trying more than that).
   const ordered = [...keys].sort((a, b) => Number(isCoolingDown(`google:${keyLabel(a)}`)) - Number(isCoolingDown(`google:${keyLabel(b)}`)));
-  for (const key of ordered) {
-    const id = `google:${keyLabel(key)}`;
-    try {
-      const res = await fetchT(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ role: "user", parts: [
-              { text: "Transcribe this voice message verbatim into text, in the SAME language that is spoken. Output ONLY the transcription — no quotes, no commentary. If nothing intelligible is said, output nothing." },
-              { inlineData: { mimeType: mimeType || "audio/ogg", data: base64 } },
-            ] }],
-            generationConfig: { maxOutputTokens: 500, temperature: 0 },
-          }),
-        },
-        20_000, // audio can take longer than a text turn
-      );
-      if (!res || !res.ok) {
-        if (res) console.error(`[ai:google:stt] key=${id} status=${res.status} body=${(await res.text()).slice(0, 300)}`);
+  for (const model of multimodalModelCandidates()) {
+    for (const key of ordered) {
+      const id = `google:${keyLabel(key)}`;
+      try {
+        const res = await fetchT(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ role: "user", parts: [
+                { text: instruction },
+                { inlineData: { mimeType, data: base64 } },
+              ] }],
+              generationConfig: { maxOutputTokens: opts.maxOutputTokens, temperature: opts.temperature },
+            }),
+          },
+          20_000, // audio/image can take longer than a plain text turn
+        );
+        if (!res || !res.ok) {
+          if (res) console.error(`[ai:google:${opts.logTag}] key=${id} model=${model} status=${res.status} body=${(await res.text()).slice(0, 300)}`);
+          markKeyFailed(id);
+          continue;
+        }
+        markKeyOk(id);
+        const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[]; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
+        recordAiCost("google", model, opts.feature, j.usageMetadata ? { input: j.usageMetadata.promptTokenCount, output: j.usageMetadata.candidatesTokenCount } : null, undefined, getCredentialId("google", key));
+        const text = j.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (text && text.length > 0) return text;
+      } catch {
         markKeyFailed(id);
-        continue;
       }
-      markKeyOk(id);
-      const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[]; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
-      recordAiCost("google", model, "transcribe_audio", j.usageMetadata ? { input: j.usageMetadata.promptTokenCount, output: j.usageMetadata.candidatesTokenCount } : null, undefined, getCredentialId("google", key));
-      const text = j.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-      return text && text.length > 0 ? text : null;
-    } catch {
-      markKeyFailed(id);
     }
   }
   return null;
+}
+
+/** Transcribe a WhatsApp voice note to text (Gemini is multimodal). Returns the
+ *  spoken text in its original language, or null if we can't understand it. Lets
+ *  users TALK to the assistant, not just type. */
+export async function transcribeAudio(base64: string, mimeType: string): Promise<string | null> {
+  return callGeminiMultimodal(
+    "Transcribe this voice message verbatim into text, in the SAME language that is spoken. Output ONLY the transcription — no quotes, no commentary. If nothing intelligible is said, output nothing.",
+    mimeType || "audio/ogg", base64,
+    { maxOutputTokens: 500, temperature: 0, feature: "transcribe_audio", logTag: "stt" },
+  );
 }
 
 /** Describe/read an image (Gemini is multimodal) — the real gap document-
  *  intel.ts's own comment names honestly: "if it's a scanned image... I
  *  can't read that yet." Returns a plain-text description covering both
  *  any TEXT visible in the image (OCR-style, transcribed verbatim) and what
- *  the image actually shows, or null if we can't understand it. Same
- *  key-rotation/cooldown shape as transcribeAudio() right above — same
- *  provider, same failure mode, same honest-null-on-exhaustion contract. */
+ *  the image actually shows, or null if we can't understand it. */
 export async function analyzeImage(base64: string, mimeType: string, caption?: string): Promise<string | null> {
-  const keys = getProviderKeys("google");
-  if (keys.length === 0) return null;
-  const model = process.env.GEMINI_STT_MODEL || "gemini-flash-latest"; // same vision-capable model already used for audio
-  const ordered = [...keys].sort((a, b) => Number(isCoolingDown(`google:${keyLabel(a)}`)) - Number(isCoolingDown(`google:${keyLabel(b)}`)));
   const instruction = `Look at this image and describe it for someone who cannot see it, in the context of a WhatsApp conversation.${caption ? ` The sender's caption was: ${JSON.stringify(caption)}.` : ""}
 - If the image contains readable TEXT (a document, sign, receipt, screenshot, label, etc.), transcribe that text verbatim first, exactly as written.
 - Then briefly describe what else is visible — objects, people (generically, no identity guessing), scene, numbers, colors, anything a reply might need to reference.
 - Be factual. Never invent details you can't actually see. Keep it concise — a few sentences, not an essay, unless the image is text-heavy (e.g. a full document photo), in which case prioritize getting the text right.
 - Output plain text only, no markdown headers.`;
-  for (const key of ordered) {
-    const id = `google:${keyLabel(key)}`;
-    try {
-      const res = await fetchT(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ role: "user", parts: [
-              { text: instruction },
-              { inlineData: { mimeType: mimeType || "image/jpeg", data: base64 } },
-            ] }],
-            generationConfig: { maxOutputTokens: 800, temperature: 0.2 },
-          }),
-        },
-        20_000,
-      );
-      if (!res || !res.ok) {
-        if (res) console.error(`[ai:google:vision] key=${id} status=${res.status} body=${(await res.text()).slice(0, 300)}`);
-        markKeyFailed(id);
-        continue;
-      }
-      markKeyOk(id);
-      const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[]; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
-      recordAiCost("google", model, "analyze_image", j.usageMetadata ? { input: j.usageMetadata.promptTokenCount, output: j.usageMetadata.candidatesTokenCount } : null, undefined, getCredentialId("google", key));
-      const text = j.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-      return text && text.length > 0 ? text : null;
-    } catch {
-      markKeyFailed(id);
-    }
-  }
-  return null;
+  return callGeminiMultimodal(instruction, mimeType || "image/jpeg", base64, { maxOutputTokens: 800, temperature: 0.2, feature: "analyze_image", logTag: "vision" });
 }
 
 type LLMOpts = { maxTokens?: number; temperature?: number; history?: ChatTurn[]; feature?: string };
