@@ -13,12 +13,14 @@ export function BaileysQrModal({ open, onClose, numberId }: { open: boolean; onC
   const router = useRouter();
   const [qr, setQr] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const [failed, setFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !numberId) return;
     setQr(null);
     setConnected(false);
+    setFailed(false);
     setError(null);
 
     let cancelled = false;
@@ -26,11 +28,14 @@ export function BaileysQrModal({ open, onClose, numberId }: { open: boolean; onC
       try {
         const res = await fetch(`/api/channels/whatsapp/baileys-qr?numberId=${numberId}`);
         if (!res.ok) return;
-        const data = (await res.json()) as { connected: boolean; qr?: string | null; phoneNumber?: string };
+        const data = (await res.json()) as { connected: boolean; failed?: boolean; qr?: string | null; phoneNumber?: string; error?: string };
         if (cancelled) return;
         if (data.connected) {
           setConnected(true);
           router.refresh();
+        } else if (data.failed) {
+          setFailed(true);
+          setError(data.error ?? "This number couldn't be connected.");
         } else if (data.qr) {
           setQr(data.qr);
         }
@@ -50,6 +55,8 @@ export function BaileysQrModal({ open, onClose, numberId }: { open: boolean; onC
         <div className="rounded-lg border border-accent/30 bg-accent-soft px-4 py-3 text-sm text-accent-ink">
           Connected. This number is now paired via the alternative transport.
         </div>
+      ) : failed ? (
+        <div className="rounded-lg bg-rose-soft px-4 py-3 text-sm text-rose">{error}</div>
       ) : (
         <div className="space-y-4">
           <p className="text-sm text-muted">

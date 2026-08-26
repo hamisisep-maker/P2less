@@ -19,6 +19,13 @@ export async function GET(req: Request) {
       return Response.json({ connected: true, phoneNumber: number.phoneNumber });
     }
 
+    // Set by whatsapp-baileys.ts when a scanned number turns out to already
+    // be actively connected elsewhere (Meta or another unofficial number) —
+    // an honest failure, not an indefinite "waiting for a code".
+    if (number.verificationStatus === "failed") {
+      return Response.json({ connected: false, failed: true, error: "This number is already connected elsewhere. Disconnect it there first, then try again." });
+    }
+
     const qr = await getPendingQr(numberId);
     const qrDataUrl = qr ? await QRCode.toDataURL(qr, { margin: 1, width: 280 }) : null;
     return Response.json({ connected: false, qr: qrDataUrl });

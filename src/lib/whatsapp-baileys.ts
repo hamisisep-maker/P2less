@@ -117,6 +117,38 @@ async function handleConnectionUpdateInner(numberId: string, sock: WASocket, upd
     const phoneNumber = sock.user?.phoneNumber ?? (sock.user?.id ? phoneFromJid(sock.user.id) : null);
     const number = await db.whatsAppNumber.findUnique({ where: { id: numberId } });
     if (!number) return;
+
+    // Never let the same physical number end up actively connected on both
+    // transports (or twice on the unofficial one) at once — WhatsAppNumber.
+    // phoneNumber is DB-unique, so writing a colliding number without this
+    // check would crash on a raw Prisma constraint error, leave the
+    // orphaned Baileys session paired with nothing recording it, and never
+    // tell the tenant why. A conflicting row only blocks this pairing while
+    // it's genuinely still holding the number ("verified"/"connecting");
+    // once the other side is disconnected ("pending"/"failed"), the number
+    // is free again — matching "unless it is disconnected on the other."
+    if (phoneNumber) {
+      const conflict = await db.whatsAppNumber.findFirst({
+        where: { phoneNumber, id: { not: numberId }, verificationStatus: { in: ["verified", "connecting"] } },
+      });
+      if (conflict) {
+        console.error(`[whatsapp-baileys:duplicate-number ${numberId}] ${phoneNumber} is already connected on number ${conflict.id} (transport: ${conflict.transport})`);
+        await sock.logout(`Already connected to P2Less on another number (${conflict.transport}).`).catch(() => {});
+        REGISTRY.sockets.delete(numberId);
+        await db.whatsAppNumber.update({ where: { id: numberId }, data: { verificationStatus: "failed" } }).catch(() => {});
+        await audit({
+          tenantId: number.tenantId,
+          requestId: newRequestId(),
+          actorType: "system",
+          action: "whatsapp.unofficial_connect_rejected_duplicate",
+          target: numberId,
+          success: false,
+          detail: { phoneNumber, conflictingNumberId: conflict.id, conflictingTransport: conflict.transport },
+        }).catch(() => {});
+        return;
+      }
+    }
+
     await db.whatsAppNumber.update({
       where: { id: numberId },
       data: {
