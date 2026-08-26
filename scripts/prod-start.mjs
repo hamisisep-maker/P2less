@@ -275,6 +275,27 @@ if (tp.slug && tp.phone && tp.name && tp.admissionId) {
   }
 }
 
+// One-time cleanup, 2026-08-26 — repeated "Connect via alternative" clicks
+// (each one unconditionally creates a new WhatsAppNumber row, no "resume the
+// existing attempt" logic) left a pile of dangling unofficial-transport rows
+// for P2Less that never actually finished pairing (phoneNumber still null).
+// Every redeploy's rehydrateAllBaileysConnections() was retrying every one
+// of these on every boot — real log noise, and real UI clutter on
+// /dashboard/channels. Safe to delete: a row with no phoneNumber never
+// carried real traffic (0 conversations, nothing to preserve). Scoped
+// tightly (P2Less tenant, unofficial transport, phoneNumber null) so it can
+// never touch a real customer's connected number or an in-progress one that
+// already has a number attached.
+{
+  const p2less = await db.tenant.findFirst({ where: { name: "P2Less" } });
+  if (p2less) {
+    const { count } = await db.whatsAppNumber.deleteMany({
+      where: { tenantId: p2less.id, transport: "unofficial", phoneNumber: null },
+    });
+    if (count > 0) console.log(`[prod-start] Cleaned up ${count} unfinished P2Less unofficial-transport pairing attempt(s).`);
+  }
+}
+
 await db.$disconnect();
 
 const port = process.env.PORT || "3000";

@@ -1073,9 +1073,20 @@ export async function startWhatsAppUnofficialConnectAction(_prev: unknown, formD
     // into WhatsApp's own "Link with phone number" flow instead. See
     // whatsapp-baileys.ts's startBaileysConnection for how this branches.
     const pairingPhoneNumber = String(formData.get("pairingPhoneNumber") ?? "").trim() || undefined;
-    const number = await db.whatsAppNumber.create({
-      data: { tenantId: user.tenantId!, displayName: user.tenant?.name ?? "WhatsApp", transport: "unofficial", verificationStatus: "connecting", phoneNumber: null },
+    // Reuse an existing not-yet-paired attempt rather than creating a new
+    // row every click — a real gap found live 2026-08-26: repeated clicks
+    // (e.g. retrying after a slow pairing-code request) were each creating
+    // a brand new WhatsAppNumber row, leaving a pile of dead "connecting"
+    // rows behind. startBaileysConnection is itself idempotent per numberId
+    // (REGISTRY.starting/sockets guard), so resuming the same row is safe.
+    let number = await db.whatsAppNumber.findFirst({
+      where: { tenantId: user.tenantId!, transport: "unofficial", verificationStatus: "connecting", phoneNumber: null },
     });
+    if (!number) {
+      number = await db.whatsAppNumber.create({
+        data: { tenantId: user.tenantId!, displayName: user.tenant?.name ?? "WhatsApp", transport: "unofficial", verificationStatus: "connecting", phoneNumber: null },
+      });
+    }
     const { startBaileysConnection } = await import("./whatsapp-baileys");
     void startBaileysConnection(number.id, pairingPhoneNumber);
     revalidatePath("/dashboard/channels");
