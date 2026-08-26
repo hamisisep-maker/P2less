@@ -17,14 +17,18 @@ function waLink(phoneNumber: string, joinCode: string): string {
   return `https://wa.me/${digits}?text=${encodeURIComponent(joinCode)}`;
 }
 
-// The open-enrollment link, deliberately with no pre-filled text: it just
-// opens a chat with the number. Nothing is sent, and nobody is enrolled,
-// until the person actually types and sends their own first message —
-// conversation.ts's open-enrollment check is what enrolls them at that point.
-function waLinkPlain(phoneNumber: string): string {
+// The open-enrollment link. wa.me's ?text= only ever pre-fills WhatsApp's
+// compose box — it never sends anything itself, so this is purely a
+// friction-remover (nothing to type from scratch) and stays fully editable:
+// the person can clear it, change it, or send it as-is. Nobody is enrolled
+// until they actually hit send on WHATEVER text ends up in that box —
+// conversation.ts's open-enrollment check only fires on a real inbound
+// message, and doesn't care what it says.
+function waLinkPlain(phoneNumber: string, prefill: string): string {
   const digits = phoneNumber.replace(/[^0-9]/g, "");
-  return `https://wa.me/${digits}`;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(prefill)}`;
 }
+const OPEN_ENROLLMENT_PREFILL = "Hi! I'd like to try out P2Less.";
 
 function CopyLink({ url }: { url: string }) {
   return (
@@ -121,8 +125,8 @@ export function TrainingSessionCard({ tenants, activeSessions }: { tenants: Tena
               {s.tenantWhatsAppNumber ? (
                 s.openEnrollment ? (
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
-                    <span>Public link (opens WhatsApp with the number, nothing pre-filled — anyone who sends any message is enrolled automatically):</span>
-                    <CopyLink url={waLinkPlain(s.tenantWhatsAppNumber)} />
+                    <span>Public link (opens WhatsApp with a starter message already typed in — they can edit or clear it, nothing sends until they tap send, and whatever they send enrolls them):</span>
+                    <CopyLink url={waLinkPlain(s.tenantWhatsAppNumber, OPEN_ENROLLMENT_PREFILL)} />
                   </div>
                 ) : (
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
