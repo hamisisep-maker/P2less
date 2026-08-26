@@ -316,24 +316,25 @@ async function handleInboundMessagesInner(numberId: string, payload: MessagesUps
 
     if (!text.trim() && !attachment) continue;
 
+    // handleInbound's own emit() already sends every reply via deliver()
+    // (which branches to sendBaileysMessage() for this transport, see
+    // transport.ts) — a real, previously-live double-send bug was found and
+    // fixed here 2026-08-26: this loop used to ALSO manually re-send every
+    // reply after handleInbound already sent it once internally, meaning
+    // every message on a Baileys-connected number went out twice. There is
+    // deliberately no reply-sending code below this call anymore.
     const { handleInbound } = await import("./conversation");
-    const result = await handleInbound({
+    await handleInbound({
       toNumber: number.phoneNumber,
       fromNumber: phoneFromJid(key.remoteJid),
       channelType: "whatsapp",
       text,
       displayName: msg.pushName ?? undefined,
       attachment,
+      inputWasVoice: !!audioMsg,
     });
 
-    const sock = REGISTRY.sockets.get(numberId);
-    if (!sock) continue;
-    for (const reply of result.replies) {
-      await sock.sendMessage(key.remoteJid, { text: reply.body }).catch((e) => {
-        console.error(`[whatsapp-baileys:send-failed ${numberId}]`, e);
-      });
-    }
-    await sock.sendPresenceUpdate("paused", key.remoteJid).catch(() => {});
+    await sockForFetch.sendPresenceUpdate("paused", key.remoteJid).catch(() => {});
   }
 }
 
@@ -372,12 +373,32 @@ export async function isBaileysConnected(numberId: string): Promise<boolean> {
 
 /** Used by transport.ts's deliver() for an outbound reply on a number whose
  *  transport is "unofficial". `to` is the recipient's E.164 number. */
-export async function sendBaileysMessage(numberId: string, to: string, body: string): Promise<{ delivered: boolean; error?: string }> {
+export async function sendBaileysMessage(
+  numberId: string, to: string, body: string,
+  opts?: { document?: { url: string; filename: string }; voiceBuffer?: Buffer },
+): Promise<{ delivered: boolean; error?: string }> {
   const sock = REGISTRY.sockets.get(numberId);
   if (!sock) return { delivered: false, error: "No active unofficial WhatsApp connection for this number" };
   try {
-    const digits = to.replace(/\D/g, "");
-    await sock.sendMessage(`${digits}@s.whatsapp.net`, { text: body });
+    const jid = `${to.replace(/\D/g, "")}@s.whatsapp.net`;
+    // Voice reply — a real audio buffer already synthesized by the caller
+    // (transport.ts's deliver()). ptt:true is what makes WhatsApp render
+    // this as a voice-note bubble (waveform, hold-to-play) rather than a
+    // generic audio-file attachment. No caption — same "voice-only, no
+    // typed-out duplicate" choice the official transport makes.
+    if (opts?.voiceBuffer) {
+      await sock.sendMessage(jid, { audio: opts.voiceBuffer, mimetype: "audio/ogg; codecs=opus", ptt: true });
+      return { delivered: true };
+    }
+    // Document reply (e.g. a payslip/leave-confirmation PDF) — Baileys
+    // fetches the URL itself, same as the official transport's link-based
+    // send; this closes a real pre-existing gap where a document Reply had
+    // no delivery path at all on the unofficial transport.
+    if (opts?.document) {
+      await sock.sendMessage(jid, { document: { url: opts.document.url }, fileName: opts.document.filename, mimetype: "application/pdf", caption: body });
+      return { delivered: true };
+    }
+    await sock.sendMessage(jid, { text: body });
     return { delivered: true };
   } catch (e) {
     return { delivered: false, error: e instanceof Error ? e.message : "send failed" };

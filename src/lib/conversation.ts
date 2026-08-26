@@ -55,6 +55,13 @@ export type InboundInput = {
   displayName?: string;
   // Super-app: an attached file (document/spreadsheet/image) to run a tool on.
   attachment?: { base64: string; filename: string; mimeType: string };
+  // Voice-note replies, 2026-08-26 — set by the caller (the WhatsApp webhook
+  // route / whatsapp-baileys.ts) when THIS inbound message was itself a
+  // transcribed voice note, so the final reply mirrors the sender back:
+  // voice in, voice out. Threaded through to deliver() via emit() below —
+  // never touches conversation.ts's actual reply-generation logic, only
+  // which "player" the final Reply gets rendered through.
+  inputWasVoice?: boolean;
 };
 
 export type Reply = { body: string; kind?: "text" | "otp_hint" | "document" | "image" | "system"; meta?: Record<string, unknown>; document?: { url: string; filename: string }; image?: { url: string } };
@@ -460,7 +467,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     for (const r of finalReplies) {
       // otp_hint / system notes are demo aids and are not re-metered as separate sends
       if (r.kind === "otp_hint" || r.kind === "system") continue;
-      await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body: r.body, meta: r.meta, fromNumberId: number?.phoneNumberId, fromPageId, fromTelegramBotId, document: r.document, image: r.image });
+      await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body: r.body, meta: r.meta, fromNumberId: number?.phoneNumberId, fromPageId, fromTelegramBotId, document: r.document, image: r.image, replyAsVoice: input.inputWasVoice && !r.document && !r.image });
     }
     return { ok: true, replies: finalReplies, conversationId: conversation!.id, from: fromIdentity } satisfies HandleResult;
   };

@@ -43,6 +43,13 @@ export type OutboundMessage = {
   document?: { url: string; filename: string };
   // When set, deliver this as an image attachment (e.g. a product photo).
   image?: { url: string };
+  // Voice-note replies, 2026-08-26 — set by conversation.ts's emit() when the
+  // inbound message that triggered this reply was itself a voice note. Only
+  // meaningful for channelType "whatsapp"; every other channel ignores it.
+  // Synthesis happens INSIDE deliver() (not the caller) so a failure falls
+  // straight through to the existing text-send path, same graceful-
+  // degradation shape as every other AI capability in this codebase.
+  replyAsVoice?: boolean;
 };
 
 const GRAPH_VERSION = process.env.WHATSAPP_GRAPH_VERSION || "v21.0";
@@ -184,7 +191,16 @@ export async function deliver(msg: OutboundMessage): Promise<{ delivered: boolea
           return { delivered: false, transport: "whatsapp:unofficial:disabled", error: "The unofficial WhatsApp transport is disabled by an administrator" };
         }
         const { sendBaileysMessage } = await import("./whatsapp-baileys");
-        const result = await sendBaileysMessage(whatsappNumber.id, msg.to, msg.body);
+        // Voice reply: synthesize now (Baileys sends a raw buffer directly,
+        // no public URL needed, unlike the official transport below). A
+        // failed synthesis is not a delivery failure — falls straight
+        // through to sendBaileysMessage's normal text/document send.
+        let voiceBuffer: Buffer | undefined;
+        if (msg.replyAsVoice) {
+          const { synthesizeVoiceReply } = await import("./voice-reply");
+          voiceBuffer = (await synthesizeVoiceReply(msg.body).catch(() => null)) ?? undefined;
+        }
+        const result = await sendBaileysMessage(whatsappNumber.id, msg.to, msg.body, { document: msg.document, voiceBuffer });
         return result.delivered
           ? { delivered: true, transport: "whatsapp:unofficial" }
           : { delivered: false, transport: "whatsapp:unofficial", error: result.error };
@@ -197,9 +213,32 @@ export async function deliver(msg: OutboundMessage): Promise<{ delivered: boolea
         if (process.env.NODE_ENV !== "production") console.log(`[whatsapp:not-configured →${msg.to}] ${msg.body}`);
         return { delivered: false, transport: "whatsapp:not-configured", error: "WhatsApp credentials not configured" };
       }
-      // A document/image attachment is sent as its own WhatsApp message type; the
-      // media is fetched by WhatsApp from the public link (needs PUBLIC_BASE_URL).
-      const payload = msg.image && /^https?:\/\//.test(msg.image.url)
+      // Voice reply: synthesize + store now, so a real fetchable link exists
+      // for the payload builder below — the official transport can only send
+      // media it can point WhatsApp at, unlike Baileys' raw-buffer send. A
+      // failed synthesis/store (no PUBLIC_BASE_URL configured locally, TTS
+      // down, etc.) is not a delivery failure — voiceLink just stays null
+      // and the normal text payload is used instead.
+      let voiceLink: string | null = null;
+      if (msg.replyAsVoice) {
+        const { synthesizeVoiceReply } = await import("./voice-reply");
+        const oggBuffer = await synthesizeVoiceReply(msg.body).catch(() => null);
+        if (oggBuffer) {
+          const { storeVoiceReply } = await import("./documents");
+          const stored = await storeVoiceReply({ tenantId: msg.tenantId, base64Ogg: oggBuffer.toString("base64") }).catch(() => null);
+          if (stored && /^https?:\/\//.test(stored.url)) voiceLink = stored.url;
+        }
+      }
+
+      // A document/image/audio attachment is sent as its own WhatsApp message
+      // type; the media is fetched by WhatsApp from the public link (needs
+      // PUBLIC_BASE_URL). A voice reply never carries a caption — WhatsApp's
+      // audio message type has no caption field (unlike image/document), so
+      // it's genuinely voice-only, the same way a person replying with a
+      // voice note doesn't also type out the same thing.
+      const payload = voiceLink
+        ? { messaging_product: "whatsapp", recipient_type: "individual", to: msg.to, type: "audio", audio: { link: voiceLink } }
+        : msg.image && /^https?:\/\//.test(msg.image.url)
         ? { messaging_product: "whatsapp", recipient_type: "individual", to: msg.to, type: "image", image: { link: msg.image.url, caption: msg.body } }
         : msg.document && /^https?:\/\//.test(msg.document.url)
         ? { messaging_product: "whatsapp", recipient_type: "individual", to: msg.to, type: "document", document: { link: msg.document.url, filename: msg.document.filename, caption: msg.body } }

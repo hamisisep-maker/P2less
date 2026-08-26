@@ -319,6 +319,67 @@ export async function analyzeImage(base64: string, mimeType: string, caption?: s
   return callGeminiMultimodal(instruction, mimeType || "image/jpeg", base64, { maxOutputTokens: 800, temperature: 0.2, feature: "analyze_image", logTag: "vision" });
 }
 
+/** Text-to-speech — the reply-side counterpart to transcribeAudio(). Real
+ *  cost per call (unlike text replies), so this is only ever invoked when a
+ *  caller has already decided a voice reply is warranted (see whatsapp-
+ *  baileys.ts / the Meta webhook route — both only call this when the
+ *  INBOUND message was itself a voice note, mirroring the sender rather
+ *  than voicing every reply unconditionally). Returns raw PCM audio bytes
+ *  (24kHz, 16-bit, mono — Gemini TTS's fixed output format, confirmed
+ *  against Google's own docs, not guessed) or null. A dedicated TTS model,
+ *  not the STT/vision one above — different capability, different model
+ *  family entirely. No model-fallback chain here (unlike
+ *  callGeminiMultimodal): if the TTS-specific model is down, the regular
+ *  chat models aren't TTS-capable substitutes, so there's nothing useful to
+ *  fall back to — callers already treat null as "just send text instead". */
+export async function synthesizeSpeech(text: string): Promise<Buffer | null> {
+  const keys = getProviderKeys("google");
+  if (keys.length === 0) return null;
+  const model = process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts";
+  const voice = process.env.GEMINI_TTS_VOICE || "Kore";
+  const ordered = [...keys].sort((a, b) => Number(isCoolingDown(`google:${keyLabel(a)}`)) - Number(isCoolingDown(`google:${keyLabel(b)}`)));
+  for (const key of ordered) {
+    const id = `google:${keyLabel(key)}`;
+    try {
+      const res = await fetchT(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            // Framing matters here — found live 2026-08-26: passing the reply
+            // text as a bare user turn sometimes gets treated as a message TO
+            // the model (which then tries to respond conversationally, a real
+            // 400 "Model tried to generate text" since responseModalities is
+            // locked to AUDIO-only). A style-instruction prefix, matching
+            // Google's own documented TTS examples, reliably keeps it in
+            // read-it-aloud mode.
+            contents: [{ role: "user", parts: [{ text: `Say the following in a warm, natural, conversational tone, exactly as written: ${text}` }] }],
+            generationConfig: {
+              responseModalities: ["AUDIO"],
+              speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
+            },
+          }),
+        },
+        20_000,
+      );
+      if (!res || !res.ok) {
+        if (res) console.error(`[ai:google:tts] key=${id} model=${model} status=${res.status} body=${(await res.text()).slice(0, 300)}`);
+        markKeyFailed(id);
+        continue;
+      }
+      markKeyOk(id);
+      const j = (await res.json()) as { candidates?: { content?: { parts?: { inlineData?: { data?: string } }[] } }[]; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
+      recordAiCost("google", model, "synthesize_speech", j.usageMetadata ? { input: j.usageMetadata.promptTokenCount, output: j.usageMetadata.candidatesTokenCount } : null, undefined, getCredentialId("google", key));
+      const b64 = j.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (b64) return Buffer.from(b64, "base64");
+    } catch {
+      markKeyFailed(id);
+    }
+  }
+  return null;
+}
+
 type LLMOpts = { maxTokens?: number; temperature?: number; history?: ChatTurn[]; feature?: string };
 
 /** Real per-request AI cost ledger (AiRequestLog) — looks up whichever

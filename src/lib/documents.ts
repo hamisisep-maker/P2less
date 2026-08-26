@@ -72,6 +72,30 @@ export async function storeProductImage(opts: { tenantId: string; filename: stri
   return storeLongLived({ ...opts, kind: "product_image" });
 }
 
+/** A synthesized voice-note reply — the official (Meta) WhatsApp transport
+ *  sends audio by link (same as document.ts's own PDF delivery, see store()
+ *  above), never by uploading raw bytes, so a voice reply needs this same
+ *  short-TTL token URL. The unofficial (Baileys) transport sends the raw
+ *  buffer directly and never touches this — this function exists only for
+ *  the official transport's link-based send. Deliberately does NOT call
+ *  store()'s meter(tenantId, "document") — a voice reply isn't a billable
+ *  generated document (no price_document_kes charge makes sense for it);
+ *  the real cost is already tracked where it actually happens, via
+ *  synthesizeSpeech()'s own recordAiCost() call. Double-metering it here
+ *  would charge the tenant twice for one reply. */
+export async function storeVoiceReply(opts: { tenantId: string; contactId?: string; base64Ogg: string }): Promise<GeneratedDoc> {
+  const token = randomToken();
+  await db.document.create({
+    data: {
+      tenantId: opts.tenantId, contactId: opts.contactId ?? null, kind: "voice_reply",
+      filename: "reply.ogg", content: opts.base64Ogg, token,
+      expiresAt: new Date(Date.now() + DOC_TTL_MS),
+    },
+  });
+  const base = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+  return { url: `${base}/d/${token}`, filename: "reply.ogg", token };
+}
+
 /** A support-ticket attachment (screenshot, receipt photo, ...) — reuses the
  *  Document model exactly like storeProductImage, not a new file-storage
  *  system, plus a ticketId pointer so it shows up on the ticket it belongs

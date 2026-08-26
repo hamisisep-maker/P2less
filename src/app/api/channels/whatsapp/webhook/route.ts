@@ -185,6 +185,7 @@ async function processEvents(payload: WaPayload): Promise<void> {
           text,
           displayName: name,
           attachment,
+          inputWasVoice: m.type === "audio",
         });
       }
     }

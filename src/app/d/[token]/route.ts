@@ -29,6 +29,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
       headers: { "Content-Type": IMAGE_TYPES[ext], "Cache-Control": "public, max-age=31536000, immutable" },
     });
   }
+  // Voice-note replies (kind: "voice_reply") — the official transport fetches
+  // this by link (see documents.ts's storeVoiceReply()), same short-TTL
+  // pattern as a PDF above, just a different content type.
+  if (found.doc.filename.endsWith(".ogg")) {
+    const bytes = Buffer.from(found.doc.content, "base64");
+    return new Response(bytes, {
+      status: 200,
+      headers: { "Content-Type": "audio/ogg; codecs=opus", "Content-Disposition": `inline; filename="${found.doc.filename}"`, "Cache-Control": "no-store" },
+    });
+  }
   return new Response(found.doc.content, {
     status: 200,
     headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
