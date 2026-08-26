@@ -135,80 +135,96 @@ function DisconnectControl({ numberId, phoneNumber, status, transport }: { numbe
     }
   }, [forgetState]);
 
-  if (status !== "active") {
-    return (
-      <>
-        <form action={reconnectAction}>
-          <input type="hidden" name="numberId" value={numberId} />
-          <button type="submit" disabled={reconnectPending} className="text-xs font-medium text-accent underline underline-offset-2 hover:text-accent-ink disabled:opacity-60">
-            {reconnectPending ? "Reconnecting…" : "Reconnect"}
+  // Real bug found live 2026-08-26: forgetAndRepairWhatsAppNumberAction sets
+  // WhatsAppNumber.status back to "active" immediately (so the card shows
+  // "Connecting…", not "disabled", while pairing) — but that status flip
+  // itself was what decided which JSX branch this component rendered
+  // (status !== "active" vs. the plain Disconnect view below), and the QR/
+  // pairing-code modal used to live ONLY inside the first branch. The instant
+  // revalidatePath() delivered the new status, the component swapped
+  // branches and the modal that was supposed to be opening got unmounted
+  // instead — confirmed live: a real user click on "Forget & pair again"
+  // made the confirmation dialog close with nothing appearing after it. Both
+  // shared modals now render unconditionally, outside the status branching,
+  // so neither can be torn down by a status change that happens because of
+  // the very action that opens them.
+  const disconnectedView = status !== "active" && (
+    <>
+      <form action={reconnectAction}>
+        <input type="hidden" name="numberId" value={numberId} />
+        <button type="submit" disabled={reconnectPending} className="text-xs font-medium text-accent underline underline-offset-2 hover:text-accent-ink disabled:opacity-60">
+          {reconnectPending ? "Reconnecting…" : "Reconnect"}
+        </button>
+      </form>
+      {reconnectState?.error && <span className="text-xs text-rose">{reconnectState.error}</span>}
+      {/* Real recovery path for a dead persisted session, 2026-08-26 — a
+          WhatsApp-side close that leaves auth credentials permanently
+          unable to resume looks identical to any other disconnect from
+          here, so plain "Reconnect" just retries the same dead handshake.
+          Deliberately separate and de-emphasized (not the default action)
+          since it forces a real re-pairing (new QR/code), not a quiet
+          resume — only reach for it once Reconnect has already been tried. */}
+      {transport === "unofficial" && (
+        <>
+          <span className="text-line">·</span>
+          <button type="button" onClick={() => setForgetOpen(true)} className="text-xs font-medium text-muted underline underline-offset-2 hover:text-ink">
+            Reconnect not working? Forget &amp; pair again
           </button>
-        </form>
-        {reconnectState?.error && <span className="text-xs text-rose">{reconnectState.error}</span>}
-        {/* Real recovery path for a dead persisted session, 2026-08-26 — a
-            WhatsApp-side close that leaves auth credentials permanently
-            unable to resume looks identical to any other disconnect from
-            here, so plain "Reconnect" just retries the same dead handshake.
-            Deliberately separate and de-emphasized (not the default action)
-            since it forces a real re-pairing (new QR/code), not a quiet
-            resume — only reach for it once Reconnect has already been tried. */}
-        {transport === "unofficial" && (
-          <>
-            <span className="text-line">·</span>
-            <button type="button" onClick={() => setForgetOpen(true)} className="text-xs font-medium text-muted underline underline-offset-2 hover:text-ink">
-              Reconnect not working? Forget &amp; pair again
-            </button>
-          </>
-        )}
+        </>
+      )}
+    </>
+  );
 
-        <Modal open={forgetOpen} onClose={() => setForgetOpen(false)} title="Forget this session and pair again">
-          <div className="space-y-4">
-            <div className="rounded-lg border border-amber/30 bg-amber-soft px-4 py-3 text-sm text-amber">
-              Use this only if plain &quot;Reconnect&quot; keeps failing. It will:
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                <li>Erase {numberLabel}&apos;s saved connection — it can no longer resume automatically.</li>
-                <li>Require scanning a fresh QR code (or entering a new pairing code) on the phone, right now.</li>
-                <li>All other connected numbers are unaffected.</li>
-              </ul>
-            </div>
-            <label className="block">
-              <span className="text-xs font-medium text-muted">Camera not working? Enter your WhatsApp number to get a typed pairing code instead</span>
-              <input
-                type="text"
-                value={forgetPairingPhone}
-                onChange={(e) => setForgetPairingPhone(e.target.value)}
-                placeholder="e.g. 254712345678 — leave blank to scan a QR code"
-                className="mt-1 w-full rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs outline-none focus:border-accent"
-              />
-            </label>
-            <form action={forgetAction} className="flex justify-end gap-2">
-              <input type="hidden" name="numberId" value={numberId} />
-              <input type="hidden" name="pairingPhoneNumber" value={forgetPairingPhone} />
-              <button type="button" onClick={() => setForgetOpen(false)} className="rounded-lg px-4 py-2 text-sm text-muted hover:bg-surface-2">
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={forgetPending}
-                className="rounded-lg bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-              >
-                {forgetPending ? "Clearing…" : "Forget & pair again"}
-              </button>
-            </form>
-            {forgetState?.error && <div className="rounded-lg bg-rose-soft px-3 py-2 text-sm text-rose">{forgetState.error}</div>}
-          </div>
-        </Modal>
-
-        <BaileysQrModal open={qrOpen} onClose={() => setQrOpen(false)} numberId={qrOpen ? numberId : null} />
-      </>
-    );
-  }
+  const connectedView = status === "active" && (
+    <button type="button" onClick={() => setConfirmOpen(true)} className="text-xs font-medium text-rose underline underline-offset-2 hover:opacity-80">
+      Disconnect
+    </button>
+  );
 
   return (
     <>
-      <button type="button" onClick={() => setConfirmOpen(true)} className="text-xs font-medium text-rose underline underline-offset-2 hover:opacity-80">
-        Disconnect
-      </button>
+      {disconnectedView}
+      {connectedView}
+
+      <Modal open={forgetOpen} onClose={() => setForgetOpen(false)} title="Forget this session and pair again">
+        <div className="space-y-4">
+          <div className="rounded-lg border border-amber/30 bg-amber-soft px-4 py-3 text-sm text-amber">
+            Use this only if plain &quot;Reconnect&quot; keeps failing. It will:
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              <li>Erase {numberLabel}&apos;s saved connection — it can no longer resume automatically.</li>
+              <li>Require scanning a fresh QR code (or entering a new pairing code) on the phone, right now.</li>
+              <li>All other connected numbers are unaffected.</li>
+            </ul>
+          </div>
+          <label className="block">
+            <span className="text-xs font-medium text-muted">Camera not working? Enter your WhatsApp number to get a typed pairing code instead</span>
+            <input
+              type="text"
+              value={forgetPairingPhone}
+              onChange={(e) => setForgetPairingPhone(e.target.value)}
+              placeholder="e.g. 254712345678 — leave blank to scan a QR code"
+              className="mt-1 w-full rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs outline-none focus:border-accent"
+            />
+          </label>
+          <form action={forgetAction} className="flex justify-end gap-2">
+            <input type="hidden" name="numberId" value={numberId} />
+            <input type="hidden" name="pairingPhoneNumber" value={forgetPairingPhone} />
+            <button type="button" onClick={() => setForgetOpen(false)} className="rounded-lg px-4 py-2 text-sm text-muted hover:bg-surface-2">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={forgetPending}
+              className="rounded-lg bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {forgetPending ? "Clearing…" : "Forget & pair again"}
+            </button>
+          </form>
+          {forgetState?.error && <div className="rounded-lg bg-rose-soft px-3 py-2 text-sm text-rose">{forgetState.error}</div>}
+        </div>
+      </Modal>
+
+      <BaileysQrModal open={qrOpen} onClose={() => setQrOpen(false)} numberId={qrOpen ? numberId : null} />
 
       <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title="Disconnect this number">
         <div className="space-y-4">

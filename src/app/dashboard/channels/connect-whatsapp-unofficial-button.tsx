@@ -4,7 +4,14 @@ import { useActionState, useEffect, useState } from "react";
 import { startWhatsAppUnofficialConnectAction } from "@/lib/actions";
 import { BaileysQrModal } from "./baileys-qr-modal";
 
-export function ConnectWhatsAppUnofficialButton() {
+// `hidden` (not a conditional-mount from the caller) — same fix as the
+// live bug found 2026-08-26 in DisconnectControl: startWhatsAppUnofficialConnectAction
+// creates the WhatsAppNumber row and revalidates BEFORE pairing finishes, so
+// if the caller unmounts this component once a number exists, the QR/pairing
+// modal this same click was about to open gets torn down with it. This
+// component (and its modal) must always stay mounted; only the form's
+// visibility is allowed to depend on whether a number already exists.
+export function ConnectWhatsAppUnofficialButton({ hidden = false }: { hidden?: boolean }) {
   const [state, action, pending] = useActionState(startWhatsAppUnofficialConnectAction, null as { ok?: true; numberId?: string; error?: string } | null);
   const [openNumberId, setOpenNumberId] = useState<string | null>(null);
   const [pairingPhoneNumber, setPairingPhoneNumber] = useState("");
@@ -15,7 +22,7 @@ export function ConnectWhatsAppUnofficialButton() {
 
   return (
     <>
-      <form action={action} className="space-y-1.5">
+      <form action={action} className={`space-y-1.5 ${hidden ? "hidden" : ""}`}>
         <button
           type="submit"
           disabled={pending}

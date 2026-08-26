@@ -112,14 +112,20 @@ export default async function ChannelsPage({
             number exists, these buttons disappear entirely — "Switch to
             Meta" / "Switch to alternative" on the card below is the only
             way to change transport, so only ONE option is ever live at once. */}
-        {canConnect && numbers.length === 0 && (
+        {canConnect && (
+          // Container itself always stays mounted — only its Meta-button
+          // child (no modal, safe to unmount) is conditionally hidden.
+          // ConnectWhatsAppUnofficialButton is never wrapped in a hidden
+          // ancestor: see the comment on that component for why.
           <div className="mb-4 mt-2 flex flex-wrap items-center gap-2">
-            {embeddedSignupConfigured() ? (
-              <ConnectWhatsAppButton />
-            ) : (
-              <p className="text-xs text-faint">Real self-service WhatsApp connection isn&apos;t configured yet on this deployment.</p>
-            )}
-            {unofficialTransportEnabled && <ConnectWhatsAppUnofficialButton />}
+            <div className={numbers.length === 0 ? "flex flex-wrap items-center gap-2" : "hidden"}>
+              {embeddedSignupConfigured() ? (
+                <ConnectWhatsAppButton />
+              ) : (
+                <p className="text-xs text-faint">Real self-service WhatsApp connection isn&apos;t configured yet on this deployment.</p>
+              )}
+            </div>
+            {unofficialTransportEnabled && <ConnectWhatsAppUnofficialButton hidden={numbers.length > 0} />}
           </div>
         )}
         <div className="space-y-3">
