@@ -1,5 +1,6 @@
 import "server-only";
 import path from "node:path";
+import makeWASocket, { useMultiFileAuthState, DisconnectReason, type WASocket, type ConnectionState, type WAMessage, type MessageUpsertType } from "@whiskeysockets/baileys";
 import { db } from "./db";
 import { audit } from "./audit";
 import { requestId as newRequestId } from "./crypto";
@@ -14,46 +15,29 @@ import { runCrossTenant } from "./tenant-context";
 // per number.
 //
 // KNOWN, ACCEPTED TRADEOFF: this violates WhatsApp's Terms of Service and can
-// be banned without warning or appeal — see GAP-REGISTER for the full,
-// deliberate reasoning. Never used for a number without an explicit,
+// be banned without warning or appeal — see GAP-REGISTER item 16 for the
+// full, deliberate reasoning. Never used for a number without an explicit,
 // confirmed switch action from the tenant (see switchWhatsAppTransportAction
 // in actions.ts).
 //
-// The `@whiskeysockets/baileys` package is NOT a dependency of this project
-// yet (installing it was blocked by this environment's own safety
-// classifier — see project history). Every use of it below goes through a
-// dynamic import inside a function body, never a static top-level import, so
-// the rest of the app keeps compiling and running normally whether or not
-// the package is actually present in node_modules. The moment it's
-// installed, this file works with no changes.
-//
-// UNTESTED — written against Baileys' publicly documented API shape, never
-// run against a real socket (the package isn't installed in this
-// environment). Confirm the exact event/method names against the installed
-// version's own types before trusting this in production.
+// Written against @whiskeysockets/baileys 7.0.0-rc14's real, installed type
+// declarations (confirmed via node_modules, not guessed) — but the actual
+// socket/QR/send behavior has still never been run against a real WhatsApp
+// account. Confirm live before fully trusting this in production.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const AUTH_DIR_ROOT = process.env.BAILEYS_AUTH_DIR || "/data/baileys-auth";
 
-type BaileysSocket = {
-  ev: {
-    on: (event: string, handler: (...args: unknown[]) => void) => void;
-  };
-  user?: { id: string };
-  sendMessage: (jid: string, content: { text: string }) => Promise<unknown>;
-  end?: (error?: Error) => void;
-};
-
 type Registry = {
-  sockets: Map<string, BaileysSocket>;
+  sockets: Map<string, WASocket>;
   pendingQr: Map<string, { qr: string; expiresAt: number }>;
   starting: Set<string>;
 };
 
-// globalThis-backed, same rationale as job-runner.ts's REGISTRY (line 27-29):
-// module-scoped state doesn't survive across Next.js's separate bundles for
-// the instrumentation hook vs. server actions vs. API routes — each gets its
-// own module instance, so a live socket opened from one bundle would look
+// globalThis-backed, same rationale as job-runner.ts's REGISTRY: module-scoped
+// state doesn't survive across Next.js's separate bundles for the
+// instrumentation hook vs. server actions vs. API routes — each gets its own
+// module instance, so a live socket opened from one bundle would look
 // nonexistent from another.
 const holder = globalThis as unknown as { __p2lessBaileys?: Registry };
 holder.__p2lessBaileys ??= { sockets: new Map(), pendingQr: new Map(), starting: new Set() };
@@ -65,8 +49,13 @@ function authDir(numberId: string): string {
   return path.join(AUTH_DIR_ROOT, numberId);
 }
 
-/** Extract the E.164 phone number from a Baileys JID (e.g.
- *  "254711562526:12@s.whatsapp.net" or "254711562526@s.whatsapp.net"). */
+/** Baileys' Contact.id is now "lid or jid format (preferred)" per its own
+ *  type comment — WhatsApp's migration to opaque LIDs means it may no longer
+ *  be a phone-number JID at all. Contact.phoneNumber (when present) is the
+ *  reliable source; falling back to digit-extraction from id/a JID string
+ *  only covers the classic "<digits>@s.whatsapp.net" shape, which is still
+ *  common but not guaranteed going forward — a real limitation, not
+ *  papered over. */
 function phoneFromJid(jid: string): string {
   const digits = jid.split("@")[0].split(":")[0].replace(/\D/g, "");
   return "+" + digits;
@@ -76,53 +65,30 @@ function phoneFromJid(jid: string): string {
  *  couple of shapes a real inbound text/caption can take. Returns null for
  *  message types this transport doesn't handle yet (media-only, reactions,
  *  etc.) — mirrors the official webhook route's own type == "text" gate. */
-function extractText(msg: Record<string, unknown>): string | null {
-  const m = msg.message as Record<string, unknown> | undefined;
+function extractText(msg: { message?: { conversation?: string | null; extendedTextMessage?: { text?: string | null } | null } | null }): string | null {
+  const m = msg.message;
   if (!m) return null;
-  const conversation = m.conversation as string | undefined;
-  const extended = (m.extendedTextMessage as { text?: string } | undefined)?.text;
-  return conversation ?? extended ?? null;
+  return m.conversation ?? m.extendedTextMessage?.text ?? null;
 }
 
 /** Start (or resume, from persisted auth state) a Baileys connection for one
  *  WhatsAppNumber. Safe to call more than once for the same numberId — a
  *  `starting` guard (same double-start-guard shape as job-runner.ts's
- *  startJobPoller, line 91-101) makes repeat calls (e.g. Next dev-mode hot
- *  reload, or the dashboard polling loop re-triggering a connect) a no-op
- *  once a socket is already up or already being brought up. */
+ *  startJobPoller) makes repeat calls (e.g. Next dev-mode hot reload, or the
+ *  dashboard polling loop re-triggering a connect) a no-op once a socket is
+ *  already up or already being brought up. */
 export async function startBaileysConnection(numberId: string): Promise<void> {
   if (REGISTRY.sockets.has(numberId) || REGISTRY.starting.has(numberId)) return;
   REGISTRY.starting.add(numberId);
 
   try {
-    // A non-literal specifier keeps TypeScript from trying to resolve real
-    // type declarations for a package that may not be installed in every
-    // environment (see this file's header comment) — this import is
-    // intentionally untyped (`any`) at compile time; every value pulled out
-    // of it below is cast to a local, hand-written minimal type instead.
-    const BAILEYS_PKG = "@whiskeysockets/baileys";
-    const baileys = await import(BAILEYS_PKG);
-    const makeWASocket = (baileys.default ?? baileys) as unknown as (opts: Record<string, unknown>) => BaileysSocket;
-    const { useMultiFileAuthState, DisconnectReason } = baileys as unknown as {
-      useMultiFileAuthState: (dir: string) => Promise<{ state: unknown; saveCreds: () => Promise<void> }>;
-      DisconnectReason: { loggedOut: number };
-    };
-
     const { state, saveCreds } = await useMultiFileAuthState(authDir(numberId));
     const sock = makeWASocket({ auth: state, printQRInTerminal: false });
     REGISTRY.sockets.set(numberId, sock);
 
     sock.ev.on("creds.update", () => { void saveCreds(); });
-
-    sock.ev.on("connection.update", (...args: unknown[]) => {
-      const update = args[0] as { connection?: string; qr?: string; lastDisconnect?: { error?: { output?: { statusCode?: number } } } };
-      void handleConnectionUpdate(numberId, sock, update, DisconnectReason?.loggedOut);
-    });
-
-    sock.ev.on("messages.upsert", (...args: unknown[]) => {
-      const payload = args[0] as { messages?: Record<string, unknown>[]; type?: string };
-      void handleInboundMessages(numberId, payload);
-    });
+    sock.ev.on("connection.update", (update) => { void handleConnectionUpdate(numberId, sock, update); });
+    sock.ev.on("messages.upsert", (payload) => { void handleInboundMessages(numberId, payload); });
   } catch (e) {
     console.error(`[whatsapp-baileys:start-failed ${numberId}]`, e);
     REGISTRY.sockets.delete(numberId);
@@ -137,28 +103,18 @@ export async function startBaileysConnection(numberId: string): Promise<void> {
 // listener firing, so every DB call here re-establishes its own context, the
 // same way the real WhatsApp webhook route's processEvents() does (see
 // src/app/api/channels/whatsapp/webhook/route.ts) — never inherited.
-async function handleConnectionUpdate(
-  numberId: string,
-  sock: BaileysSocket,
-  update: { connection?: string; qr?: string; lastDisconnect?: { error?: { output?: { statusCode?: number } } } },
-  loggedOutCode: number | undefined,
-): Promise<void> {
-  return runCrossTenant(() => handleConnectionUpdateInner(numberId, sock, update, loggedOutCode));
+async function handleConnectionUpdate(numberId: string, sock: WASocket, update: Partial<ConnectionState>): Promise<void> {
+  return runCrossTenant(() => handleConnectionUpdateInner(numberId, sock, update));
 }
 
-async function handleConnectionUpdateInner(
-  numberId: string,
-  sock: BaileysSocket,
-  update: { connection?: string; qr?: string; lastDisconnect?: { error?: { output?: { statusCode?: number } } } },
-  loggedOutCode: number | undefined,
-): Promise<void> {
+async function handleConnectionUpdateInner(numberId: string, sock: WASocket, update: Partial<ConnectionState>): Promise<void> {
   if (update.qr) {
     REGISTRY.pendingQr.set(numberId, { qr: update.qr, expiresAt: Date.now() + QR_TTL_MS });
   }
 
   if (update.connection === "open") {
     REGISTRY.pendingQr.delete(numberId);
-    const phoneNumber = sock.user?.id ? phoneFromJid(sock.user.id) : null;
+    const phoneNumber = sock.user?.phoneNumber ?? (sock.user?.id ? phoneFromJid(sock.user.id) : null);
     const number = await db.whatsAppNumber.findUnique({ where: { id: numberId } });
     if (!number) return;
     await db.whatsAppNumber.update({
@@ -187,32 +143,31 @@ async function handleConnectionUpdateInner(
 
   if (update.connection === "close") {
     REGISTRY.sockets.delete(numberId);
-    const statusCode = update.lastDisconnect?.error?.output?.statusCode;
+    const statusCode = (update.lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output?.statusCode;
     // A logged-out disconnect (the phone unlinked this device) is terminal —
     // don't auto-reconnect into a fresh QR loop unattended. Any other close
     // reason (network blip, server restart) is worth one reconnect attempt.
-    if (statusCode !== loggedOutCode) {
+    if (statusCode !== DisconnectReason.loggedOut) {
       void startBaileysConnection(numberId);
     } else {
-      const number = await db.whatsAppNumber.findUnique({ where: { id: numberId } });
-      if (number) {
-        await db.whatsAppNumber.update({ where: { id: numberId }, data: { verificationStatus: "pending" } }).catch(() => {});
-      }
+      await db.whatsAppNumber.update({ where: { id: numberId }, data: { verificationStatus: "pending" } }).catch(() => {});
     }
   }
 }
 
-async function handleInboundMessages(numberId: string, payload: { messages?: Record<string, unknown>[]; type?: string }): Promise<void> {
+type MessagesUpsertPayload = { messages: WAMessage[]; type: MessageUpsertType; requestId?: string };
+
+async function handleInboundMessages(numberId: string, payload: MessagesUpsertPayload): Promise<void> {
   return runCrossTenant(() => handleInboundMessagesInner(numberId, payload));
 }
 
-async function handleInboundMessagesInner(numberId: string, payload: { messages?: Record<string, unknown>[]; type?: string }): Promise<void> {
-  if (payload.type !== "notify" || !payload.messages) return;
+async function handleInboundMessagesInner(numberId: string, payload: MessagesUpsertPayload): Promise<void> {
+  if (payload.type !== "notify") return;
   const number = await db.whatsAppNumber.findUnique({ where: { id: numberId } });
   if (!number?.phoneNumber) return;
 
   for (const msg of payload.messages) {
-    const key = msg.key as { fromMe?: boolean; remoteJid?: string } | undefined;
+    const key = msg.key;
     if (!key || key.fromMe || !key.remoteJid) continue;
     const text = extractText(msg);
     if (!text) continue;
@@ -223,7 +178,7 @@ async function handleInboundMessagesInner(numberId: string, payload: { messages?
       fromNumber: phoneFromJid(key.remoteJid),
       channelType: "whatsapp",
       text,
-      displayName: (msg.pushName as string | undefined) ?? undefined,
+      displayName: msg.pushName ?? undefined,
     });
 
     const sock = REGISTRY.sockets.get(numberId);
@@ -283,7 +238,7 @@ export async function sendBaileysMessage(numberId: string, to: string, body: str
  *  rather than a half-torn-down session. */
 export async function stopBaileysConnection(numberId: string): Promise<void> {
   const sock = REGISTRY.sockets.get(numberId);
-  sock?.end?.();
+  if (sock) await sock.end(undefined);
   REGISTRY.sockets.delete(numberId);
   REGISTRY.pendingQr.delete(numberId);
 }
