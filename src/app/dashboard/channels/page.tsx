@@ -5,6 +5,8 @@ import { PERMISSIONS } from "@/lib/permissions";
 import { embeddedSignupConfigured } from "@/lib/whatsapp-embedded-signup";
 import { messengerConnectConfigured } from "@/lib/messenger";
 import { ConnectWhatsAppButton } from "./connect-whatsapp-button";
+import { ConnectWhatsAppUnofficialButton } from "./connect-whatsapp-unofficial-button";
+import { WhatsAppTransportSwitch } from "./whatsapp-transport-switch";
 import { ConnectMessengerButton } from "./connect-messenger-button";
 import { ConnectTelegramForm } from "./connect-telegram-form";
 import { ConnectEmailButton } from "./connect-email-button";
@@ -78,12 +80,13 @@ export default async function ChannelsPage({
           </div>
         )}
         {canConnect && (
-          <div className="mb-4 mt-2">
+          <div className="mb-4 mt-2 flex flex-wrap items-center gap-2">
             {embeddedSignupConfigured() ? (
               <ConnectWhatsAppButton />
             ) : (
               <p className="text-xs text-faint">Real self-service WhatsApp connection isn&apos;t configured yet on this deployment.</p>
             )}
+            <ConnectWhatsAppUnofficialButton />
           </div>
         )}
         <div className="space-y-3">
@@ -100,10 +103,10 @@ export default async function ChannelsPage({
             <Card key={n.id} className="p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-lg font-semibold">{n.phoneNumber}</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-lg font-semibold">{n.phoneNumber ?? "connecting…"}</span>
                     <Badge tone={n.status === "active" ? "green" : "neutral"}>{n.status}</Badge>
-                    <Badge tone={n.verificationStatus === "verified" ? "accent" : "amber"}>{n.verificationStatus}</Badge>
+                    <Badge tone={connectionStatusBadge(whatsappConnectionStatus(n)).tone}>{connectionStatusBadge(whatsappConnectionStatus(n)).label}</Badge>
                   </div>
                   <div className="mt-1 text-sm">{n.displayName}{n.department ? ` · ${n.department}` : ""}</div>
                   <div className="mt-1 font-mono text-[11px] text-faint">phone_number_id: {n.phoneNumberId ?? "—"}</div>
@@ -113,6 +116,11 @@ export default async function ChannelsPage({
                   <div className="mt-1 text-faint">Users message this number directly.</div>
                 </div>
               </div>
+              {canConnect && (
+                <div className="mt-3 border-t border-line-soft pt-3">
+                  <WhatsAppTransportSwitch numberId={n.id} phoneNumber={n.phoneNumber} transport={n.transport} />
+                </div>
+              )}
             </Card>
           ))}
         </div>

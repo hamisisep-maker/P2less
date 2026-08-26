@@ -1055,6 +1055,66 @@ export async function activateEmailChannelAction(_prev: unknown, _formData: Form
   });
 }
 
+// ── WhatsApp unofficial-transport switcher, 2026-08-26 ────────────────────────
+// Owner-only, same TENANT_MANAGE gate as every other channel-connect action
+// above. Two distinct actions: starting a BRAND NEW unofficial-only number
+// (no prior Meta number involved at all), and SWITCHING an existing number
+// that's currently on Meta over to the unofficial transport. Switching the
+// other direction (unofficial → Meta) needs no new action — it's just
+// re-running startWhatsAppEmbeddedSignupAction for that number once its
+// unofficial connection is stopped, since Meta's own flow already handles
+// "connect a number" regardless of what it was doing before.
+export async function startWhatsAppUnofficialConnectAction(_prev: unknown, _formData: FormData) {
+  return withTenantUser(async (user) => {
+    if (!userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE)) {
+      return { error: "Only an organization owner can connect a WhatsApp number." };
+    }
+    const number = await db.whatsAppNumber.create({
+      data: { tenantId: user.tenantId!, displayName: user.tenant?.name ?? "WhatsApp", transport: "unofficial", verificationStatus: "connecting", phoneNumber: null },
+    });
+    const { startBaileysConnection } = await import("./whatsapp-baileys");
+    void startBaileysConnection(number.id);
+    revalidatePath("/dashboard/channels");
+    return { ok: true as const, numberId: number.id };
+  });
+}
+
+export async function switchWhatsAppTransportAction(_prev: unknown, formData: FormData) {
+  return withTenantUser(async (user) => {
+    if (!userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE)) {
+      return { error: "Only an organization owner can switch a number's connection method." };
+    }
+    const numberId = String(formData.get("numberId") ?? "");
+    const to = String(formData.get("to") ?? "") as "meta" | "unofficial";
+    const number = await db.whatsAppNumber.findFirst({ where: { id: numberId, tenantId: user.tenantId! } });
+    if (!number) return { error: "Number not found." };
+    if (number.transport === to) return { error: `This number is already on ${to === "meta" ? "Meta" : "the alternative"} transport.` };
+
+    if (to === "unofficial") {
+      const { startBaileysConnection } = await import("./whatsapp-baileys");
+      await db.whatsAppNumber.update({
+        where: { id: numberId },
+        data: { transport: "unofficial", verificationStatus: "connecting", phoneNumberId: null, wabaId: null },
+      });
+      void startBaileysConnection(numberId);
+    } else {
+      const { stopBaileysConnection } = await import("./whatsapp-baileys");
+      await stopBaileysConnection(numberId);
+      await db.whatsAppNumber.update({
+        where: { id: numberId },
+        data: { transport: "meta", verificationStatus: "pending", phoneNumberId: null },
+      });
+    }
+
+    const { audit } = await import("./audit");
+    const { requestId: newRequestId } = await import("./crypto");
+    await audit({ tenantId: user.tenantId!, requestId: newRequestId(), actorType: "user", actorId: user.id, action: "whatsapp.transport_switched", target: numberId, success: true, detail: { from: number.transport, to } });
+
+    revalidatePath("/dashboard/channels");
+    return { ok: true as const };
+  });
+}
+
 // ── Profile — self-service password change (real gap found 2026-08-23: the
 // tenant dashboard had no profile page at all, unlike /admin/settings which
 // already had this for platform admins) ────────────────────────────────────

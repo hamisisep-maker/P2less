@@ -160,6 +160,29 @@ export async function deliver(msg: OutboundMessage): Promise<{ delivered: boolea
       if (integration && !integration.enabled) {
         return { delivered: false, transport: "whatsapp:disabled", error: "WhatsApp integration is disabled by an administrator" };
       }
+
+      // Unofficial-transport switcher, 2026-08-26 — a WhatsAppNumber can be
+      // paired via the unofficial (Baileys) route instead of the official
+      // Cloud API. Every WhatsAppNumber (Meta or unofficial) has a real,
+      // unique phoneNumberId — a Baileys-only number gets a synthetic
+      // "baileys:<id>" value at pairing time (see whatsapp-baileys.ts's
+      // connection-open handler) specifically so this lookup stays a plain
+      // unique match, never an ambiguous null-matches-null query. See
+      // src/lib/whatsapp-baileys.ts for the full transport.
+      if (msg.fromNumberId) {
+        const number = await db.whatsAppNumber.findUnique({
+          where: { phoneNumberId: msg.fromNumberId },
+          select: { id: true, transport: true },
+        });
+        if (number?.transport === "unofficial") {
+          const { sendBaileysMessage } = await import("./whatsapp-baileys");
+          const result = await sendBaileysMessage(number.id, msg.to, msg.body);
+          return result.delivered
+            ? { delivered: true, transport: "whatsapp:unofficial" }
+            : { delivered: false, transport: "whatsapp:unofficial", error: result.error };
+        }
+      }
+
       const token = await resolveToken(msg.fromNumberId);
       if (!token || !msg.fromNumberId) {
         // Not configured yet (no Cloud API credentials): log so local dev still

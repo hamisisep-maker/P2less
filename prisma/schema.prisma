@@ -1185,6 +1185,15 @@ model WhatsAppNumber {
   verificationStatus String   @default("verified") // verified | pending
   branding           Json? // per-number branding override (falls back to tenant)
   webhookConfig      Json?
+  // Unofficial-transport switcher, 2026-08-26 — "meta" (official WhatsApp
+  // Business Cloud API, the only option until this) or "unofficial" (a
+  // device-paired connection, no Meta registration involved at all). A
+  // separate axis from verificationStatus/status: switching transport is a
+  // real disconnect-and-repair operation (see src/lib/whatsapp-baileys.ts),
+  // not a flag flip, so this only ever reflects which transport a number is
+  // CURRENTLY paired through, verified by that transport's own connection
+  // state.
+  transport          String   @default("meta") // meta | unofficial
   createdAt          DateTime @default(now())
 
   conversations Conversation[]

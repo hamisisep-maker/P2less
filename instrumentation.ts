@@ -40,5 +40,15 @@ export async function register() {
     const { runSocialTokenHealthSweep } = await import("./src/lib/social-publish");
     registerJob({ key: "social_token_health_sweep", name: "Facebook/Instagram token health", category: "health", intervalMs: 15 * 60_000, run: runSocialTokenHealthSweep });
     startJobPoller("social_token_health_sweep");
+
+    // Unofficial WhatsApp transport, 2026-08-26 — re-open a persistent
+    // connection for every number already paired via the unofficial
+    // (Baileys) route, from its saved auth state, so a process restart
+    // resumes existing connections instead of forcing a fresh QR scan.
+    // Wrapped defensively: the @whiskeysockets/baileys package may not be
+    // installed in every environment yet, and a boot-time failure here must
+    // never take down the rest of the app.
+    const { rehydrateAllBaileysConnections } = await import("./src/lib/whatsapp-baileys");
+    rehydrateAllBaileysConnections().catch((e) => console.error("[instrumentation] Baileys rehydrate failed:", e));
   }
 }
