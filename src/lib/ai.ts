@@ -452,7 +452,12 @@ async function fetchT(url: string, init: RequestInit, timeoutMs = LLM_TIMEOUT_MS
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     return await fetch(url, { ...init, signal: ctrl.signal });
-  } catch {
+  } catch (e) {
+    // A network-level failure (DNS, TLS, timeout/abort) here used to vanish
+    // silently — every caller just saw "null" with zero clue why. Real
+    // diagnostic gap, found live 2026-08-26 debugging a new feature: this is
+    // the only place that actually sees the underlying exception.
+    console.error(`[ai:fetch-failed] ${url.split("?")[0]} — ${e instanceof Error ? e.name + ": " + e.message : String(e)}`);
     return null;
   } finally {
     clearTimeout(t);
