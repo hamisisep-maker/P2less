@@ -1193,6 +1193,39 @@ export async function reconnectWhatsAppNumberAction(_prev: unknown, formData: Fo
   });
 }
 
+/** "Forget & pair again" — the real recovery path for the failure mode
+ *  ordinary Reconnect can't fix: a WhatsApp-side session close that leaves
+ *  the persisted credentials permanently unable to resume (found live
+ *  2026-08-26 — every plain reconnect attempt just retried the same dead
+ *  handshake). Wipes the on-disk auth state, then starts a genuinely fresh
+ *  pairing (a real new QR code / pairing code, exactly like connecting a
+ *  brand-new number) rather than trying to resume. Unofficial transport
+ *  only — Meta numbers have no local auth state to forget. */
+export async function forgetAndRepairWhatsAppNumberAction(_prev: unknown, formData: FormData) {
+  return withTenantUser(async (user) => {
+    if (!userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE)) {
+      return { error: "Only an organization owner can do this." };
+    }
+    const numberId = String(formData.get("numberId") ?? "");
+    const pairingPhoneNumber = String(formData.get("pairingPhoneNumber") ?? "").trim() || undefined;
+    const number = await db.whatsAppNumber.findFirst({ where: { id: numberId, tenantId: user.tenantId! } });
+    if (!number) return { error: "Number not found." };
+    if (number.transport !== "unofficial") return { error: "This only applies to the alternative (device-paired) transport." };
+
+    const { forgetBaileysAuthState, startBaileysConnection } = await import("./whatsapp-baileys");
+    await forgetBaileysAuthState(numberId);
+    await db.whatsAppNumber.update({ where: { id: numberId }, data: { status: "active", verificationStatus: "connecting", phoneNumber: null, phoneNumberId: null } });
+    void startBaileysConnection(numberId, pairingPhoneNumber);
+
+    const { audit } = await import("./audit");
+    const { requestId: newRequestId } = await import("./crypto");
+    await audit({ tenantId: user.tenantId!, requestId: newRequestId(), actorType: "user", actorId: user.id, action: "whatsapp.forgot_and_repaired", target: numberId, success: true, detail: { previousPhoneNumber: number.phoneNumber } });
+
+    revalidatePath("/dashboard/channels");
+    return { ok: true as const, numberId };
+  });
+}
+
 // ── Profile — self-service password change (real gap found 2026-08-23: the
 // tenant dashboard had no profile page at all, unlike /admin/settings which
 // already had this for platform admins) ────────────────────────────────────

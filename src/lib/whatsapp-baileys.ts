@@ -1,5 +1,6 @@
 import "server-only";
 import path from "node:path";
+import { rm } from "node:fs/promises";
 import makeWASocket, { useMultiFileAuthState, DisconnectReason, downloadMediaMessage, type WASocket, type ConnectionState, type WAMessage, type MessageUpsertType } from "@whiskeysockets/baileys";
 import { db } from "./db";
 import { audit } from "./audit";
@@ -429,4 +430,24 @@ export async function stopBaileysConnection(numberId: string): Promise<void> {
   REGISTRY.sockets.delete(numberId);
   REGISTRY.pendingQr.delete(numberId);
   REGISTRY.pendingPairingCode.delete(numberId);
+}
+
+/** Real bug found live 2026-08-26: a WhatsApp-side session close (not a
+ *  logout — a genuine "Connection Failure" during the handshake, confirmed
+ *  via repeated identical failures across multiple explicit reconnect
+ *  attempts, including a full server restart in between) leaves the
+ *  persisted auth credentials permanently unable to resume — every
+ *  reconnect attempt just retries the same dead handshake forever. There
+ *  was no way to recover short of manually deleting files on the server.
+ *  This wipes the on-disk auth state for one number so the NEXT
+ *  startBaileysConnection() call is forced into a genuinely fresh
+ *  QR/pairing-code flow instead of trying (and failing) to resume. Stops
+ *  the live socket first if one somehow still exists, same as
+ *  stopBaileysConnection — safe to call even if the connection already
+ *  looks dead. */
+export async function forgetBaileysAuthState(numberId: string): Promise<void> {
+  await stopBaileysConnection(numberId);
+  await rm(authDir(numberId), { recursive: true, force: true }).catch((e) => {
+    console.error(`[whatsapp-baileys:forget-auth-failed ${numberId}]`, e);
+  });
 }

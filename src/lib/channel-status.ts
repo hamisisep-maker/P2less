@@ -6,9 +6,21 @@
 // resolveVisibleNav() in nav.ts; no DB access here.
 export type ConnectionStatus = "not_started" | "connecting" | "connected" | "needs_attention" | "failed";
 
+// Real bug found and fixed 2026-08-26 (direct report: badges were "confusing,
+// hard to tell if connected"): this used to collapse verificationStatus
+// "pending" AND "failed" into the same green "connected" badge a genuinely
+// working number gets — only "connecting" got its own state. A number whose
+// pairing had actually failed, or that had logged out and gone back to
+// "pending", looked identical to one working normally.
 export function whatsappConnectionStatus(n: { verificationStatus: string } | null | undefined): ConnectionStatus {
   if (!n) return "not_started";
-  return n.verificationStatus === "connecting" ? "connecting" : "connected";
+  switch (n.verificationStatus) {
+    case "verified": return "connected";
+    case "connecting": return "connecting";
+    case "failed": return "failed";
+    case "pending": return "needs_attention";
+    default: return "needs_attention";
+  }
 }
 
 export type ChannelGapInput = {

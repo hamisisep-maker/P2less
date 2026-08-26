@@ -1,9 +1,8 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
-import { Badge } from "@/components/ui";
 import { Modal } from "@/components/modal";
-import { switchWhatsAppTransportAction, disconnectWhatsAppNumberAction, reconnectWhatsAppNumberAction } from "@/lib/actions";
+import { switchWhatsAppTransportAction, disconnectWhatsAppNumberAction, reconnectWhatsAppNumberAction, forgetAndRepairWhatsAppNumberAction } from "@/lib/actions";
 import { BaileysQrModal } from "./baileys-qr-modal";
 
 // The per-number "trace which one is connected on Meta and which is not"
@@ -51,7 +50,6 @@ export function WhatsAppTransportSwitch({
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <Badge tone={transport === "unofficial" ? "amber" : "indigo"}>{transport === "unofficial" ? "Alternative" : "Meta"}</Badge>
         {!switchBlocked && (
           <button
             type="button"
@@ -62,7 +60,7 @@ export function WhatsAppTransportSwitch({
           </button>
         )}
         <span className="text-line">·</span>
-        <DisconnectControl numberId={numberId} phoneNumber={phoneNumber} status={status} />
+        <DisconnectControl numberId={numberId} phoneNumber={phoneNumber} status={status} transport={transport} />
       </div>
 
       <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title="Switch connection method">
@@ -116,15 +114,25 @@ export function WhatsAppTransportSwitch({
  *  stops real customer messages from being answered) — reconnecting doesn't,
  *  since it's the safe/reversible direction and the number's own status
  *  badge already makes "currently disconnected" obvious at a glance. */
-function DisconnectControl({ numberId, phoneNumber, status }: { numberId: string; phoneNumber: string | null; status: string }) {
+function DisconnectControl({ numberId, phoneNumber, status, transport }: { numberId: string; phoneNumber: string | null; status: string; transport: string }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [forgetOpen, setForgetOpen] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
   const [disconnectState, disconnectAction, disconnectPending] = useActionState(disconnectWhatsAppNumberAction, null as { ok?: true; error?: string } | null);
   const [reconnectState, reconnectAction, reconnectPending] = useActionState(reconnectWhatsAppNumberAction, null as { ok?: true; error?: string } | null);
+  const [forgetState, forgetAction, forgetPending] = useActionState(forgetAndRepairWhatsAppNumberAction, null as { ok?: true; numberId?: string; error?: string } | null);
   const numberLabel = phoneNumber ?? "this number";
 
   useEffect(() => {
     if (disconnectState?.ok) setConfirmOpen(false);
   }, [disconnectState]);
+
+  useEffect(() => {
+    if (forgetState?.ok) {
+      setForgetOpen(false);
+      setQrOpen(true);
+    }
+  }, [forgetState]);
 
   if (status !== "active") {
     return (
@@ -136,6 +144,50 @@ function DisconnectControl({ numberId, phoneNumber, status }: { numberId: string
           </button>
         </form>
         {reconnectState?.error && <span className="text-xs text-rose">{reconnectState.error}</span>}
+        {/* Real recovery path for a dead persisted session, 2026-08-26 — a
+            WhatsApp-side close that leaves auth credentials permanently
+            unable to resume looks identical to any other disconnect from
+            here, so plain "Reconnect" just retries the same dead handshake.
+            Deliberately separate and de-emphasized (not the default action)
+            since it forces a real re-pairing (new QR/code), not a quiet
+            resume — only reach for it once Reconnect has already been tried. */}
+        {transport === "unofficial" && (
+          <>
+            <span className="text-line">·</span>
+            <button type="button" onClick={() => setForgetOpen(true)} className="text-xs font-medium text-muted underline underline-offset-2 hover:text-ink">
+              Reconnect not working? Forget &amp; pair again
+            </button>
+          </>
+        )}
+
+        <Modal open={forgetOpen} onClose={() => setForgetOpen(false)} title="Forget this session and pair again">
+          <div className="space-y-4">
+            <div className="rounded-lg border border-amber/30 bg-amber-soft px-4 py-3 text-sm text-amber">
+              Use this only if plain &quot;Reconnect&quot; keeps failing. It will:
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li>Erase {numberLabel}&apos;s saved connection — it can no longer resume automatically.</li>
+                <li>Require scanning a fresh QR code (or entering a new pairing code) on the phone, right now.</li>
+                <li>All other connected numbers are unaffected.</li>
+              </ul>
+            </div>
+            <form action={forgetAction} className="flex justify-end gap-2">
+              <input type="hidden" name="numberId" value={numberId} />
+              <button type="button" onClick={() => setForgetOpen(false)} className="rounded-lg px-4 py-2 text-sm text-muted hover:bg-surface-2">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={forgetPending}
+                className="rounded-lg bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {forgetPending ? "Clearing…" : "Forget & pair again"}
+              </button>
+            </form>
+            {forgetState?.error && <div className="rounded-lg bg-rose-soft px-3 py-2 text-sm text-rose">{forgetState.error}</div>}
+          </div>
+        </Modal>
+
+        <BaileysQrModal open={qrOpen} onClose={() => setQrOpen(false)} numberId={qrOpen ? numberId : null} />
       </>
     );
   }

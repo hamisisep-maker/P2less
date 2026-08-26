@@ -15,6 +15,29 @@ import { AutoPublishToggle } from "./auto-publish-toggle";
 import { whatsappConnectionStatus, connectionStatusBadge, getChannelGaps, type ConnectionStatus } from "@/lib/channel-status";
 import { whatsappUnofficialTransportEnabled } from "@/lib/whatsapp-baileys";
 
+// One combined, unambiguous status for a WhatsApp number — direct feedback
+// 2026-08-26: two same-colored badges (routing status + verification
+// status) sitting side by side, both saying variations of "active"/
+// "connected", made it genuinely hard to tell at a glance whether a number
+// was actually working. This collapses both real fields (WhatsAppNumber.
+// status — the routing gate conversation.ts checks — and verificationStatus
+// — pairing health) into ONE tone + label + plain-English sentence.
+function whatsappOverallStatus(n: { status: string; verificationStatus: string }): { tone: "green" | "amber" | "rose" | "neutral"; label: string; detail: string } {
+  if (n.status !== "active") {
+    return { tone: "neutral", label: "Disconnected", detail: "Turned off — not receiving messages. Reconnect below to resume." };
+  }
+  switch (n.verificationStatus) {
+    case "verified":
+      return { tone: "green", label: "Connected", detail: "Receiving messages normally." };
+    case "connecting":
+      return { tone: "amber", label: "Connecting…", detail: "Scan the QR code or enter the pairing code below to finish connecting." };
+    case "failed":
+      return { tone: "rose", label: "Connection failed", detail: "Pairing didn't complete — try connecting again." };
+    default:
+      return { tone: "amber", label: "Needs reconnecting", detail: "This number lost its connection and needs to be paired again." };
+  }
+}
+
 // Registration reframe, continued (roadmap doc "Registration reframe" —
 // Track A) — the data model already treats WhatsApp numbers and a
 // Messenger Page as the same underlying concept (Channel, or the
@@ -81,7 +104,15 @@ export default async function ChannelsPage({
             Couldn&apos;t connect WhatsApp: {message || "something went wrong on Meta's side."}
           </div>
         )}
-        {canConnect && (
+        {/* Direct feedback 2026-08-26: showing "Connect via Meta" as a live,
+            clickable button even once a number is already connected made it
+            look like a second, competing connection was one click away —
+            when connected to the alternative transport, Meta should read as
+            unavailable until you deliberately switch, and vice versa. Once a
+            number exists, these buttons disappear entirely — "Switch to
+            Meta" / "Switch to alternative" on the card below is the only
+            way to change transport, so only ONE option is ever live at once. */}
+        {canConnect && numbers.length === 0 && (
           <div className="mb-4 mt-2 flex flex-wrap items-center gap-2">
             {embeddedSignupConfigured() ? (
               <ConnectWhatsAppButton />
@@ -101,30 +132,36 @@ export default async function ChannelsPage({
               <Card className="p-6 text-sm text-muted">No numbers connected yet.</Card>
             )
           )}
-          {numbers.map((n) => (
-            <Card key={n.id} className="p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-lg font-semibold">{n.phoneNumber ?? "connecting…"}</span>
-                    <Badge tone={n.status === "active" ? "green" : "neutral"}>{n.status}</Badge>
-                    <Badge tone={connectionStatusBadge(whatsappConnectionStatus(n)).tone}>{connectionStatusBadge(whatsappConnectionStatus(n)).label}</Badge>
+          {numbers.map((n) => {
+            const overall = whatsappOverallStatus(n);
+            return (
+              <Card key={n.id} className="p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={overall.tone} dot>{overall.label}</Badge>
+                      <span className="text-xs font-medium text-muted">
+                        via {n.transport === "unofficial" ? "the alternative method (device pairing)" : "Meta's official WhatsApp Business API"}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 font-mono text-lg font-semibold">{n.phoneNumber ?? "connecting…"}</div>
+                    <div className="mt-0.5 text-xs text-muted">{overall.detail}</div>
+                    <div className="mt-1 text-sm">{n.displayName}{n.department ? ` · ${n.department}` : ""}</div>
+                    <div className="mt-1 font-mono text-[11px] text-faint">phone_number_id: {n.phoneNumberId ?? "—"}</div>
                   </div>
-                  <div className="mt-1 text-sm">{n.displayName}{n.department ? ` · ${n.department}` : ""}</div>
-                  <div className="mt-1 font-mono text-[11px] text-faint">phone_number_id: {n.phoneNumberId ?? "—"}</div>
+                  <div className="text-right text-xs text-muted">
+                    <div>{n._count.conversations} conversation(s)</div>
+                    <div className="mt-1 text-faint">Users message this number directly.</div>
+                  </div>
                 </div>
-                <div className="text-right text-xs text-muted">
-                  <div>{n._count.conversations} conversation(s)</div>
-                  <div className="mt-1 text-faint">Users message this number directly.</div>
-                </div>
-              </div>
-              {canConnect && (
-                <div className="mt-3 border-t border-line-soft pt-3">
-                  <WhatsAppTransportSwitch numberId={n.id} phoneNumber={n.phoneNumber} transport={n.transport} status={n.status} unofficialTransportEnabled={unofficialTransportEnabled} />
-                </div>
-              )}
-            </Card>
-          ))}
+                {canConnect && (
+                  <div className="mt-3 border-t border-line-soft pt-3">
+                    <WhatsAppTransportSwitch numberId={n.id} phoneNumber={n.phoneNumber} transport={n.transport} status={n.status} unofficialTransportEnabled={unofficialTransportEnabled} />
+                  </div>
+                )}
+              </Card>
+            );
+          })}
         </div>
         <p className="mt-3 text-xs text-faint">
           Connecting a real number uses the official WhatsApp Business Cloud API: register the number, set the
