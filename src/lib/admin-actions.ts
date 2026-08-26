@@ -11,7 +11,7 @@ import { computeBill } from "./billing";
 import { finalizeCancellation } from "./billing-lifecycle";
 import { resolveTenantRecipientEmail } from "./notifications";
 import { sendEmail } from "./notification-channels";
-import { randomToken } from "./crypto";
+import { randomToken, encryptJSON } from "./crypto";
 
 // re-exported so page.tsx guards (layout-level) can still import a single
 // "am I even a platform admin" check without pulling in the whole authz module
@@ -267,6 +267,68 @@ export async function updateAiProviderCostAction(_prev: unknown, formData: FormD
     await logPrivilegedAction({ admin, permission: "providers.manage", action: "admin.ai_cost_update", target: provider, detail: { costPerCallKes: cost } });
     revalidatePath("/admin/ai");
     revalidatePath("/admin/billing");
+    return { ok: true };
+  });
+}
+
+// ── Real, admin-editable AI provider keys, 2026-08-26 ─────────────────────────
+// Wires IntegrationCredential up as a real runtime source for the first time
+// (see the model's own schema comment) — one row per key, numbered "Key 1" /
+// "Key 2" / ... by creation order in the UI, never a stored ordinal. Never logs
+// or audits the raw key value — only the masked preview, matching audit()'s
+// own sanitize() stripping anything matching /password|secret|token|apikey/i.
+function maskKey(key: string): string {
+  const tail = key.length > 4 ? key.slice(-4) : key;
+  return `••••••••••${tail}`;
+}
+
+export async function addAiProviderKeyAction(_prev: unknown, formData: FormData) {
+  return withAssertAdminPermission("providers.manage", async (admin) => {
+    const provider = String(formData.get("provider") ?? "");
+    const key = String(formData.get("key") ?? "").trim();
+    const startingBalanceRaw = formData.get("startingBalanceUsd");
+    const startingBalanceUsd = startingBalanceRaw && String(startingBalanceRaw).trim() !== "" ? Number(startingBalanceRaw) : null;
+    if (!provider || !key) return { error: "Paste a real key." };
+    if (startingBalanceUsd != null && (!Number.isFinite(startingBalanceUsd) || startingBalanceUsd < 0)) return { error: "Starting balance must be a number 0 or more." };
+
+    const integration = await db.integration.findUnique({ where: { key: `ai_${provider}` } });
+    if (!integration) return { error: "Unknown provider." };
+
+    await db.integrationCredential.create({
+      data: {
+        integrationId: integration.id,
+        label: "api_key",
+        valueEnc: encryptJSON({ key }),
+        maskedPreview: maskKey(key),
+        active: true,
+        createdById: admin.id,
+        startingBalanceUsd,
+      },
+    });
+    const { refreshDbProviderKeys } = await import("./ai");
+    await refreshDbProviderKeys();
+
+    await logPrivilegedAction({ admin, permission: "providers.manage", action: "admin.ai_key_added", target: provider, detail: { maskedPreview: maskKey(key), startingBalanceUsd } });
+    revalidatePath("/admin/ai");
+    return { ok: true };
+  });
+}
+
+export async function revokeAiProviderKeyAction(credentialId: string, reason: string) {
+  if (!reason?.trim()) return { error: "A reason is required." };
+  return withAssertAdminPermission("providers.manage", async (admin) => {
+    const cred = await db.integrationCredential.findUnique({ where: { id: credentialId }, include: { integration: true } });
+    if (!cred) return { error: "Key not found." };
+    await db.integrationCredential.update({ where: { id: credentialId }, data: { active: false, revokedAt: new Date() } });
+    const { refreshDbProviderKeys } = await import("./ai");
+    await refreshDbProviderKeys();
+
+    await logPrivilegedAction({
+      admin, permission: "providers.manage", action: "admin.ai_key_revoked",
+      target: cred.integration.key.replace("ai_", ""), reason,
+      previousState: { active: true }, newState: { active: false },
+    });
+    revalidatePath("/admin/ai");
     return { ok: true };
   });
 }

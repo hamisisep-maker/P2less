@@ -60,10 +60,22 @@ model AiRequestLog {
   revenueKes   Float    @default(0) // the tenant's current price_ai_kes at call time — what this request is worth in billing terms
   success      Boolean  @default(true)
   createdAt    DateTime @default(now())
+  // AI provider keys, 2026-08-26 — which specific IntegrationCredential
+  // (numbered "Key 1"/"Key 2"/... in the admin UI) actually served this
+  // request, so tokens/cost can be attributed per key, not just per
+  // provider. Null for any request served by an env-var-sourced key (a
+  // provider that hasn't had a real key added via the admin UI yet) — see
+  // getProviderKeys()'s DB-first, env-fallback logic in ai.ts.
+  // onDelete: SetNull — revoking/deleting a key must never erase its real
+  // request history, same "history survives" precedent as ModelPricing
+  // never being edited in place.
+  credentialId String?
+  credential   IntegrationCredential? @relation(fields: [credentialId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([provider, model])
   @@index([createdAt])
+  @@index([credentialId])
 }
 
 /// Per-token provider pricing, VERSIONED — a new row is inserted (never
@@ -253,17 +265,17 @@ model Integration {
 
 /// Designed for encrypted-at-rest Integration secrets (same AES-256-GCM
 /// scheme as Connector.authConfigEnc) with a real rotation chain via
-/// rotatedFromId — HONEST STATUS as of the Priority 6 system audit: this
-/// table is currently unwritten scaffolding. Every real provider credential
-/// in this codebase today (WhatsApp/M-Pesa/every AI provider/Resend) lives
-/// in env vars, matching that established convention — not this vault. Wire
-/// this up (or drop it) the day a real replace/rotate/test-connection admin
-/// UI is actually built against it, rather than leaving it half-true.
+/// rotatedFromId — WIRED UP 2026-08-26 for real: this is now the actual
+/// runtime source for AI provider API keys (see getProviderKeys() in
+/// ai.ts), the first real credential type this table was ever written
+/// against. Other provider credentials (WhatsApp/M-Pesa/Resend) still live
+/// in env vars, untouched — this wiring is scoped to AI keys specifically,
+/// not a platform-wide migration.
 model IntegrationCredential {
   id            String    @id @default(cuid())
   integrationId String
   integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
-  label         String    // "consumer_key" | "webhook_secret" | "passkey" | ...
+  label         String    // "consumer_key" | "webhook_secret" | "passkey" | "api_key" | ...
   valueEnc      String
   maskedPreview String    // e.g. "••••••••••92AF"
   active        Boolean   @default(true)
@@ -271,6 +283,16 @@ model IntegrationCredential {
   createdById   String
   createdAt     DateTime  @default(now())
   revokedAt     DateTime?
+  // AI provider keys, 2026-08-26 — an admin-entered bookkeeping estimate of
+  // what was loaded onto this specific key, since no provider here exposes
+  // a live balance API. "Remaining" is computed at read time as this minus
+  // the real tracked costUsd sum from AiRequestLog rows referencing this
+  // credential — an honest estimate, not a provider-verified number. Null
+  // for every other credential kind this table holds (webhook secrets etc.
+  // have no spend concept).
+  startingBalanceUsd Float?
+
+  aiRequestLogs AiRequestLog[]
 
   @@index([integrationId, active])
 }

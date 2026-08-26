@@ -1115,6 +1115,69 @@ export async function switchWhatsAppTransportAction(_prev: unknown, formData: Fo
   });
 }
 
+// ── WhatsApp disconnect/reconnect, 2026-08-26 ─────────────────────────────────
+// A real, standalone "make this number stop answering, without moving it to
+// the other transport" action — direct request, real gap: WhatsAppNumber.status
+// ("active" | "disabled") is already the actual routing-eligibility gate
+// conversation.ts checks (handleInbound's very first lookup: `if (!num ||
+// num.status !== "active") return "not in service"`), it just had no UI
+// control at all before this. Disconnecting a Baileys-transport number also
+// closes its live socket (stopBaileysConnection) — status alone would stop
+// P2Less from ANSWERING, but the socket would still sit there consuming
+// messages and sending back an unhelpful "not in service" reply instead of
+// staying genuinely quiet. Reconnecting a Baileys number resumes from its
+// persisted auth state (stopBaileysConnection never deletes it) — no fresh
+// QR scan needed unless the phone itself unlinked the device while offline.
+export async function disconnectWhatsAppNumberAction(_prev: unknown, formData: FormData) {
+  return withTenantUser(async (user) => {
+    if (!userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE)) {
+      return { error: "Only an organization owner can disconnect a number." };
+    }
+    const numberId = String(formData.get("numberId") ?? "");
+    const number = await db.whatsAppNumber.findFirst({ where: { id: numberId, tenantId: user.tenantId! } });
+    if (!number) return { error: "Number not found." };
+    if (number.status === "disabled") return { error: "This number is already disconnected." };
+
+    if (number.transport === "unofficial") {
+      const { stopBaileysConnection } = await import("./whatsapp-baileys");
+      await stopBaileysConnection(numberId);
+    }
+    await db.whatsAppNumber.update({ where: { id: numberId }, data: { status: "disabled" } });
+
+    const { audit } = await import("./audit");
+    const { requestId: newRequestId } = await import("./crypto");
+    await audit({ tenantId: user.tenantId!, requestId: newRequestId(), actorType: "user", actorId: user.id, action: "whatsapp.disconnected", target: numberId, success: true, detail: { phoneNumber: number.phoneNumber, transport: number.transport } });
+
+    revalidatePath("/dashboard/channels");
+    return { ok: true as const };
+  });
+}
+
+export async function reconnectWhatsAppNumberAction(_prev: unknown, formData: FormData) {
+  return withTenantUser(async (user) => {
+    if (!userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE)) {
+      return { error: "Only an organization owner can reconnect a number." };
+    }
+    const numberId = String(formData.get("numberId") ?? "");
+    const number = await db.whatsAppNumber.findFirst({ where: { id: numberId, tenantId: user.tenantId! } });
+    if (!number) return { error: "Number not found." };
+    if (number.status === "active") return { error: "This number is already connected." };
+
+    await db.whatsAppNumber.update({ where: { id: numberId }, data: { status: "active" } });
+    if (number.transport === "unofficial") {
+      const { startBaileysConnection } = await import("./whatsapp-baileys");
+      void startBaileysConnection(numberId);
+    }
+
+    const { audit } = await import("./audit");
+    const { requestId: newRequestId } = await import("./crypto");
+    await audit({ tenantId: user.tenantId!, requestId: newRequestId(), actorType: "user", actorId: user.id, action: "whatsapp.reconnected", target: numberId, success: true, detail: { phoneNumber: number.phoneNumber, transport: number.transport } });
+
+    revalidatePath("/dashboard/channels");
+    return { ok: true as const };
+  });
+}
+
 // ── Profile — self-service password change (real gap found 2026-08-23: the
 // tenant dashboard had no profile page at all, unlike /admin/settings which
 // already had this for platform admins) ────────────────────────────────────

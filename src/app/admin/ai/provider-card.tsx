@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useActionState, useEffect } from "react";
 import { toast } from "sonner";
 import {
-  ExternalLink, Star, Sparkles, Zap, Cpu, Waypoints, Bot, CircleDot, Rocket,
+  ExternalLink, Star, Sparkles, Zap, Cpu, Waypoints, Bot, CircleDot, Rocket, Plus,
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui";
-import { updateAiProviderCostAction, setPrimaryProviderAction } from "@/lib/admin-actions";
+import { updateAiProviderCostAction, setPrimaryProviderAction, addAiProviderKeyAction, revokeAiProviderKeyAction } from "@/lib/admin-actions";
 import { ReasonAction } from "@/components/admin/reason-action";
 
 // Icon lookup lives here (client-only) — passing a Lucide component
@@ -35,6 +35,12 @@ export type ProviderCardData = {
   // callLLM()'s rotation actually uses, not a separate guess. A key never
   // yet attempted since the last deploy shows as live by default.
   keys: { label: string; coolingDown: boolean; cooldownUntil: number | null }[];
+  // Real, admin-added keys, 2026-08-26 — numbered by creation order, each
+  // with real tracked token usage and an admin-entered starting-balance
+  // estimate (no provider here exposes a live balance API). Empty until an
+  // admin adds the provider's first real key — that provider keeps running
+  // on its env-var key(s) exactly as before until then.
+  dbKeys: { id: string; number: number; maskedPreview: string; tokensUsed: number; startingBalanceUsd: number | null; remainingUsd: number | null }[];
 };
 
 export function ProviderCard({ data }: { data: ProviderCardData }) {
@@ -132,6 +138,67 @@ export function ProviderCard({ data }: { data: ProviderCardData }) {
         </>
       )}
       {pending && <div className="mt-1 text-[10px] text-faint">Saving…</div>}
+
+      <AiKeyManager providerId={data.id} providerLabel={data.label} dbKeys={data.dbKeys} />
+    </div>
+  );
+}
+
+/** Real, admin-editable key list — click "Add key," paste it, it becomes
+ *  "Key 1"/"Key 2"/... with its own tracked token usage and an admin-entered
+ *  starting-balance estimate (no provider here exposes a live balance API).
+ *  Separate from the cooldown dot-row above, which reflects live/resting
+ *  health of WHICHEVER keys are actually in use (DB or env) — this section
+ *  is specifically about managing the real, persisted key pool. */
+function AiKeyManager({ providerId, providerLabel, dbKeys }: { providerId: string; providerLabel: string; dbKeys: ProviderCardData["dbKeys"] }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [addState, addAction, addPending] = useActionState(addAiProviderKeyAction, null as Awaited<ReturnType<typeof addAiProviderKeyAction>> | null);
+
+  useEffect(() => {
+    if (!addState) return;
+    if ("ok" in addState) { toast.success(`Key added to ${providerLabel}`); setShowAdd(false); }
+    else toast.error(addState.error);
+  }, [addState, providerLabel]);
+
+  return (
+    <div className="mt-3 border-t border-line-soft pt-3">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-faint">API keys ({dbKeys.length})</div>
+      {dbKeys.length > 0 && (
+        <ul className="mt-1.5 space-y-1.5">
+          {dbKeys.map((k) => (
+            <li key={k.id} className="flex items-center justify-between gap-2 text-[11px]">
+              <span className="font-mono text-muted">
+                Key {k.number} — {k.maskedPreview} — {k.tokensUsed.toLocaleString("en-US")} tokens used
+                {k.startingBalanceUsd != null && <> — ${k.remainingUsd?.toFixed(2)} of ${k.startingBalanceUsd.toFixed(2)} remaining</>}
+              </span>
+              <ReasonAction
+                label={<span className="text-rose hover:underline">Revoke</span>}
+                confirmLabel="Revoke key"
+                onConfirm={(reason) => revokeAiProviderKeyAction(k.id, reason)}
+                successMessage={`Key ${k.number} revoked`}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {showAdd ? (
+        <form action={addAction} className="mt-2 space-y-1.5">
+          <input type="hidden" name="provider" value={providerId} />
+          <input name="key" type="password" placeholder="Paste API key" required className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-xs outline-none focus:border-accent" />
+          <input name="startingBalanceUsd" type="number" step="0.01" min="0" placeholder="Starting balance, $ (optional)" className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-xs outline-none focus:border-accent" />
+          <div className="flex gap-1.5">
+            <button type="submit" disabled={addPending} className="rounded-lg bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-60">
+              {addPending ? "Adding…" : "Add"}
+            </button>
+            <button type="button" onClick={() => setShowAdd(false)} className="rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted hover:bg-surface-2">Cancel</button>
+          </div>
+        </form>
+      ) : (
+        <button type="button" onClick={() => setShowAdd(true)} className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-accent hover:text-accent-ink">
+          <Plus size={11} /> Add key
+        </button>
+      )}
     </div>
   );
 }

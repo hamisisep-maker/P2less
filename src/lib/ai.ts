@@ -4,7 +4,7 @@ import { matchIntent, type IntentAction, type IntentMatch } from "./intent-engin
 import { getAiTenantId } from "./ai-context";
 import { getCurrentChannelLabel, currentChannelSupportsFiles } from "./tenant-context";
 import { getSettingNumber } from "./platform-settings";
-import { randomToken } from "./crypto";
+import { randomToken, decryptJSON } from "./crypto";
 import { hasAiBudget, debitAiBalance } from "./prepaid-billing";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -35,13 +35,65 @@ const PROVIDER_ENV_PREFIX: Record<Provider, string> = {
   google: "GEMINI", // Google's SDK/env convention here is GEMINI_*, not GOOGLE_*
 };
 
+// Real, admin-editable AI provider keys, 2026-08-26 — DB-first, env-fallback.
+// getProviderKeys()/hasKey()/aiEnabled() all stay SYNCHRONOUS deliberately:
+// aiEnabled() alone has 20+ call sites in conversation.ts (the single most
+// critical, most-tested file in this codebase), each an inline ternary like
+// `aiEnabled() ? await smallTalk(...) : null` — making the chain truly async
+// would mean touching every one of those call sites for a feature that's
+// really just "let an admin paste a key instead of editing an env var."
+// Instead: a globalThis-backed cache (same cross-bundle-sharing rationale as
+// job-runner.ts's REGISTRY and whatsapp-baileys.ts's REGISTRY), populated by
+// a real async DB read, but READ synchronously here. Cold-start reads (before
+// the first refresh completes) and any provider with zero DB-added keys both
+// fall through to the exact same env-var reading as before this feature —
+// nothing about an unmigrated provider changes.
+type DbKeyEntry = { id: string; key: string };
+const dbKeyCacheHolder = globalThis as unknown as { __p2lessAiDbKeys?: Map<Provider, DbKeyEntry[]> };
+dbKeyCacheHolder.__p2lessAiDbKeys ??= new Map();
+const dbKeyCache = dbKeyCacheHolder.__p2lessAiDbKeys;
+
+/** Re-reads every AI provider's active IntegrationCredential rows from the DB
+ *  into the in-memory cache. Called once, fire-and-forget, at module load
+ *  (best-effort warm-up — a cold cache just means "env fallback until this
+ *  finishes," never blocks anything), and explicitly awaited from
+ *  addAiProviderKeyAction/revokeAiProviderKeyAction so an admin's change is
+ *  reflected on the very next request, not eventually. */
+export async function refreshDbProviderKeys(): Promise<void> {
+  try {
+    const rows = await db.integrationCredential.findMany({
+      where: { active: true, integration: { key: { startsWith: "ai_" } } },
+      select: { id: true, valueEnc: true, integration: { select: { key: true } } },
+      orderBy: { createdAt: "asc" },
+    });
+    const next = new Map<Provider, DbKeyEntry[]>();
+    for (const row of rows) {
+      const provider = row.integration.key.replace("ai_", "") as Provider;
+      if (!(provider in PROVIDER_ENV_PREFIX)) continue;
+      const decrypted = decryptJSON<{ key?: string }>(row.valueEnc)?.key;
+      if (!decrypted) continue;
+      const list = next.get(provider) ?? [];
+      list.push({ id: row.id, key: decrypted });
+      next.set(provider, list);
+    }
+    dbKeyCache.clear();
+    for (const [p, list] of next) dbKeyCache.set(p, list);
+  } catch {
+    // DB hiccup / table not migrated yet — cache just stays whatever it was
+    // (env fallback if never populated), never throws into a caller.
+  }
+}
+void refreshDbProviderKeys();
+
 /** Every configured key for a provider, in order — supports multiple accounts
  *  per provider (e.g. several free-tier Gemini keys) so one account hitting its
- *  daily quota doesn't take the whole provider down. `{PREFIX}_API_KEYS` holds
- *  a comma- or newline-separated list; `{PREFIX}_API_KEY` (singular, the
- *  original convention) still works as a one-key fallback so nothing already
- *  configured breaks. */
+ *  daily quota doesn't take the whole provider down. Real, admin-added keys
+ *  (via /admin/ai) win when any exist for this provider; otherwise falls back
+ *  to `{PREFIX}_API_KEYS` (comma- or newline-separated) / the singular
+ *  `{PREFIX}_API_KEY`, exactly as before this feature. */
 function getProviderKeys(p: Provider): string[] {
+  const dbKeys = dbKeyCache.get(p);
+  if (dbKeys && dbKeys.length > 0) return dbKeys.map((k) => k.key);
   const prefix = PROVIDER_ENV_PREFIX[p];
   const list = process.env[`${prefix}_API_KEYS`];
   if (list) {
@@ -50,6 +102,13 @@ function getProviderKeys(p: Provider): string[] {
   }
   const single = process.env[`${prefix}_API_KEY`];
   return single ? [single] : [];
+}
+
+/** The DB credential id behind a given key string, or null if it came from an
+ *  env var (no DB row to attribute to). Used only to tag AiRequestLog rows —
+ *  never affects which key is actually used. */
+function getCredentialId(p: Provider, key: string): string | null {
+  return dbKeyCache.get(p)?.find((k) => k.key === key)?.id ?? null;
 }
 
 /** Last-6-chars label for logs/cooldown tracking — enough to tell multiple
@@ -188,7 +247,7 @@ export async function transcribeAudio(base64: string, mimeType: string): Promise
       }
       markKeyOk(id);
       const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[]; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
-      recordAiCost("google", model, "transcribe_audio", j.usageMetadata ? { input: j.usageMetadata.promptTokenCount, output: j.usageMetadata.candidatesTokenCount } : null);
+      recordAiCost("google", model, "transcribe_audio", j.usageMetadata ? { input: j.usageMetadata.promptTokenCount, output: j.usageMetadata.candidatesTokenCount } : null, undefined, getCredentialId("google", key));
       const text = j.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
       return text && text.length > 0 ? text : null;
     } catch {
@@ -208,7 +267,7 @@ type LLMOpts = { maxTokens?: number; temperature?: number; history?: ChatTurn[];
  *  to fail or slow down a real reply. Cost is 0 (not guessed) when nobody
  *  has configured pricing for this model yet — same "honest zero" convention
  *  as AiProviderConfig.costPerCallKes. */
-function recordAiCost(provider: Provider, model: string, feature: string, usage: { input?: number; output?: number } | null, requestId?: string) {
+function recordAiCost(provider: Provider, model: string, feature: string, usage: { input?: number; output?: number } | null, requestId?: string, credentialId?: string | null) {
   (async () => {
     const tenantId = getAiTenantId() ?? null;
     const inputTokens = usage?.input ?? null;
@@ -233,6 +292,7 @@ function recordAiCost(provider: Provider, model: string, feature: string, usage:
         inputTokens, outputTokens, totalTokens,
         costUsd, costKes, revenueKes: revenueKesPerRequest,
         success: true,
+        credentialId: credentialId ?? null,
       },
     });
   })().catch(() => {});
@@ -453,7 +513,7 @@ async function callOnce(p: Provider, apiKey: string, system: string, user: strin
       markKeyOk(keyId);
       recordAiStat(p, true, res.status, undefined, extractRateLimit(res));
       const j = (await res.json()) as { id?: string; choices?: { message?: { content?: string } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number } };
-      recordAiCost(p, compat.model, opts.feature ?? "unknown", j.usage ? { input: j.usage.prompt_tokens, output: j.usage.completion_tokens } : null, j.id);
+      recordAiCost(p, compat.model, opts.feature ?? "unknown", j.usage ? { input: j.usage.prompt_tokens, output: j.usage.completion_tokens } : null, j.id, getCredentialId(p, apiKey));
       if (track) recordAiCallEvent(track, p, compat.model, opts.feature ?? "unknown", true, { statusCode: res.status, latencyMs: Date.now() - attemptStartedAt, requestId: j.id });
       return j.choices?.[0]?.message?.content?.trim() ?? null;
     }
@@ -488,7 +548,7 @@ async function callOnce(p: Provider, apiKey: string, system: string, user: strin
       markKeyOk(keyId);
       recordAiStat(p, true, res.status);
       const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[]; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
-      recordAiCost(p, model, opts.feature ?? "unknown", j.usageMetadata ? { input: j.usageMetadata.promptTokenCount, output: j.usageMetadata.candidatesTokenCount } : null);
+      recordAiCost(p, model, opts.feature ?? "unknown", j.usageMetadata ? { input: j.usageMetadata.promptTokenCount, output: j.usageMetadata.candidatesTokenCount } : null, undefined, getCredentialId(p, apiKey));
       if (track) recordAiCallEvent(track, p, model, opts.feature ?? "unknown", true, { statusCode: res.status, latencyMs: Date.now() - attemptStartedAt });
       return j.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? null;
     }
@@ -518,7 +578,7 @@ async function callOnce(p: Provider, apiKey: string, system: string, user: strin
       markKeyOk(keyId);
       recordAiStat(p, true, res.status, undefined, extractRateLimit(res));
       const j = (await res.json()) as { id?: string; content?: { text?: string }[]; usage?: { input_tokens?: number; output_tokens?: number } };
-      recordAiCost(p, process.env.ANTHROPIC_MODEL || "claude-sonnet-5", opts.feature ?? "unknown", j.usage ? { input: j.usage.input_tokens, output: j.usage.output_tokens } : null, j.id);
+      recordAiCost(p, process.env.ANTHROPIC_MODEL || "claude-sonnet-5", opts.feature ?? "unknown", j.usage ? { input: j.usage.input_tokens, output: j.usage.output_tokens } : null, j.id, getCredentialId(p, apiKey));
       if (track) recordAiCallEvent(track, p, process.env.ANTHROPIC_MODEL || "claude-sonnet-5", opts.feature ?? "unknown", true, { statusCode: res.status, latencyMs: Date.now() - attemptStartedAt, requestId: j.id });
       return j.content?.[0]?.text?.trim() ?? null;
     }

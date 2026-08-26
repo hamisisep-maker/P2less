@@ -23,7 +23,7 @@ export default async function AdminAiPage() {
     const monthPrefix = today.slice(0, 7);
 
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-    const [aiStatsToday, aiStatsMonth, aiCosts, dbPrimary, realCostByProvider] = await Promise.all([
+    const [aiStatsToday, aiStatsMonth, aiCosts, dbPrimary, realCostByProvider, dbKeyRows] = await Promise.all([
       db.aiProviderStat.findMany({ where: { date: today } }),
       db.aiProviderStat.findMany({ where: { date: { startsWith: monthPrefix } } }),
       getAiProviderCosts(),
@@ -33,8 +33,38 @@ export default async function AdminAiPage() {
       // estimate here even when /admin/models had the real figure, so the two
       // pages could show different numbers for the same provider.
       db.aiRequestLog.groupBy({ by: ["provider"], where: { createdAt: { gte: monthStart } }, _sum: { costKes: true }, _count: { _all: true } }),
+      // Real, admin-added keys, 2026-08-26 — numbered "Key 1"/"Key 2"/... by
+      // creation order (never a stored ordinal), each with its own tracked
+      // usage below.
+      db.integrationCredential.findMany({
+        where: { active: true, label: "api_key", integration: { key: { startsWith: "ai_" } } },
+        select: { id: true, maskedPreview: true, startingBalanceUsd: true, createdAt: true, integration: { select: { key: true } } },
+        orderBy: { createdAt: "asc" },
+      }),
     ]);
     const realCostMap = new Map(realCostByProvider.map((r) => [r.provider, { costKes: r._sum.costKes ?? 0, count: r._count._all }]));
+
+    const keyIds = dbKeyRows.map((r) => r.id);
+    const usageByKey = keyIds.length > 0
+      ? await db.aiRequestLog.groupBy({ by: ["credentialId"], where: { credentialId: { in: keyIds } }, _sum: { totalTokens: true, costUsd: true } })
+      : [];
+    const usageMap = new Map(usageByKey.map((u) => [u.credentialId, { tokens: u._sum.totalTokens ?? 0, costUsd: u._sum.costUsd ?? 0 }]));
+    const dbKeysByProvider = new Map<string, ProviderCardData["dbKeys"]>();
+    for (const row of dbKeyRows) {
+      const provider = row.integration.key.replace("ai_", "");
+      const list = dbKeysByProvider.get(provider) ?? [];
+      const usage = usageMap.get(row.id);
+      const costUsd = usage?.costUsd ?? 0;
+      list.push({
+        id: row.id,
+        number: list.length + 1,
+        maskedPreview: row.maskedPreview,
+        tokensUsed: usage?.tokens ?? 0,
+        startingBalanceUsd: row.startingBalanceUsd,
+        remainingUsd: row.startingBalanceUsd != null ? Math.max(0, row.startingBalanceUsd - costUsd) : null,
+      });
+      dbKeysByProvider.set(provider, list);
+    }
 
     // getKeyHealth() reads the SAME in-memory pool callLLM()'s rotation uses —
     // "configured" now means "has at least one key" (singular env var OR the
@@ -75,6 +105,7 @@ export default async function AdminAiPage() {
         quotaRemaining: stat?.rateLimitRemaining ?? null, quotaLimit: stat?.rateLimitLimit ?? null,
         costPerCallKes, estimatedSpendMonthKes, spendIsReal,
         topUpUrl: AI_PROVIDER_TOPUP_URL[p.id] ?? "#",
+        dbKeys: dbKeysByProvider.get(p.id) ?? [],
       };
     });
 

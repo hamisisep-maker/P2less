@@ -120,7 +120,7 @@ export default async function ChannelsPage({
               </div>
               {canConnect && (
                 <div className="mt-3 border-t border-line-soft pt-3">
-                  <WhatsAppTransportSwitch numberId={n.id} phoneNumber={n.phoneNumber} transport={n.transport} unofficialTransportEnabled={unofficialTransportEnabled} />
+                  <WhatsAppTransportSwitch numberId={n.id} phoneNumber={n.phoneNumber} transport={n.transport} status={n.status} unofficialTransportEnabled={unofficialTransportEnabled} />
                 </div>
               )}
             </Card>
