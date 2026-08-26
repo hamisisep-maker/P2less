@@ -18,6 +18,8 @@
 //      redeploy, so live data is never touched or duplicated.
 //   3. Start Next.js in the foreground, forwarding signals for clean shutdowns.
 import { execSync, spawn } from "node:child_process";
+import crypto from "node:crypto";
+import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
 
 function run(cmd) {
@@ -209,6 +211,67 @@ if (tp.slug && tp.phone && tp.name && tp.admissionId) {
     const role = await db.role.findUnique({ where: { tenantId_key: { tenantId: tenant.id, key: "parent" } } });
     if (role) await db.contactRole.upsert({ where: { contactId_roleId: { contactId: contact.id, roleId: role.id } }, create: { contactId: contact.id, roleId: role.id }, update: {} });
     console.log(`[prod-start] Test parent linked: ${tp.phone} -> ${tp.name} (${tp.admissionId}) on ${tp.slug}.`);
+  }
+}
+
+// P2Less's own internal-training tenant, 2026-08-26 — direct request. This
+// tenant was created directly (via the landing-page/FAQ work), never through
+// the real finalizeOnboarding() signup flow, so it has zero Role rows and no
+// owner login — idempotent, one-time provisioning here, mirroring exactly
+// what finalizeOnboarding() itself does (actions.ts), inlined because that
+// file (and permissions.ts, which it imports) carry "server-only" — the same
+// constraint documented in sync-integrations-catalog.ts's own header comment.
+// A dedicated "internal" Plan (priceMonthly: 0, postpaidUsage: true, active:
+// false so it's never selectable in any real customer-facing picker) is used
+// instead of reusing "enterprise" — reusing Enterprise would inflate the
+// platform's own real Enterprise-tenant count with a non-paying internal
+// account. postpaidUsage: true exempts it from the prepaid balance gate
+// (isGateExempt() in prepaid-billing.ts) — usage is still meter()-ed/tracked
+// exactly like any other tenant, this only skips the top-up requirement.
+{
+  const p2less = await db.tenant.findFirst({ where: { name: "P2Less" } });
+  if (p2less) {
+    if (p2less.status !== "active") {
+      await db.tenant.update({ where: { id: p2less.id }, data: { status: "active" } });
+      console.log("[prod-start] P2Less tenant reactivated.");
+    }
+
+    let internalPlan = await db.plan.findUnique({ where: { key: "internal" } });
+    if (!internalPlan) {
+      internalPlan = await db.plan.create({
+        data: { key: "internal", name: "Internal", priceMonthly: 0, postpaidUsage: true, active: false, sort: 999, limits: {} },
+      });
+      console.log("[prod-start] Internal plan created (KES 0/mo, postpaid-exempt, hidden from real customers).");
+    }
+    if (!(await db.subscription.findUnique({ where: { tenantId: p2less.id } }))) {
+      await db.subscription.create({
+        data: { tenantId: p2less.id, planId: internalPlan.id, period: "monthly", status: "active", renewsAt: new Date(Date.now() + 365 * 864e5) },
+      });
+      console.log("[prod-start] P2Less subscription created on the Internal plan.");
+    }
+
+    if ((await db.user.count({ where: { tenantId: p2less.id } })) === 0) {
+      let ownerRole = await db.role.findFirst({ where: { tenantId: p2less.id, key: "owner" } });
+      if (!ownerRole) {
+        ownerRole = await db.role.create({
+          data: {
+            tenantId: p2less.id, key: "owner", name: "Organization Owner", isSystem: true,
+            permissions: [
+              "tenant.manage", "users.manage", "connectors.manage", "conversations.read", "audit.read",
+              "billing.manage", "developer.manage", "products.manage", "delivery.manage", "drivers.manage",
+              "student.results.read", "student.balance.read", "student.attendance.read", "student.report.read",
+              "school.info.read", "appointment.read", "appointment.book",
+            ],
+          },
+        });
+      }
+      const password = crypto.randomBytes(9).toString("base64url"); // shown once, right here, never stored in plaintext
+      const owner = await db.user.create({
+        data: { tenantId: p2less.id, name: "Hamisi Onesmus", email: "admin@p2less.internal", passwordHash: await bcrypt.hash(password, 10) },
+      });
+      await db.userRole.create({ data: { userId: owner.id, roleId: ownerRole.id } });
+      console.log(`[prod-start] P2Less owner created — email: ${owner.email} · password: ${password} (shown once, save it now)`);
+    }
   }
 }
 
