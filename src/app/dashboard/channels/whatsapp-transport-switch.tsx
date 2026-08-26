@@ -118,6 +118,7 @@ function DisconnectControl({ numberId, phoneNumber, status, transport }: { numbe
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [forgetOpen, setForgetOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
+  const [forgetPairingPhone, setForgetPairingPhone] = useState("");
   const [disconnectState, disconnectAction, disconnectPending] = useActionState(disconnectWhatsAppNumberAction, null as { ok?: true; error?: string } | null);
   const [reconnectState, reconnectAction, reconnectPending] = useActionState(reconnectWhatsAppNumberAction, null as { ok?: true; error?: string } | null);
   const [forgetState, forgetAction, forgetPending] = useActionState(forgetAndRepairWhatsAppNumberAction, null as { ok?: true; numberId?: string; error?: string } | null);
@@ -170,8 +171,19 @@ function DisconnectControl({ numberId, phoneNumber, status, transport }: { numbe
                 <li>All other connected numbers are unaffected.</li>
               </ul>
             </div>
+            <label className="block">
+              <span className="text-xs font-medium text-muted">Camera not working? Enter your WhatsApp number to get a typed pairing code instead</span>
+              <input
+                type="text"
+                value={forgetPairingPhone}
+                onChange={(e) => setForgetPairingPhone(e.target.value)}
+                placeholder="e.g. 254712345678 — leave blank to scan a QR code"
+                className="mt-1 w-full rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs outline-none focus:border-accent"
+              />
+            </label>
             <form action={forgetAction} className="flex justify-end gap-2">
               <input type="hidden" name="numberId" value={numberId} />
+              <input type="hidden" name="pairingPhoneNumber" value={forgetPairingPhone} />
               <button type="button" onClick={() => setForgetOpen(false)} className="rounded-lg px-4 py-2 text-sm text-muted hover:bg-surface-2">
                 Cancel
               </button>
