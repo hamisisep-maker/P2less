@@ -6,6 +6,7 @@ import { withAdminPermission } from "@/lib/admin-authz";
 import { getKeyHealth, type Provider } from "@/lib/ai";
 import { ProviderCard, type ProviderCardData } from "./provider-card";
 import { ResetPrimaryButton } from "./reset-primary-button";
+import { TrainingPriorityPauseCard } from "./training-priority-pause-card";
 
 const AI_PROVIDERS: { id: Provider; label: string; keyEnv: string }[] = [
   { id: "google", label: "Gemini", keyEnv: "GEMINI_API_KEY" },
@@ -23,11 +24,13 @@ export default async function AdminAiPage() {
     const monthPrefix = today.slice(0, 7);
 
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-    const [aiStatsToday, aiStatsMonth, aiCosts, dbPrimary, realCostByProvider, dbKeyRows] = await Promise.all([
+    const [aiStatsToday, aiStatsMonth, aiCosts, dbPrimary, pauseExceptTenantId, tenants, realCostByProvider, dbKeyRows] = await Promise.all([
       db.aiProviderStat.findMany({ where: { date: today } }),
       db.aiProviderStat.findMany({ where: { date: { startsWith: monthPrefix } } }),
       getAiProviderCosts(),
       getSetting("ai_primary_provider"),
+      getSetting("ai_paused_except_tenant_id"),
+      db.tenant.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
       // Prefer this over calls×cost-per-call whenever real token-cost data
       // exists for a provider this month — was previously always the flat
       // estimate here even when /admin/models had the real figure, so the two
@@ -110,6 +113,7 @@ export default async function AdminAiPage() {
     });
 
     const totalMonthSpend = cards.reduce((s, c) => s + c.estimatedSpendMonthKes, 0);
+    const pausedTenant = pauseExceptTenantId ? tenants.find((t) => t.id === pauseExceptTenantId) ?? null : null;
 
     return (
       <div>
@@ -125,6 +129,8 @@ export default async function AdminAiPage() {
           </div>
           {dbPrimary && <ResetPrimaryButton />}
         </Card>
+
+        <TrainingPriorityPauseCard tenants={tenants} pausedTenant={pausedTenant} />
 
         <p className="mb-3 text-xs text-muted">Every reply automatically tries the primary first, then fails over down this list if a provider is unreachable, rate-limited, or out of credit — nothing here needs manual switching to keep working. Set a provider as primary below to change which one is tried first, effective immediately.</p>
 

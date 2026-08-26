@@ -333,6 +333,38 @@ export async function revokeAiProviderKeyAction(credentialId: string, reason: st
   });
 }
 
+/** DANGEROUS: pauses AI for every tenant except one — direct request while
+ *  running P2Less's own internal training, so training doesn't compete with
+ *  real tenant traffic for shared provider quota. Empty tenantId restores
+ *  normal operation for everyone (a real, single-click undo, not just "set
+ *  it back manually"). Enforced in ai.ts's callLLM() — see the cache/check
+ *  there for exactly how a paused tenant's AI call degrades (same "null,
+ *  every caller already has a graceful fallback" shape as every other AI
+ *  gate in this codebase, not a new failure mode). */
+export async function setAiPauseExceptTenantAction(tenantId: string, reason: string) {
+  if (!reason?.trim()) return { error: "A reason is required." };
+  return withAssertAdminPermission("models.change_primary", async (admin) => {
+    let targetName = "(none — normal operation restored)";
+    if (tenantId) {
+      const tenant = await db.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
+      if (!tenant) return { error: "Tenant not found." };
+      targetName = tenant.name;
+    }
+    const before = await db.platformSetting.findUnique({ where: { key: "ai_paused_except_tenant_id" } });
+    await setSetting("ai_paused_except_tenant_id", tenantId);
+    const { refreshAiPauseCache } = await import("./ai");
+    await refreshAiPauseCache();
+
+    await logPrivilegedAction({
+      admin, permission: "models.change_primary", action: "admin.ai_pause_except_tenant_change",
+      target: targetName, reason,
+      previousState: { value: before?.value ?? "" }, newState: { value: tenantId },
+    });
+    revalidatePath("/admin/ai");
+    return { ok: true };
+  });
+}
+
 /** DANGEROUS: changes which AI provider serves live traffic. */
 export async function setPrimaryProviderAction(provider: string, reason: string) {
   if (!reason?.trim()) return { error: "A reason is required." };

@@ -85,6 +85,29 @@ export async function refreshDbProviderKeys(): Promise<void> {
 }
 void refreshDbProviderKeys();
 
+// Training-priority pause cache, 2026-08-26 — same globalThis-backed,
+// explicit-refresh-on-write shape as dbKeyCache above (no TTL: this is only
+// ever written through setAiPauseExceptTenantAction, which awaits the
+// refresh directly, so the cache is never stale after an admin's own change —
+// a cold/never-refreshed cache just means "no pause," the same safe default
+// as the setting itself).
+const aiPauseCacheHolder = globalThis as unknown as { __p2lessAiPauseExcept?: string };
+aiPauseCacheHolder.__p2lessAiPauseExcept ??= "";
+
+export async function refreshAiPauseCache(): Promise<void> {
+  try {
+    const { getSetting } = await import("./platform-settings");
+    aiPauseCacheHolder.__p2lessAiPauseExcept = await getSetting("ai_paused_except_tenant_id");
+  } catch {
+    // DB hiccup — cache just stays whatever it was, never throws into a caller.
+  }
+}
+void refreshAiPauseCache();
+
+async function getAiPauseExceptTenantId(): Promise<string> {
+  return aiPauseCacheHolder.__p2lessAiPauseExcept ?? "";
+}
+
 /** Every configured key for a provider, in order — supports multiple accounts
  *  per provider (e.g. several free-tier Gemini keys) so one account hitting its
  *  daily quota doesn't take the whole provider down. Real, admin-added keys
@@ -406,6 +429,17 @@ async function callLLM(system: string, user: string, opts: LLMOpts = {}): Promis
   // never needs its own error handling downstream. No-op for Enterprise/trial
   // (see prepaid-billing.ts's isGateExempt).
   if (tenantId && !(await hasAiBudget(tenantId))) return null;
+  // Training-priority pause, 2026-08-26 — same choke point, same "return
+  // null, every caller already degrades gracefully" shape as the budget gate
+  // above. ai_paused_except_tenant_id: "" (the default) never touches this.
+  // When set, every OTHER tenant's AI call is blocked; a call with no known
+  // tenant (voice-note transcription before routing resolves, or an admin's
+  // own tooling) is deliberately left untouched — this pauses TENANT
+  // traffic, not the whole platform.
+  if (tenantId) {
+    const exceptTenantId = await getAiPauseExceptTenantId();
+    if (exceptTenantId && tenantId !== exceptTenantId) return null;
+  }
   const chain = await providerChain();
   const perProvider = Number(process.env.AI_ATTEMPTS || 2);
   const correlationId = randomToken(6);

@@ -51,6 +51,19 @@ export const SETTING_DEFAULTS = {
   baileys_billing_active: 0, // 0/1 — off by default; flip on when ready to start charging for Baileys usage
   baileys_discount_multiplier: 0.6, // e.g. 0.6 = Baileys messages cost 60% of price_conversation_kes
 
+  // Training-priority AI pause, 2026-08-26 — direct request while running
+  // P2Less's own internal AI-quality training: every other tenant's traffic
+  // competes for the same shared provider quota (the exact Groq-exhaustion
+  // incident that triggered item 18's admin-editable keys). "" = normal
+  // operation, every tenant's AI works as usual. A tenant id = AI calls are
+  // answered ONLY for that tenant; every other tenant's understand()/
+  // callLLM() call returns null immediately (same "honest failure, ai
+  // temporarily unavailable" path aiEnabled()===false already produces —
+  // no new failure mode, just a new reason to hit the existing one).
+  // Enforced in ai.ts's callLLM(), the one real choke point every AI-calling
+  // function already shares — see the comment there for exactly how.
+  ai_paused_except_tenant_id: "",
+
   // Invoice-centric paid-upgrade flow, 2026-08-25 — an "awaiting_payment"
   // Invoice older than this is treated as expired (checked at read/pay
   // time, no separate cron needed): the tenant starts a fresh upgrade

@@ -234,14 +234,19 @@ async function handleInboundMessagesInner(numberId: string, payload: MessagesUps
     const text = extractText(msg);
     if (!text) continue;
 
-    // "Typing…" indicator — the official Meta transport gets this via
-    // transport.ts's sendTyping() hitting Graph API directly; Baileys has no
-    // equivalent REST call, it's a presence update over the same socket.
-    // Best-effort: a real user-visible cue while handleInbound's AI/connector
-    // work runs (which can take a few seconds), never worth blocking or
-    // failing the actual reply over.
+    // Blue ticks (read receipt) + "typing…" indicator — the official Meta
+    // transport gets both via transport.ts's sendTyping() hitting Graph API
+    // directly (its one call marks read AND shows typing together); Baileys
+    // has no equivalent REST call, each is its own call over the socket
+    // itself. Grey ticks (sent/delivered) happen automatically as part of
+    // WhatsApp's own delivery protocol regardless of what P2Less does — only
+    // the blue "read" tick needed an explicit call. Both best-effort: a real
+    // user-visible cue while handleInbound's AI/connector work runs (which
+    // can take a few seconds), never worth blocking or failing the actual
+    // reply over.
     const typingSock = REGISTRY.sockets.get(numberId);
     if (typingSock) {
+      await typingSock.readMessages([key]).catch(() => {});
       await typingSock.sendPresenceUpdate("composing", key.remoteJid).catch(() => {});
     }
 
