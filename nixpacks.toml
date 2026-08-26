@@ -1,0 +1,9 @@
+# Railway build config, 2026-08-26 — adds ffmpeg to the runtime image.
+# Needed for the unofficial WhatsApp transport (Baileys) to encode
+# AI-generated speech (raw PCM from Gemini TTS) into a real Opus/OGG
+# WhatsApp voice note, and for Baileys' own internal media handling
+# (video thumbnails etc., which already shell out to ffmpeg if present).
+# Everything else is left to Nixpacks' normal Node auto-detection —
+# this file only adds the one extra system package on top of it.
+[phases.setup]
+nixPkgs = ["ffmpeg"]

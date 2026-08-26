@@ -27,6 +27,17 @@ function run(cmd) {
   execSync(cmd, { stdio: "inherit" });
 }
 
+// One-time confirmation that nixpacks.toml's ffmpeg addition actually
+// landed in the runtime image — logged, never fatal (voice-reply/Baileys
+// media features degrade gracefully without it, this is just so a boot log
+// read confirms it rather than discovering it's missing mid-feature).
+try {
+  const ffmpegVersion = execSync("ffmpeg -version", { encoding: "utf8" }).split("\n")[0];
+  console.log(`[prod-start] ffmpeg present: ${ffmpegVersion}`);
+} catch {
+  console.log("[prod-start] ffmpeg NOT found on PATH.");
+}
+
 run("npx prisma db push --skip-generate");
 
 const db = new PrismaClient();
