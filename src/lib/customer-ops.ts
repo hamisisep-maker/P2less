@@ -122,7 +122,7 @@ export async function getTenantOperationalSummary(tenantId: string) {
       documents: usageEvents.find((u) => u.type === "document")?._sum.quantity ?? 0,
     },
     whatsapp: {
-      numbers: numbers.map((n) => ({ phoneNumber: n.phoneNumber, displayName: n.displayName, status: n.status, verificationStatus: n.verificationStatus })),
+      numbers: numbers.map((n) => ({ phoneNumber: n.phoneNumber, displayName: n.displayName, status: n.status, verificationStatus: n.verificationStatus, transport: n.transport })),
       lastInboundAt: lastIn?.createdAt ?? null,
       lastOutboundAt: lastOut?.createdAt ?? null,
     },

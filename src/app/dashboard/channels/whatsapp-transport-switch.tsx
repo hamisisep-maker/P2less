@@ -12,11 +12,26 @@ import { BaileysQrModal } from "./baileys-qr-modal";
 // as UpgradeModal), because switching transport is a genuine disconnect-and-
 // repair operation on WhatsApp's side, not a flag flip — the copy below says
 // so plainly rather than implying instant reversibility that doesn't exist.
-export function WhatsAppTransportSwitch({ numberId, phoneNumber, transport }: { numberId: string; phoneNumber: string | null; transport: string }) {
+export function WhatsAppTransportSwitch({
+  numberId,
+  phoneNumber,
+  transport,
+  unofficialTransportEnabled = true,
+}: {
+  numberId: string;
+  phoneNumber: string | null;
+  transport: string;
+  // Platform kill switch, 2026-08-26 — an admin disabling the whatsapp_baileys
+  // Integration only blocks switching TO the alternative; a number already
+  // ON it can always switch back to Meta regardless, so leaving isn't gated
+  // shut behind the same switch that stops new/renewed use of it.
+  unofficialTransportEnabled?: boolean;
+}) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [state, action, pending] = useActionState(switchWhatsAppTransportAction, null as { ok?: true; error?: string } | null);
   const target: "meta" | "unofficial" = transport === "unofficial" ? "meta" : "unofficial";
+  const switchBlocked = target === "unofficial" && !unofficialTransportEnabled;
 
   useEffect(() => {
     if (state?.ok) {
@@ -31,13 +46,15 @@ export function WhatsAppTransportSwitch({ numberId, phoneNumber, transport }: { 
     <>
       <div className="flex items-center gap-2">
         <Badge tone={transport === "unofficial" ? "amber" : "indigo"}>{transport === "unofficial" ? "Alternative" : "Meta"}</Badge>
-        <button
-          type="button"
-          onClick={() => setConfirmOpen(true)}
-          className="text-xs font-medium text-accent underline underline-offset-2 hover:text-accent-ink"
-        >
-          Switch to {target === "meta" ? "Meta" : "alternative"}
-        </button>
+        {!switchBlocked && (
+          <button
+            type="button"
+            onClick={() => setConfirmOpen(true)}
+            className="text-xs font-medium text-accent underline underline-offset-2 hover:text-accent-ink"
+          >
+            Switch to {target === "meta" ? "Meta" : "alternative"}
+          </button>
+        )}
       </div>
 
       <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title="Switch connection method">

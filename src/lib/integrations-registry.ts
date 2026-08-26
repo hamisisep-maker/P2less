@@ -38,6 +38,19 @@ export const INTEGRATIONS_CATALOG: IntegrationCatalogEntry[] = [
     billingUrl: "https://business.facebook.com/billing_hub",
   },
   {
+    // Platform kill switch, 2026-08-26 — disabling this row stops
+    // "Connect via alternative"/"Switch to alternative" from showing
+    // anywhere on any tenant dashboard AND stops real sends over the
+    // unofficial transport (see whatsappUnofficialTransportEnabled() in
+    // whatsapp-baileys.ts and the matching gate in transport.ts's
+    // deliver()) — not just a display badge.
+    key: "whatsapp_baileys",
+    category: "messaging",
+    name: "WhatsApp (unofficial transport)",
+    provider: "P2Less",
+    docsUrl: "https://github.com/WhiskeySockets/Baileys",
+  },
+  {
     key: "mpesa_stk",
     category: "payments",
     name: "M-Pesa STK Push",

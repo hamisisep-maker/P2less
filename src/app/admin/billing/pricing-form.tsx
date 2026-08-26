@@ -17,6 +17,7 @@ const FIELDS: { key: string; label: string; hint: string }[] = [
 
 export function PricingForm({ initial }: { initial: Record<string, string> }) {
   const [state, action, pending] = useActionState<State, FormData>(updatePricingSettingsAction, null);
+  const baileysActiveDefault = initial.baileys_billing_active === "1";
 
   useEffect(() => {
     if (state?.ok) toast.success("Pricing updated", { description: "New rates apply to every bill computed from now on." });
@@ -35,6 +36,39 @@ export function PricingForm({ initial }: { initial: Record<string, string> }) {
           <span className="mt-0.5 block text-[11px] text-faint">{f.hint}</span>
         </label>
       ))}
+
+      <div className="rounded-xl border border-line bg-surface-2 p-4 sm:col-span-2">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <span className="text-sm font-semibold">Unofficial WhatsApp transport (Baileys) billing</span>
+            <p className="mt-0.5 text-[11px] text-faint">
+              Off by default — Baileys messages are free (still tracked) until you turn this on. When on, they&apos;re charged at
+              a discount off the conversation rate above, never the full price.
+            </p>
+          </div>
+          <label className="inline-flex shrink-0 cursor-pointer items-center gap-2">
+            <input type="checkbox" name="baileys_billing_active" value="1" defaultChecked={baileysActiveDefault} className="peer sr-only" />
+            <span className="relative h-6 w-11 rounded-full bg-surface-3 transition-colors peer-checked:bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-transform after:content-[''] peer-checked:after:translate-x-5" />
+          </label>
+        </div>
+        <label className="mt-3 block max-w-xs">
+          <span className="text-xs font-medium text-muted">Baileys rate, as a fraction of the normal rate</span>
+          <div className="mt-1 flex items-center rounded-xl border border-line bg-surface px-3 focus-within:border-accent">
+            <input
+              name="baileys_discount_multiplier"
+              type="number"
+              step="0.01"
+              min="0"
+              max="1"
+              defaultValue={initial.baileys_discount_multiplier}
+              className="w-full bg-transparent px-2 py-2 text-sm outline-none"
+            />
+            <span className="text-xs text-faint">&times; conversation rate</span>
+          </div>
+          <span className="mt-0.5 block text-[11px] text-faint">e.g. 0.6 = Baileys messages cost 60% of the normal per-conversation rate.</span>
+        </label>
+      </div>
+
       <div className="flex items-end gap-2 sm:col-span-2">
         <button type="submit" disabled={pending} className="rounded-xl bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-5 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-accent-glow)] transition-transform hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0">
           {pending ? "Saving…" : "Save pricing"}

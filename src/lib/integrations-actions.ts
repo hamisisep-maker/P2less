@@ -78,5 +78,10 @@ export async function toggleIntegrationEnabledAction(key: string, enabled: boole
   revalidatePath("/admin/integrations");
   revalidatePath("/admin/system-health");
   revalidatePath("/admin/reconciliation");
+  // whatsapp_baileys's kill switch (2026-08-26) is read directly by the
+  // tenant-facing Channels page (whatsappUnofficialTransportEnabled()) —
+  // without this, a tenant would keep seeing the stale "Connect via
+  // alternative" button until that page's own cache expired naturally.
+  if (key === "whatsapp_baileys") revalidatePath("/dashboard/channels");
   return { ok: true };
 }

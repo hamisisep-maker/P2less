@@ -264,6 +264,20 @@ export async function sendBaileysMessage(numberId: string, to: string, body: str
   }
 }
 
+/** Platform kill switch, 2026-08-26 — same shape/naming as
+ *  embeddedSignupConfigured() (whatsapp-embedded-signup.ts), but backed by
+ *  the whatsapp_baileys Integration row instead of env vars, since this is
+ *  an admin on/off decision, not an environment-configuration one. Gates
+ *  BOTH dashboard entry points (a brand-new "Connect via alternative" and
+ *  the "Switch to alternative" direction on an already-connected number —
+ *  see /dashboard/channels/page.tsx) and, separately, real sends (the
+ *  matching check in transport.ts's deliver()) — disabling this stops the
+ *  option from being offered at all, not just from being started fresh. */
+export async function whatsappUnofficialTransportEnabled(): Promise<boolean> {
+  const integration = await db.integration.findUnique({ where: { key: "whatsapp_baileys" }, select: { enabled: true } });
+  return integration?.enabled ?? true;
+}
+
 /** Cleanly end a socket (used when switching a number FROM the unofficial
  *  transport back to Meta) — does not delete the persisted auth state, so a
  *  future re-pairing attempt for the same number starts from a clean slate

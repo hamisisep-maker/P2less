@@ -13,6 +13,7 @@ import { ConnectEmailButton } from "./connect-email-button";
 import { emailInboundConfigured } from "@/lib/email-channel";
 import { AutoPublishToggle } from "./auto-publish-toggle";
 import { whatsappConnectionStatus, connectionStatusBadge, getChannelGaps, type ConnectionStatus } from "@/lib/channel-status";
+import { whatsappUnofficialTransportEnabled } from "@/lib/whatsapp-baileys";
 
 // Registration reframe, continued (roadmap doc "Registration reframe" —
 // Track A) — the data model already treats WhatsApp numbers and a
@@ -32,7 +33,7 @@ export default async function ChannelsPage({
     const { embedded_signup: waSignupResult, connect: messengerConnectResult, message } = await searchParams;
     const canConnect = userPermissions(user).includes(PERMISSIONS.TENANT_MANAGE);
 
-    const [numbers, messengerChannel, telegramChannel, emailChannel, tenant, widgetKeyCount] = await Promise.all([
+    const [numbers, messengerChannel, telegramChannel, emailChannel, tenant, widgetKeyCount, unofficialTransportEnabled] = await Promise.all([
       db.whatsAppNumber.findMany({
         where: { tenantId: user.tenantId! },
         include: { _count: { select: { conversations: true } } },
@@ -43,6 +44,7 @@ export default async function ChannelsPage({
       db.channel.findFirst({ where: { tenantId: user.tenantId!, type: "email" } }),
       db.tenant.findUnique({ where: { id: user.tenantId! }, select: { channelsNeeded: true } }),
       db.widgetKey.count({ where: { tenantId: user.tenantId! } }),
+      whatsappUnofficialTransportEnabled(),
     ]);
     const messengerCfg = messengerChannel?.config as { pageName?: string; instagramBusinessAccountId?: string | null; autoPublishEnabled?: boolean; tokenValid?: boolean; tokenHealthLastCheckedAt?: string } | null;
     const messengerPageName = messengerCfg?.pageName;
@@ -86,7 +88,7 @@ export default async function ChannelsPage({
             ) : (
               <p className="text-xs text-faint">Real self-service WhatsApp connection isn&apos;t configured yet on this deployment.</p>
             )}
-            <ConnectWhatsAppUnofficialButton />
+            {unofficialTransportEnabled && <ConnectWhatsAppUnofficialButton />}
           </div>
         )}
         <div className="space-y-3">
@@ -118,7 +120,7 @@ export default async function ChannelsPage({
               </div>
               {canConnect && (
                 <div className="mt-3 border-t border-line-soft pt-3">
-                  <WhatsAppTransportSwitch numberId={n.id} phoneNumber={n.phoneNumber} transport={n.transport} />
+                  <WhatsAppTransportSwitch numberId={n.id} phoneNumber={n.phoneNumber} transport={n.transport} unofficialTransportEnabled={unofficialTransportEnabled} />
                 </div>
               )}
             </Card>

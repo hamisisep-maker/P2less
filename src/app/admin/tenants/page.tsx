@@ -5,6 +5,14 @@ import { TenantsAdminTable, type AdminTenantRow } from "./tenants-table";
 
 export default async function AdminTenantsPage() {
   return withAdminPermission("tenants.view", async () => {
+    // Baileys transport tracking, 2026-08-26 — platform-wide, independent of
+    // the tenants query above: a WhatsApp NUMBER count (not a tenant count,
+    // since one tenant can have several numbers on different transports —
+    // counting numbers avoids the ambiguity a per-tenant tally would have).
+    const transportCounts = await db.whatsAppNumber.groupBy({ by: ["transport"], _count: true });
+    const metaCount = transportCounts.find((t) => t.transport === "meta")?._count ?? 0;
+    const unofficialCount = transportCounts.find((t) => t.transport === "unofficial")?._count ?? 0;
+
     const tenants = await db.tenant.findMany({
       include: {
         subscription: { include: { plan: true } },
@@ -49,6 +57,10 @@ export default async function AdminTenantsPage() {
         <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat label="Total tenants" value={rows.length} />
           {planCounts.slice(0, 3).map(([plan, count]) => <Stat key={plan} label={plan} value={count} sub="tenants" />)}
+        </div>
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <Stat label="Numbers on Meta" value={metaCount} sub="official Cloud API" />
+          <Stat label="Numbers on the alternative" value={unofficialCount} sub="unofficial (Baileys) transport" />
         </div>
         <Card className="p-5">
           <TenantsAdminTable data={rows} />

@@ -41,6 +41,16 @@ export const SETTING_DEFAULTS = {
   migration_grant_messages_kes: 500,
   migration_grant_ai_kes: 250,
 
+  // Unofficial (Baileys) WhatsApp transport billing, 2026-08-26 — a
+  // deliberate, explicit admin decision, not an accident: messages sent
+  // over the unofficial transport aren't charged AT ALL until this is
+  // turned on (still meter()-ed/counted regardless, see usage.ts), then
+  // charged at a configurable discount off price_conversation_kes above.
+  // AI-understanding charges are completely unaffected either way — this
+  // only discounts the per-conversation rate, never price_ai_kes.
+  baileys_billing_active: 0, // 0/1 — off by default; flip on when ready to start charging for Baileys usage
+  baileys_discount_multiplier: 0.6, // e.g. 0.6 = Baileys messages cost 60% of price_conversation_kes
+
   // Invoice-centric paid-upgrade flow, 2026-08-25 — an "awaiting_payment"
   // Invoice older than this is treated as expired (checked at read/pay
   // time, no separate cron needed): the tenant starts a fresh upgrade

@@ -86,8 +86,11 @@ export default async function TenantOperationsPage({ params }: { params: Promise
           <Card className="p-5">
             <h2 className="mb-3 font-display font-semibold">WhatsApp status</h2>
             {summary.whatsapp.numbers.length === 0 && <p className="text-sm text-muted">No WhatsApp number configured.</p>}
-            {summary.whatsapp.numbers.map((n) => (
-              <div key={n.phoneNumber} className="text-sm">{n.displayName} · {n.phoneNumber} · <Badge tone={n.status === "active" ? "green" : "neutral"}>{n.status}</Badge></div>
+            {summary.whatsapp.numbers.map((n, i) => (
+              <div key={`${n.phoneNumber ?? n.displayName}-${i}`} className="text-sm">
+                {n.displayName} · {n.phoneNumber ?? "connecting…"} · <Badge tone={n.status === "active" ? "green" : "neutral"}>{n.status}</Badge>{" "}
+                <Badge tone={n.transport === "unofficial" ? "amber" : "indigo"}>{n.transport === "unofficial" ? "Alternative" : "Meta"}</Badge>
+              </div>
             ))}
             <div className="mt-1.5 text-xs text-muted">
               Last inbound {summary.whatsapp.lastInboundAt ? timeAgo(summary.whatsapp.lastInboundAt) : "never"} · last outbound {summary.whatsapp.lastOutboundAt ? timeAgo(summary.whatsapp.lastOutboundAt) : "never"}

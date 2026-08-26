@@ -1599,6 +1599,12 @@ model UsageEvent {
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   type      String // message_in | message_out | api_call | ai_request | document
   quantity  Int      @default(1)
+  // Baileys transport tracking, 2026-08-26 — which WhatsAppNumber.transport
+  // ("meta" | "unofficial") a message_in/message_out event used, recorded at
+  // meter()-time so it's a real historical trail, not just a live snapshot
+  // of a number's CURRENT transport (which can change after the fact via
+  // the switch action). Null for every non-WhatsApp UsageEvent type.
+  transport String?
   createdAt DateTime @default(now())
 
   @@index([tenantId, type])

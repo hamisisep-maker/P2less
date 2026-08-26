@@ -14,6 +14,7 @@ const db = new PrismaClient();
 
 const CATALOG = [
   { key: "whatsapp_cloud_api", category: "messaging", name: "WhatsApp Cloud API", provider: "Meta", docsUrl: "https://developers.facebook.com/docs/whatsapp/cloud-api", providerDashboardUrl: "https://business.facebook.com/wa/manage", billingUrl: "https://business.facebook.com/billing_hub" },
+  { key: "whatsapp_baileys", category: "messaging", name: "WhatsApp (unofficial transport)", provider: "P2Less", docsUrl: "https://github.com/WhiskeySockets/Baileys" },
   { key: "mpesa_stk", category: "payments", name: "M-Pesa STK Push", provider: "Safaricom Daraja", docsUrl: "https://developer.safaricom.co.ke/APIs/MpesaExpressSimulate", providerDashboardUrl: "https://developer.safaricom.co.ke/user/me/apps", billingUrl: "https://developer.safaricom.co.ke" },
   { key: "mpesa_paybill", category: "payments", name: "M-Pesa PayBill", provider: "Safaricom Daraja (C2B)", docsUrl: "https://developer.safaricom.co.ke/APIs/CustomerToBusinessRegisterURL", providerDashboardUrl: "https://developer.safaricom.co.ke/user/me/apps" },
   { key: "mpesa_till", category: "payments", name: "M-Pesa Till / Buy Goods", provider: "Safaricom Daraja (C2B)", docsUrl: "https://developer.safaricom.co.ke/APIs/CustomerToBusinessRegisterURL", providerDashboardUrl: "https://developer.safaricom.co.ke/user/me/apps" },

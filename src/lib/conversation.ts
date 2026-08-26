@@ -360,7 +360,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // whole redesign: never let a real WhatsApp/channel send happen before
   // it's already been paid for. No-op for Enterprise/trial subscriptions
   // (see prepaid-billing.ts's isGateExempt). ─────────────────────────────
-  if (!(await hasMessageBudget(tenant.id))) {
+  if (!(await hasMessageBudget(tenant.id, number?.transport))) {
     await sendServiceUnavailable({ tenantId: tenant.id, channelType: input.channelType, to: input.fromNumber, fromNumberId: number?.phoneNumberId, fromPageId, fromTelegramBotId });
     return { ok: false, replies: [{ body: SERVICE_UNAVAILABLE_MESSAGE }] };
   }
@@ -401,12 +401,13 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // Record inbound + meter (enforce message limits).
   const limit = await checkLimit(tenant.id, "message_in");
   await db.message.create({ data: { tenantId: tenant.id, conversationId: conversation.id, direction: "in", body: input.text, requestId: reqId } });
-  await meter(tenant.id, "message_in");
+  await meter(tenant.id, "message_in", 1, number?.transport);
   // Real KES debit — no-op for Enterprise/trial subscriptions (see
   // prepaid-billing.ts). This is AFTER hasMessageBudget() already gated the
   // whole message earlier in this function; reaching here means there was
-  // budget at gate-check time.
-  await debitMessageBalance(tenant.id);
+  // budget at gate-check time. number?.transport threads the Baileys
+  // discount (see prepaid-billing.ts) through to the actual debit.
+  await debitMessageBalance(tenant.id, number?.transport);
   void dispatchWebhook(tenant.id, "message.received", { conversationId: conversation.id, from: input.fromNumber, to: input.toNumber, text: input.text }).catch(() => {});
   if (!limit.ok) {
     const reply: Reply = { body: "This service has reached its monthly message limit. Please contact the organization." };

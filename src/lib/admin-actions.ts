@@ -236,6 +236,13 @@ const pricingSchema = z.object({
   price_document_kes: z.coerce.number().min(0),
   cost_conversation_kes: z.coerce.number().min(0),
   cost_document_kes: z.coerce.number().min(0),
+  // Unofficial (Baileys) WhatsApp transport billing, 2026-08-26 — a
+  // checkbox posts "on" when checked and is simply absent from the FormData
+  // when unchecked, so this coerces that presence/absence into 0/1 the same
+  // way every other 0/1 PlatformSetting toggle is stored (see
+  // billing_auto_suspend_enabled's own comment in platform-settings.ts).
+  baileys_billing_active: z.coerce.number().min(0).max(1).default(0),
+  baileys_discount_multiplier: z.coerce.number().min(0).max(1),
 });
 
 export async function updatePricingSettingsAction(_prev: unknown, formData: FormData) {

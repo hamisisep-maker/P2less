@@ -39,11 +39,29 @@ function isGateExempt(sub: GatedSub): boolean {
   return sub.plan.postpaidUsage || sub.status === "trial";
 }
 
-export async function hasMessageBudget(tenantId: string): Promise<boolean> {
+/** Resolves the real per-message price for this send, given which transport
+ *  the WhatsAppNumber is on — the one place the Baileys discount actually
+ *  applies, 2026-08-26. Non-WhatsApp channels and Meta-transport WhatsApp
+ *  both pay the normal price_conversation_kes rate, unaffected. A Baileys
+ *  ("unofficial") send costs 0 until an admin explicitly turns on
+ *  baileys_billing_active (still meter()-ed regardless, see usage.ts) — once
+ *  on, it's price_conversation_kes * baileys_discount_multiplier, never the
+ *  full rate. AI-understanding pricing (price_ai_kes) is never touched by
+ *  this — see hasAiBudget/debitAiBalance below, unchanged. */
+async function resolveMessagePrice(transport?: string | null): Promise<number> {
+  const price = await getSettingNumber("price_conversation_kes");
+  if (transport !== "unofficial") return price;
+  const active = await getSettingNumber("baileys_billing_active");
+  if (!active) return 0;
+  const multiplier = await getSettingNumber("baileys_discount_multiplier");
+  return price * multiplier;
+}
+
+export async function hasMessageBudget(tenantId: string, transport?: string | null): Promise<boolean> {
   const sub = await loadGatedSub(tenantId);
   if (!sub) return false;
   if (isGateExempt(sub)) return true;
-  const price = await getSettingNumber("price_conversation_kes");
+  const price = await resolveMessagePrice(transport);
   return sub.messageBalanceKes >= price;
 }
 
@@ -74,10 +92,11 @@ export async function hasAiBudgetOrTrialAllowance(tenantId: string): Promise<boo
  *  subscriptions (their usage is tracked by the existing UsageEvent metering
  *  instead, untouched). Called AFTER a message was actually processed, never
  *  before — the GATE (hasMessageBudget) is what runs before. */
-export async function debitMessageBalance(tenantId: string): Promise<void> {
+export async function debitMessageBalance(tenantId: string, transport?: string | null): Promise<void> {
   const sub = await loadGatedSub(tenantId);
   if (!sub || isGateExempt(sub)) return;
-  const price = await getSettingNumber("price_conversation_kes");
+  const price = await resolveMessagePrice(transport);
+  if (price <= 0) return; // Baileys billing not active yet — meter()-ed, but genuinely free, nothing to decrement
   await db.subscription.update({ where: { tenantId }, data: { messageBalanceKes: { decrement: price } } });
   checkAndNotifyLowBalance(tenantId).catch(() => {});
 }

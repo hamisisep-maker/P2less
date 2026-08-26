@@ -129,6 +129,18 @@ export async function sendWhatsAppText(fromNumberId: string, to: string, body: s
 }
 
 export async function deliver(msg: OutboundMessage): Promise<{ delivered: boolean; transport: string; error?: string }> {
+  // Unofficial-transport switcher, 2026-08-26 — resolved ONCE up front (not
+  // re-queried inside the switch below) so both metering (below) and the
+  // actual whatsapp case know which transport this number is on. Every
+  // WhatsAppNumber (Meta or unofficial) has a real, unique phoneNumberId —
+  // a Baileys-only number gets a synthetic "baileys:<id>" value at pairing
+  // time (see whatsapp-baileys.ts's connection-open handler) specifically
+  // so this lookup stays a plain unique match, never an ambiguous
+  // null-matches-null query.
+  const whatsappNumber = msg.channelType === "whatsapp" && msg.fromNumberId
+    ? await db.whatsAppNumber.findUnique({ where: { phoneNumberId: msg.fromNumberId }, select: { id: true, transport: true } })
+    : null;
+
   // Persist + meter the outbound message (the web simulator also reads it
   // back) — skipped entirely when there's no conversationId, i.e. the
   // "can't serve this customer" fallback (see the type comment above): not
@@ -143,7 +155,7 @@ export async function deliver(msg: OutboundMessage): Promise<{ delivered: boolea
         meta: (msg.meta ?? undefined) as Prisma.InputJsonValue | undefined,
       },
     });
-    await meter(msg.tenantId, "message_out");
+    await meter(msg.tenantId, "message_out", 1, whatsappNumber?.transport);
     void dispatchWebhook(msg.tenantId, "message.sent", { conversationId: msg.conversationId, to: msg.to, text: msg.body }).catch(() => {});
   }
 
@@ -161,26 +173,21 @@ export async function deliver(msg: OutboundMessage): Promise<{ delivered: boolea
         return { delivered: false, transport: "whatsapp:disabled", error: "WhatsApp integration is disabled by an administrator" };
       }
 
-      // Unofficial-transport switcher, 2026-08-26 — a WhatsAppNumber can be
-      // paired via the unofficial (Baileys) route instead of the official
-      // Cloud API. Every WhatsAppNumber (Meta or unofficial) has a real,
-      // unique phoneNumberId — a Baileys-only number gets a synthetic
-      // "baileys:<id>" value at pairing time (see whatsapp-baileys.ts's
-      // connection-open handler) specifically so this lookup stays a plain
-      // unique match, never an ambiguous null-matches-null query. See
-      // src/lib/whatsapp-baileys.ts for the full transport.
-      if (msg.fromNumberId) {
-        const number = await db.whatsAppNumber.findUnique({
-          where: { phoneNumberId: msg.fromNumberId },
-          select: { id: true, transport: true },
-        });
-        if (number?.transport === "unofficial") {
-          const { sendBaileysMessage } = await import("./whatsapp-baileys");
-          const result = await sendBaileysMessage(number.id, msg.to, msg.body);
-          return result.delivered
-            ? { delivered: true, transport: "whatsapp:unofficial" }
-            : { delivered: false, transport: "whatsapp:unofficial", error: result.error };
+      if (whatsappNumber?.transport === "unofficial") {
+        // Platform kill switch — an admin disabling whatsapp_baileys at
+        // /admin/integrations genuinely stops real sends, not just hides the
+        // "Connect via alternative" button on the tenant dashboard (see
+        // whatsappUnofficialTransportEnabled() in whatsapp-baileys.ts, used
+        // there for the UI side of this same gate).
+        const unofficialIntegration = await db.integration.findUnique({ where: { key: "whatsapp_baileys" }, select: { enabled: true } });
+        if (unofficialIntegration && !unofficialIntegration.enabled) {
+          return { delivered: false, transport: "whatsapp:unofficial:disabled", error: "The unofficial WhatsApp transport is disabled by an administrator" };
         }
+        const { sendBaileysMessage } = await import("./whatsapp-baileys");
+        const result = await sendBaileysMessage(whatsappNumber.id, msg.to, msg.body);
+        return result.delivered
+          ? { delivered: true, transport: "whatsapp:unofficial" }
+          : { delivered: false, transport: "whatsapp:unofficial", error: result.error };
       }
 
       const token = await resolveToken(msg.fromNumberId);
