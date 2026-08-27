@@ -286,6 +286,25 @@ if (tp.slug && tp.phone && tp.name && tp.admissionId) {
   }
 }
 
+// Diagnostic only, 2026-08-27 — live-verifying P2Less's own tenant FAQs
+// against what the assistant actually does today. A real webchat test asking
+// "can you read images and listen to voice notes? what about replying with
+// voice?" got back "we don't do voice outputs — the assistant communicates
+// purely through text across every channel" — flatly wrong (voice-note
+// replies and image vision both shipped and were live-verified earlier this
+// same week, items 23/26 in GAP-REGISTER-2026-08-24.md). Logging the real
+// current FAQ content here (never queryable directly — this SQLite volume
+// has no remote connection string, same reason every other one-off prod data
+// fix in this file goes through a boot step) so the exact stale entry can be
+// identified and corrected precisely, not guessed at. Remove this block once
+// the FAQ content has actually been read from a deploy log.
+{
+  const p2less = await db.tenant.findFirst({ where: { name: "P2Less" }, select: { faqs: true } });
+  if (p2less) {
+    console.log("[prod-start] P2Less tenant faqs (diagnostic):", JSON.stringify(p2less.faqs));
+  }
+}
+
 // One-time cleanup, 2026-08-26 — repeated "Connect via alternative" clicks
 // (each one unconditionally creates a new WhatsAppNumber row, no "resume the
 // existing attempt" logic) left a pile of dangling unofficial-transport rows
