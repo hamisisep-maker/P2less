@@ -1,0 +1,690 @@
+<title>P2Less Abuser's Field Manual</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+@page { size: A4; margin: 20mm 16mm 22mm; }
+* { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; background: #FBFAF7; color: #1B1F1C; font-family: "IBM Plex Sans", system-ui, sans-serif; font-size: 10.3pt; line-height: 1.55; }
+.mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+h1, h2, h3, h4 { font-family: "Newsreader", Georgia, serif; text-wrap: balance; margin: 0; color: #12211D; }
+code { font-family: "IBM Plex Mono", monospace; background: #EEECE5; padding: 0.05em 0.4em; border-radius: 3px; font-size: 0.92em; color: #0A4E43; }
+a { color: #0F6B5C; }
+.cover { min-height: 240mm; display: flex; flex-direction: column; justify-content: center; page-break-after: always; }
+.cover-eyebrow { font-family: "IBM Plex Mono", monospace; font-size: 10pt; letter-spacing: 0.14em; text-transform: uppercase; color: #B23A3A; display: flex; align-items: center; gap: 10px; }
+.cover-eyebrow::before { content: ""; width: 26px; height: 1px; background: #B23A3A; }
+.cover h1 { font-size: 36pt; font-weight: 500; margin-top: 14px; }
+.cover .dek { max-width: 66ch; color: #4A4F49; font-size: 11.5pt; margin-top: 16px; }
+.cover .meta-row { display: flex; gap: 22px; margin-top: 26px; font-family: "IBM Plex Mono", monospace; font-size: 8.6pt; color: #83887F; flex-wrap: wrap; }
+.cover .meta-row b { color: #1B1F1C; display: block; font-size: 9.6pt; margin-bottom: 2px; }
+.cover .warn-box { margin-top: 22px; border: 1px solid #DCD9CF; border-left: 3px solid #B23A3A; background: #FFFFFF; border-radius: 8px; padding: 12px 16px; max-width: 70ch; }
+.cover .warn-box .label { font-family: "IBM Plex Mono", monospace; font-size: 8.6pt; letter-spacing: 0.08em; text-transform: uppercase; color: #B23A3A; font-weight: 600; }
+.cover .warn-box p { margin: 5px 0 0; color: #4A4F49; font-size: 9.5pt; }
+.page2 { page-break-before: always; }
+.toc-h { font-family: "IBM Plex Mono", monospace; font-size: 9pt; letter-spacing: 0.1em; text-transform: uppercase; color: #83887F; margin-bottom: 8px; }
+.toc ol { margin: 0 0 20px; padding-left: 20px; color: #4A4F49; font-size: 9.3pt; columns: 2; column-gap: 28px; }
+.toc li { margin-bottom: 5px; break-inside: avoid; }
+table.covmap { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 8.8pt; }
+table.covmap th { text-align: left; font-family: "IBM Plex Mono", monospace; font-size: 7.8pt; text-transform: uppercase; letter-spacing: 0.05em; color: #83887F; padding: 5px 8px; border-bottom: 1px solid #DCD9CF; }
+table.covmap td { padding: 6px 8px; border-bottom: 1px solid #EEECE5; color: #1B1F1C; }
+table.covmap td.ch { color: #7A2929; font-family: "IBM Plex Mono", monospace; font-size: 8.2pt; }
+.chapter { page-break-before: always; }
+.chapter-eyebrow { font-family: "IBM Plex Mono", monospace; font-size: 9pt; letter-spacing: 0.12em; text-transform: uppercase; color: #83887F; }
+.chapter h2 { font-size: 20pt; font-weight: 500; margin-top: 6px; }
+.chapter .chapter-sub { color: #4A4F49; font-size: 10.2pt; margin-top: 6px; max-width: 72ch; }
+h3.step-group { font-size: 12.8pt; font-weight: 500; margin-top: 22px; padding-bottom: 6px; border-bottom: 1px solid #DCD9CF; color: #7A2929; }
+h4.sub { font-family: "IBM Plex Mono", monospace; font-size: 8.8pt; text-transform: uppercase; letter-spacing: 0.06em; color: #83887F; margin-top: 16px; margin-bottom: 4px; }
+ol.steps { list-style: none; counter-reset: step; margin: 12px 0 0; padding: 0; }
+ol.steps > li { counter-increment: step; position: relative; padding: 8px 0 8px 34px; margin-bottom: 2px; border-bottom: 1px solid #EEECE5; page-break-inside: avoid; font-size: 9.6pt; }
+ol.steps > li::before { content: counter(step); position: absolute; left: 0; top: 7px; width: 22px; height: 22px; border-radius: 50%; background: #F5E3E1; color: #7A2929; font-family: "IBM Plex Mono", monospace; font-size: 9.3pt; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+ol.steps > li b.click { color: #7A2929; }
+ol.steps > li .expect { display: block; margin-top: 4px; color: #4A4F49; font-size: 8.6pt; padding: 6px 10px; background: #F1F0EB; border-radius: 6px; border-left: 2px solid #7A2929; }
+ol.steps > li .expect b { color: #7A2929; }
+ol.steps > li .who { font-family: "IBM Plex Mono", monospace; font-size: 8.1pt; text-transform: uppercase; letter-spacing: 0.05em; color: #7A2929; font-weight: 700; }
+.field { font-family: "IBM Plex Mono", monospace; background: #fff; border: 1px solid #DCD9CF; border-radius: 4px; padding: 0 6px; font-size: 0.95em; }
+.check-box { border: 1px solid #DCD9CF; border-radius: 8px; padding: 11px 15px; margin-top: 14px; background: #FFFFFF; }
+.check-box .k { font-family: "IBM Plex Mono", monospace; font-size: 8.8pt; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; color: #7A2929; }
+.check-box ul { margin: 7px 0 0; padding-left: 18px; color: #4A4F49; font-size: 9.1pt; }
+.check-box ul li { margin-bottom: 4px; }
+.callout { border-radius: 8px; padding: 11px 15px; margin: 13px 0; font-size: 9.1pt; }
+.callout.info { background: #E1EDE9; color: #0A4E43; }
+.callout.warn { background: #F6ECD9; color: #7A5714; }
+.callout.crit { background: #F5E3E1; color: #7A2929; border: 1px dashed #B23A3A; }
+.callout .k { font-family: "IBM Plex Mono", monospace; font-size: 8.3pt; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; display: block; margin-bottom: 4px; }
+table.reflog { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 8.6pt; }
+table.reflog th { text-align: left; font-family: "IBM Plex Mono", monospace; font-size: 7.8pt; text-transform: uppercase; letter-spacing: 0.05em; color: #83887F; padding: 6px 8px; border-bottom: 1px solid #DCD9CF; }
+table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49; font-style: italic; }
+.footer-note { margin-top: 40px; font-size: 8.5pt; color: #83887F; text-align: center; }
+.badge-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.badge { font-family: "IBM Plex Mono", monospace; font-size: 7.8pt; padding: 3px 9px; border-radius: 999px; font-weight: 600; }
+.badge.risk { background: #F5E3E1; color: #7A2929; }
+.badge.dev { background: #E1EDE9; color: #0A4E43; }
+.badge.burp { background: #FBE8D0; color: #8A4B0F; }
+.badge.future { background: #E4E1F5; color: #4B3B8F; }
+.tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.tool-card { border: 1px solid #DCD9CF; border-radius: 8px; padding: 10px 12px; background: #FFFFFF; break-inside: avoid; }
+.tool-card .name { font-family: "IBM Plex Mono", monospace; font-size: 9.6pt; font-weight: 700; color: #12211D; }
+.tool-card .cat { display: inline-block; margin-left: 6px; font-family: "IBM Plex Mono", monospace; font-size: 7.2pt; text-transform: uppercase; letter-spacing: 0.05em; color: #83887F; }
+.tool-card .desc { font-size: 8.7pt; color: #4A4F49; margin-top: 4px; }
+.tool-card .use { font-size: 8.5pt; color: #7A2929; margin-top: 4px; }
+.tool-card .src { font-size: 7.8pt; color: #83887F; margin-top: 5px; font-family: "IBM Plex Mono", monospace; }
+</style>
+
+<div class="cover">
+  <div class="cover-eyebrow">Volume II of II — Complete Authorized Self-Pentest</div>
+  <h1>Abuser's Field Manual</h1>
+  <p class="dek">Tenant 5 never pays, and doesn't know P2Less at all &mdash; only its web address. This manual assumes exactly that little, and covers everything: every tool a real abuser reaches for, from the browser's own free panel up through Burp Suite; every manipulation of dates, money, plans, tiers, connectors, buttons, sign-up, and rate limits; mass account creation with a browser automation extension; getting an OTP code without ever touching the phone it was meant for; slipping extra values into the database through the same form that's supposed to only take a name and a phone number; and a forward-looking chapter for the day face verification ships.</p>
+  <div class="meta-row">
+    <div><b>Companion to</b>Five-Tenant Readiness Dossier</div>
+    <div><b>Covers</b>Phase 5, complete</div>
+    <div><b>Authorized by</b>Hamisi Onesmus, Hamzone Technologies</div>
+    <div><b>Run by</b>You and your team</div>
+  </div>
+  <div class="warn-box">
+    <div class="label">Authorization &amp; scope</div>
+    <p>This is a self-directed test of your own production system, by its own founder and team, against test accounts created for this purpose. Every technique here targets the P2Less application layer only. If any technique appears to reach outside that &mdash; the hosting platform, the network, another real customer &mdash; stop and note it rather than continuing.</p>
+  </div>
+</div>
+
+<div class="page2">
+  <div class="toc-h">In this manual</div>
+  <ol class="toc">
+    <li>Before you start</li>
+    <li>The abuser's toolbox — every tool, explained</li>
+    <li>Chrome DevTools, from zero</li>
+    <li>Burp Suite, from zero</li>
+    <li>The rest of the toolbox, from zero</li>
+    <li>Setting up Tenant 5</li>
+    <li>Vector 1 — never choose a plan</li>
+    <li>Vector 2 — a second account</li>
+    <li>Vector 3 — overload the trial</li>
+    <li>Vector 4 — fake or delay payment</li>
+    <li>Vector 5 — push functional limits</li>
+    <li>Vector 6 — probe for other tenants' data</li>
+    <li>Vector 7 — access from outside Kenya, undetected</li>
+    <li>Vector 8 — rate limits and brute force</li>
+    <li>Vector 9 — OTP without the phone, and slipping extra values into the database</li>
+    <li>Vector 10 — mass account creation with a browser extension</li>
+    <li>Real request tampering (5 techniques)</li>
+    <li>Suspended — trying to get back in</li>
+    <li>Re-enabling a disabled button or channel</li>
+    <li>Vector 11 — face verification (future feature, tested in advance)</li>
+    <li>Vector 12 — inflating your own message or AI balance</li>
+    <li>Result log</li>
+  </ol>
+
+  <div class="toc-h">Coverage map — every category you asked for, and where it's tested</div>
+  <table class="covmap">
+    <thead><tr><th>Requested category</th><th>Covered in</th></tr></thead>
+    <tbody>
+      <tr><td>Dates</td><td class="ch">Real request tampering, Technique 1</td></tr>
+      <tr><td>Money / payment amounts</td><td class="ch">Vector 4; Real request tampering, Technique 3</td></tr>
+      <tr><td>Plans / tiers</td><td class="ch">Vector 1, 2, 5; Real request tampering, Technique 2</td></tr>
+      <tr><td>Connectors / channels</td><td class="ch">Vector 3, 5; Re-enabling a disabled button or channel</td></tr>
+      <tr><td>Buttons disabled by the UI</td><td class="ch">Re-enabling a disabled button or channel</td></tr>
+      <tr><td>Login and sign-up abuse</td><td class="ch">Vector 2, 10; Suspended — trying to get back in</td></tr>
+      <tr><td>Rate limits</td><td class="ch">Vector 8</td></tr>
+      <tr><td>OTP / verification bypass</td><td class="ch">Vector 9</td></tr>
+      <tr><td>Inserting values into the database via a form</td><td class="ch">Vector 9, second half</td></tr>
+      <tr><td>Automation extensions for mass account creation</td><td class="ch">Vector 10</td></tr>
+      <tr><td>Face verification (future)</td><td class="ch">Vector 11</td></tr>
+      <tr><td>Geography / country restriction</td><td class="ch">Vector 7</td></tr>
+      <tr><td>Session, identity, and suspension</td><td class="ch">Real request tampering, Technique 4; Suspended chapter</td></tr>
+      <tr><td>Self-inflating a message/AI balance</td><td class="ch">Vector 12</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Before you start</div>
+  <h2>What you need, and nothing else</h2>
+  <p class="chapter-sub">A computer, one web address, and a few hours spread across sessions. Every tool named anywhere in this manual is free, and every install step is spelled out when it's first needed.</p>
+  <div class="check-box">
+    <div class="k">What you need</div>
+    <ul>
+      <li>A Windows, Mac, or Linux computer with an internet connection, and the Chrome browser.</li>
+      <li>The one address you'll need for almost everything: <code>https://p2less-app-production.up.railway.app</code></li>
+      <li>Nothing pre-installed. Every tool this manual uses is introduced, explained, and installed step by step exactly where it's first needed &mdash; you never need to go hunting for something the manual hasn't told you to get yet.</li>
+    </ul>
+  </div>
+  <div class="callout info">
+    <span class="k">What "abuse testing" actually means here</span>
+    You are going to behave exactly like a real person trying to get more out of P2Less than they paid for, see data they shouldn't, keep using a switched-off feature, or create accounts faster than a human normally could. Nothing here requires programming knowledge &mdash; every technique reduces to: open a panel, look at what's there, change one thing, watch what happens, write it down.
+  </div>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">The toolbox</div>
+  <h2>Every tool, explained before you touch one</h2>
+  <p class="chapter-sub">Real abusers don't use one tool &mdash; they reach for whichever one fits the moment. This is the complete list used anywhere in this manual, grouped by what each one is actually for, so you know why you're opening it before you open it. Deep, hands-on install-and-use instructions for each follow in the next three chapters; this page is the map.</p>
+
+  <h4 class="sub">Built into the browser — nothing to install</h4>
+  <div class="tool-grid">
+    <div class="tool-card"><span class="name">Chrome DevTools</span><span class="cat">Inspect + intercept</span><div class="desc">A panel built into Chrome itself (<code>F12</code>). Shows every request the page sends and lets you read and edit the page's own on-screen content.</div><div class="use">Used for: reading responses, editing cookies, editing and resending one request at a time, removing a disabled button's restriction.</div></div>
+    <div class="tool-card"><span class="name">Incognito window</span><span class="cat">Clean slate</span><div class="desc"><code>Ctrl+Shift+N</code>. A browser window with no saved cookies or history from your normal browsing.</div><div class="use">Used for: testing sign-up as a "fresh" visitor without your real session interfering.</div></div>
+  </div>
+
+  <h4 class="sub">Traffic interception &amp; editing</h4>
+  <div class="tool-grid">
+    <div class="tool-card"><span class="name">Burp Suite Community Edition</span><span class="cat">Proxy tool</span><div class="desc">A separate program that sits between your browser and the internet, showing and letting you edit every request before it leaves your machine.</div><div class="use">Used for: everything DevTools does, but built for doing it repeatedly and fast (Repeater), plus automated brute-forcing (Intruder).</div><div class="src">portswigger.net/burp/communitydownload</div></div>
+    <div class="tool-card"><span class="name">OWASP ZAP</span><span class="cat">Proxy tool</span><div class="desc">A free, fully open-source alternative to Burp, built by the OWASP security foundation. Works the same way &mdash; a local proxy that intercepts and lets you replay requests.</div><div class="use">Used for: a second opinion tool, useful if you want to cross-check a Burp finding with an entirely different program.</div><div class="src">zaproxy.org</div></div>
+  </div>
+
+  <h4 class="sub">Calling the server directly, no browser at all</h4>
+  <div class="tool-grid">
+    <div class="tool-card"><span class="name">Postman</span><span class="cat">API client</span><div class="desc">A desktop app for building and firing off web requests by hand, with a friendly form-style interface instead of raw text.</div><div class="use">Used for: replaying a captured request outside the browser entirely, useful once you already know exactly what a request looks like and just want to vary it quickly.</div><div class="src">postman.com/downloads</div></div>
+    <div class="tool-card"><span class="name">cURL</span><span class="cat">Command line</span><div class="desc">A tiny command-line program, already installed on most computers, that sends one web request per command you type.</div><div class="use">Used for: the fastest way to replay something you copied as "Copy as cURL" from DevTools or Burp.</div><div class="src">already on your machine — try typing <code>curl --version</code></div></div>
+  </div>
+
+  <h4 class="sub">Lightweight browser extensions</h4>
+  <div class="tool-grid">
+    <div class="tool-card"><span class="name">Cookie-Editor</span><span class="cat">Extension</span><div class="desc">A small Chrome extension giving a simple list-and-edit view of a site's cookies, quicker than DevTools' Application tab for a fast check.</div><div class="use">Used for: viewing and editing your session cookie in one click, no panel-hunting.</div><div class="src">Chrome Web Store, search "Cookie-Editor"</div></div>
+    <div class="tool-card"><span class="name">ModHeader</span><span class="cat">Extension</span><div class="desc">Adds, removes, or overrides request headers on every request your browser sends, automatically, without editing each one by hand.</div><div class="use">Used for: spoofing things like an apparent origin IP header, testing whether P2Less trusts a client-supplied location hint.</div><div class="src">Chrome Web Store, search "ModHeader"</div></div>
+    <div class="tool-card"><span class="name">User-Agent Switcher</span><span class="cat">Extension</span><div class="desc">Changes what your browser claims to be (Chrome on Windows, Safari on iPhone, etc.) without actually using a different browser or device.</div><div class="use">Used for: checking whether any restriction is (incorrectly) keyed off device/browser claims rather than real server-side checks.</div><div class="src">Chrome Web Store, search "User-Agent Switcher"</div></div>
+  </div>
+
+  <h4 class="sub">Automation — doing one thing many times, fast</h4>
+  <div class="tool-grid">
+    <div class="tool-card"><span class="name">Selenium IDE</span><span class="cat">Extension</span><div class="desc">A free, official browser extension that records your clicks and typing as a re-playable "macro," and can loop that macro over a list of different values &mdash; no coding required.</div><div class="use">Used for: the exact tool a real abuser installs to mass-create accounts &mdash; record one sign-up, then replay it dozens of times with a new email/phone each time.</div><div class="src">Chrome Web Store, search "Selenium IDE" (official, by SeleniumHQ)</div></div>
+  </div>
+
+  <h4 class="sub">Identity &amp; location masking</h4>
+  <div class="tool-grid">
+    <div class="tool-card"><span class="name">VPN app (e.g. ProtonVPN)</span><span class="cat">Network</span><div class="desc">Routes your internet connection through a server in another country, so sites see that server's location and IP address instead of your own.</div><div class="use">Used for: testing a Kenya-only restriction from outside Kenya.</div><div class="src">protonvpn.com/download</div></div>
+    <div class="tool-card"><span class="name">Temp-mail service</span><span class="cat">Website</span><div class="desc">A website that hands out a disposable, real, working email address good for a short time, with no sign-up of its own.</div><div class="use">Used for: mass account creation testing &mdash; a fresh, real inbox for every fake tenant without using your own email over and over.</div><div class="src">e.g. temp-mail.org — any similar site works</div></div>
+    <div class="tool-card"><span class="name">SMS-receive-online service</span><span class="cat">Website</span><div class="desc">A website offering shared, public phone numbers that anyone can view incoming SMS messages sent to &mdash; including a real OTP code, if a site sends one.</div><div class="use">Used for: testing whether P2Less's phone verification can be satisfied by a number the "owner" doesn't actually control (see Vector 9).</div><div class="src">e.g. receive-sms-online.info — any similar site works; note these numbers are public, anyone can read messages sent to them</div></div>
+  </div>
+
+  <h4 class="sub">Diagnostic / leak-check sites</h4>
+  <div class="tool-grid">
+    <div class="tool-card"><span class="name">ipinfo.io</span><span class="cat">Website</span><div class="desc">Shows the IP address and country your connection currently looks like from the outside.</div><div class="use">Used for: confirming a VPN actually changed your apparent location before you rely on it.</div></div>
+    <div class="tool-card"><span class="name">browserleaks.com/webrtc</span><span class="cat">Website</span><div class="desc">Checks whether your browser is leaking your real IP address through a side channel even while a VPN is active.</div><div class="use">Used for: figuring out why a VPN didn't fully mask you, if it didn't.</div></div>
+  </div>
+
+  <div class="callout warn">
+    <span class="k">Tools this manual deliberately does not walk through</span>
+    Real-world account farms sometimes use paid, third-party CAPTCHA-solving services to get past human-verification puzzles at scale. P2Less doesn't currently use CAPTCHA anywhere in the flows this manual tests, so there's nothing to test against yet, and this manual won't provide a how-to for a service whose only real use is enabling fraud elsewhere. If P2Less ever adds CAPTCHA to sign-up, that's worth a dedicated follow-up test on its own, scoped the same careful way as everything else here.
+  </div>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Tool deep dive, part 1</div>
+  <h2>Chrome DevTools, from zero</h2>
+  <p class="chapter-sub">DevTools is a panel built into Chrome itself &mdash; nothing to download. It lets you see every request the page sends, and edit the page's own content on screen. This chapter explains every part of it you'll use later, before you need it.</p>
+
+  <h3 class="step-group">Opening it</h3>
+  <ol class="steps">
+    <li><span class="who">You — DevTools</span><br>With Chrome open on any page, press <code>F12</code> on your keyboard. (If nothing happens, right-click anywhere on the page and choose <b class="click">Inspect</b> from the menu.)<span class="expect"><b>Expect:</b> a panel opens, docked to the side or bottom, with tabs across the top: <b>Elements</b>, <b>Console</b>, <b>Sources</b>, <b>Network</b>, <b>Application</b>, and more.</span></li>
+    <li><span class="who">You — DevTools</span><br>If it feels cramped, click the three dots (<code>⋮</code>) in DevTools' own top-right corner and pick a dock position that gives you more room, or pop it into its own window.</li>
+  </ol>
+
+  <h3 class="step-group">The Elements tab — editing what's on screen</h3>
+  <ol class="steps">
+    <li><span class="who">You — DevTools</span><br>Click <b class="click">Elements</b>. You'll see the page's raw structure &mdash; a tree of tags like <code>&lt;button&gt;</code>, <code>&lt;div&gt;</code>, <code>&lt;input&gt;</code>, matching what's on screen.</li>
+    <li><span class="who">You — DevTools</span><br>Click the element picker icon (top-left of the panel, a cursor pointing at a square; shortcut <code>Ctrl+Shift+C</code>), then click anything on the actual page.<span class="expect"><b>Expect:</b> the Elements tree jumps to and highlights the exact tag for what you clicked.</span></li>
+    <li><span class="who">You — DevTools</span><br>With a tag selected, double-click any attribute (a <code>word="value"</code> pair, or a bare word like <code>disabled</code>) to edit it, or right-click the tag &rarr; <b class="click">Edit as HTML</b> to rewrite it freely. Press <code>Enter</code> or click away to apply.<span class="expect"><b>Expect:</b> the change is temporary and visible only to you &mdash; reloading undoes it. It never touches the real server.</span></li>
+  </ol>
+
+  <h3 class="step-group">The Network tab — watching what the page sends</h3>
+  <ol class="steps">
+    <li><span class="who">You — DevTools</span><br>Click <b class="click">Network</b>. Tick <b class="click">Preserve log</b> near the top &mdash; without it, the list clears on every navigation.</li>
+    <li><span class="who">You — DevTools</span><br>Click around P2Less normally.<span class="expect"><b>Expect:</b> every action adds rows &mdash; each one a request your browser sent and the reply it got.</span></li>
+    <li><span class="who">You — DevTools</span><br>Columns: <b>Name</b>, <b>Status</b> (the reply code &mdash; see the cheat sheet below), <b>Type</b>, <b>Size</b>, <b>Time</b>.</li>
+    <li><span class="who">You — DevTools</span><br>Click a row.<span class="expect"><b>Expect:</b> a detail panel with <b>Headers</b> (method, URL, your session cookie), <b>Payload</b>/<b>Request</b> (what you sent), <b>Response</b> (what came back, often readable text).</span></li>
+    <li><span class="who">You — DevTools</span><br>Right-click a row &rarr; <b class="click">Edit and Resend</b>.<span class="expect"><b>Expect:</b> the whole request opens as editable plain text. Change anything, click <b class="click">Send</b> at the bottom &mdash; the result appears as a new row in the list, exactly as if triggered from the real page.</span></li>
+  </ol>
+
+  <h3 class="step-group">The Application tab — cookies and stored session data</h3>
+  <ol class="steps">
+    <li><span class="who">You — DevTools</span><br>Click <b class="click">Application</b> (labeled <b>Storage</b> if the panel is narrow &mdash; click the <code>»</code> at the end of the tab row if you don't see it).</li>
+    <li><span class="who">You — DevTools</span><br>Expand <b>Cookies</b> in the left list, click the one entry underneath it.<span class="expect"><b>Expect:</b> a table of every cookie stored for the site, including your login session (named something with "session" or similar).</span></li>
+    <li><span class="who">You — DevTools</span><br>Double-click a cookie's Value to edit it, or right-click a row &rarr; <b class="click">Delete</b> to remove it. Both apply the moment you click away or reload.</li>
+  </ol>
+
+  <h3 class="step-group">How to tell "it worked" from "it was blocked" — keep coming back to this</h3>
+  <div class="check-box">
+    <div class="k">Reading the Status column (Network tab, Burp, ZAP, Postman — same everywhere)</div>
+    <ul>
+      <li><code>200</code>/<code>201</code>/<code>204</code> &mdash; succeeded. If this is a step that should have been refused, that's a real finding.</li>
+      <li><code>302</code>/<code>307</code> &mdash; "go look somewhere else." Open <b>Headers</b> and check the <code>Location</code> value; a redirect to <code>/login</code> after an action usually means you were treated as not authenticated.</li>
+      <li><code>400</code> &mdash; rejected as malformed. Usually your edit broke the format &mdash; keep the structure intact and try again.</li>
+      <li><code>401</code> &mdash; not logged in / session rejected. Exactly what you want after tampering with a cookie.</li>
+      <li><code>403</code> &mdash; logged in, but not allowed. Exactly what you want after trying another tenant's data or a restricted action.</li>
+      <li><code>404</code> &mdash; nothing at that address/id at all. A good, safe outcome when probing another tenant's id.</li>
+      <li><code>429</code> &mdash; "too much, slow down." A rate limit &mdash; central to Vector 8.</li>
+      <li><code>500</code>/<code>502</code>/<code>503</code> &mdash; the server broke handling your request. Always worth reporting, even though it's a different kind of bug.</li>
+    </ul>
+  </div>
+  <div class="check-box">
+    <div class="k">Reading the Response tab itself</div>
+    <ul>
+      <li>A genuine block usually says something specific and human ("Your account is suspended," "This plan does not include this channel"). A vague or success-shaped response is the sign something didn't actually get checked.</li>
+      <li>If the Response looks like a whole web page (<code>&lt;!DOCTYPE html&gt;</code>) rather than a short message, you were likely redirected rather than genuinely refused &mdash; check the Status code to confirm.</li>
+      <li>Always cross-check against what actually changed on screen. A <code>200</code> and a page still showing the old, correct state is good. A <code>200</code> and a page now showing something it shouldn't is the bug.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Tool deep dive, part 2</div>
+  <h2>Burp Suite, from zero</h2>
+  <p class="chapter-sub">Burp does the same core thing as DevTools' Network tab &mdash; shows every request, lets you edit and resend &mdash; but is built for doing that fast and repeatedly, and adds a dedicated brute-force tool DevTools doesn't have.</p>
+
+  <h4 class="sub">Step A — Install it</h4>
+  <ol class="steps">
+    <li><span class="who">You — Burp Suite</span><br>Go to <code>portswigger.net/burp/communitydownload</code> &mdash; the official publisher. Only ever download Burp from here.</li>
+    <li><span class="who">You — Burp Suite</span><br>Choose your operating system, download, and run the installer with default options &mdash; Next, Next, Install, Finish.</li>
+  </ol>
+
+  <h4 class="sub">Step B — Launch it and start a project</h4>
+  <ol class="steps">
+    <li><span class="who">You — Burp Suite</span><br>Open Burp Suite. Accept the terms, then choose <b class="click">Temporary project</b> &rarr; <b class="click">Next</b> &rarr; <b class="click">Use Burp defaults</b> &rarr; <b class="click">Start Burp</b>.<span class="expect"><b>Expect:</b> the main window opens with tabs: Dashboard, Target, Proxy, Intruder, Repeater, and more.</span></li>
+  </ol>
+
+  <h4 class="sub">Step C — Open Burp's built-in browser (the easy path)</h4>
+  <div class="callout info"><span class="k">Why this path</span>Burp can be pointed at ordinary Chrome via manual proxy settings and a certificate install, but that's extra setup with more to get wrong. Burp ships its own already-wired-in browser window &mdash; use that.</div>
+  <ol class="steps">
+    <li><span class="who">You — Burp Suite</span><br>Click <b class="click">Proxy</b> &rarr; <b class="click">Intercept</b>, then click <b class="click">Open Browser</b>.<span class="expect"><b>Expect:</b> a separate browser window opens. Everything inside it is automatically captured by Burp.</span></li>
+    <li><span class="who">You — Burp Suite</span><br>In that window, go to P2Less and sign in as Tenant 5.</li>
+  </ol>
+
+  <h4 class="sub">Step D — Intercept and edit a live request</h4>
+  <ol class="steps">
+    <li><span class="who">You — Burp Suite</span><br>On <b class="click">Proxy &rarr; Intercept</b>, make sure it reads <b class="click">Intercept is on</b>.</li>
+    <li><span class="who">You — Burp Suite</span><br>Click any submit button on P2Less in the Burp browser.<span class="expect"><b>Expect:</b> the page freezes. Switch to the main Burp window &mdash; the request sits paused, raw and editable: a method and URL on the first line, headers below, and a body under a blank line if present.</span></li>
+    <li><span class="who">You — Burp Suite</span><br>Edit anything, then click <b class="click">Forward</b> to send it on, or <b class="click">Drop</b> to cancel it.</li>
+    <li><span class="who">You — Burp Suite</span><br>Turn <b class="click">Intercept</b> back <b class="click">off</b> when you're done editing one at a time, or every click will pause and wait.</li>
+  </ol>
+
+  <h4 class="sub">Step E — Repeater, for editing the same request many times</h4>
+  <ol class="steps">
+    <li><span class="who">You — Burp Suite</span><br>Click <b class="click">Proxy &rarr; HTTP history</b> for a full list of everything Burp has seen.</li>
+    <li><span class="who">You — Burp Suite</span><br>Right-click the request you want &rarr; <b class="click">Send to Repeater</b>, then click the <b class="click">Repeater</b> tab.<span class="expect"><b>Expect:</b> the request, editable on the left; the response appears on the right after you click <b class="click">Send</b>.</span></li>
+    <li><span class="who">You — Burp Suite</span><br>Edit, send, read the response, edit again &mdash; as many times as you like, without re-triggering it from the real page each time.</li>
+  </ol>
+
+  <h4 class="sub">Step F — Intruder, for brute-forcing and rate-limit testing</h4>
+  <div class="callout info"><span class="k">What Intruder is for</span>Repeater sends one edited request at a time, by hand. Intruder automates that: give it a request with one value marked as a "payload position," give it a list of values to try there, and it fires the request once per value, collecting every response. It's the right tool whenever "try many things quickly" is the actual test &mdash; brute-forcing an OTP code, or hammering a login form to see when it starts refusing you. Community Edition's Intruder is deliberately throttled (slower than the paid version) &mdash; that's fine for this manual; it still proves the point.</div>
+  <ol class="steps">
+    <li><span class="who">You — Burp Suite</span><br>In <b class="click">Proxy &rarr; HTTP history</b>, right-click the request you want to automate &rarr; <b class="click">Send to Intruder</b>, then click the <b class="click">Intruder</b> tab.</li>
+    <li><span class="who">You — Burp Suite</span><br>On the <b class="click">Positions</b> sub-tab, you'll see the request with <code>§</code> marks Burp guessed around likely values. Click <b class="click">Clear §</b> to remove all of them, then highlight just the one value you actually want to vary (e.g. a 6-digit code) and click <b class="click">Add §</b> so only that one is marked.</li>
+    <li><span class="who">You — Burp Suite</span><br>On the <b class="click">Payloads</b> sub-tab, choose payload type <b class="click">Numbers</b>, set <b>From</b> <code>0</code>, <b>To</b> <code>999999</code>, <b>Step</b> <code>1</code>, and a <b>Min integer digits</b> of <code>6</code> so every value is padded to six digits.</li>
+    <li><span class="who">You — Burp Suite</span><br>Click <b class="click">Start attack</b> (top-right).<span class="expect"><b>Expect:</b> a results window listing every attempt with its own Status column and response length. Sort by <b>Status</b> or <b>Length</b> &mdash; a successful guess almost always stands out as the one row with a different status code or a noticeably different response length than all the others.</span></li>
+  </ol>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Tool deep dive, part 3</div>
+  <h2>The rest of the toolbox, from zero</h2>
+  <p class="chapter-sub">Quick install-and-use notes for everything else on the map. None of these are required for every vector &mdash; each later chapter tells you exactly which tool to reach for.</p>
+
+  <h4 class="sub">OWASP ZAP</h4>
+  <ol class="steps">
+    <li><span class="who">You — ZAP</span><br>Go to <code>zaproxy.org</code>, download the installer for your OS, run it with default options.</li>
+    <li><span class="who">You — ZAP</span><br>Open ZAP, choose <b class="click">I do not want to persist this session</b> for a quick one-off test.</li>
+    <li><span class="who">You — ZAP</span><br>Click the compass-icon button in the toolbar labeled <b class="click">Manual Explore</b>, type P2Less's address, click <b class="click">Launch Browser</b> &mdash; ZAP opens its own Firefox window, already wired in, exactly like Burp's built-in browser.</li>
+    <li><span class="who">You — ZAP</span><br>Everything you click in that window appears in ZAP's <b class="click">History</b> tab at the bottom; right-click any entry &rarr; <b class="click">Open/Resend with Request Editor</b> to edit and refire it, the ZAP equivalent of Burp's Repeater.</li>
+  </ol>
+
+  <h4 class="sub">Postman</h4>
+  <ol class="steps">
+    <li><span class="who">You — Postman</span><br>Go to <code>postman.com/downloads</code>, install, open the app.</li>
+    <li><span class="who">You — Postman</span><br>Back in DevTools' Network tab, right-click a captured request &rarr; <b class="click">Copy &rarr; Copy as cURL</b>.</li>
+    <li><span class="who">You — Postman</span><br>In Postman, click <b class="click">Import</b> (top-left), paste the copied text, click <b class="click">Import</b> again.<span class="expect"><b>Expect:</b> the request appears fully rebuilt in Postman's editor &mdash; method, URL, headers, body all filled in and independently editable, with a <b class="click">Send</b> button and a response panel below it.</span></li>
+  </ol>
+
+  <h4 class="sub">cURL</h4>
+  <ol class="steps">
+    <li><span class="who">You — cURL</span><br>Open a terminal (on Windows, PowerShell). Copy a request from DevTools as described above.</li>
+    <li><span class="who">You — cURL</span><br>Paste the whole copied command into the terminal and press <code>Enter</code>.<span class="expect"><b>Expect:</b> the raw response text prints directly in the terminal &mdash; useful for quick, scriptable repeats without any app window at all.</span></li>
+  </ol>
+
+  <h4 class="sub">Cookie-Editor, ModHeader, User-Agent Switcher</h4>
+  <ol class="steps">
+    <li><span class="who">You — Extensions</span><br>Go to the Chrome Web Store (<code>chrome.google.com/webstore</code>), search each by name, click <b class="click">Add to Chrome</b> for each you want.</li>
+    <li><span class="who">You — Extensions</span><br>Each adds a small icon next to Chrome's address bar. Click it on any P2Less page to open its own simple panel &mdash; Cookie-Editor shows a list of cookies with edit/delete buttons per row; ModHeader shows a list of header rules you can toggle on and off; User-Agent Switcher shows a dropdown of device/browser identities to pick from.</li>
+  </ol>
+
+  <h4 class="sub">Selenium IDE</h4>
+  <p style="font-size:9pt;color:#4A4F49;">Full walkthrough with a real recorded macro is in Vector 10 &mdash; installed there, where it's actually used.</p>
+
+  <h4 class="sub">VPN, temp-mail, SMS-receive-online, and the leak-check sites</h4>
+  <p style="font-size:9pt;color:#4A4F49;">Full walkthroughs are in Vector 7 (VPN) and Vector 9/10 (temp-mail, SMS-receive-online) &mdash; installed and used right where they're needed rather than in advance.</p>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Setup</div>
+  <h2>Setting up Tenant 5</h2>
+  <p class="chapter-sub">An entirely ordinary signup — the abuse starts after.</p>
+  <ol class="steps">
+    <li><span class="who">You</span><br>Open Chrome and go to <code>p2less-app-production.up.railway.app/onboard</code>.<span class="expect"><b>Expect:</b> a page titled "Your conversational platform, ready in minutes."</span></li>
+    <li><span class="who">You</span><br>Fill <b>Organization name</b> with <code>Tenant 5 &mdash; Abuse Test</code>, <b>Your phone number</b> with something like <code>+254700111005</code>, and your name/email, then click <b class="click">Create my workspace</b>.</li>
+    <li><span class="who">You</span><br>The next screen shows an orange "Demo only" box with a real 6-digit code already printed on it. Type that exact code into the <b>6-digit code</b> field and click <b class="click">Verify and create workspace</b>.<span class="expect"><b>Expect:</b> you land signed in, on the dashboard, with a 7-day trial &mdash; identical to every honest tenant so far.</span></li>
+    <li><span class="who">You — DevTools</span><br>Press <code>F12</code>, click <b class="click">Network</b>, tick <b class="click">Preserve log</b>. Leave this open for the whole rest of this manual.</li>
+  </ol>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Vector 1</div>
+  <h2>Never choose a plan</h2>
+  <ol class="steps">
+    <li><span class="who">You</span><br>Do nothing &mdash; leave Tenant 5 on the trial exactly as created.</li>
+    <li><span class="who">You</span><br>Connect a channel and send messages right up to the trial's 200-message / 100-AI-request ceiling, then keep going past it.<span class="expect"><b>Expect:</b> once either ceiling is hit, further sends are refused with a clear, specific reason &mdash; never a silent failure and never an uncapped continuation.</span></li>
+  </ol>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Vector 2</div>
+  <h2>Create a second account to dodge the trial</h2>
+  <ol class="steps">
+    <li><span class="who">You</span><br>Once Tenant 5's trial is exhausted or expired, open an Incognito window (<code>Ctrl+Shift+N</code>) and go to <code>/onboard</code> again.</li>
+    <li><span class="who">You</span><br>Sign up as <code>Tenant 5b</code>, reusing the exact same phone number and/or email as Tenant 5.<span class="expect"><b>Expect:</b> the system recognizes the reused identity and blocks, merges, or flags the signup &mdash; never silently hands out a second, fully fresh trial.</span></li>
+    <li><span class="who">You</span><br>If that's blocked, try once more with a genuinely different phone and email but the same organization name and browser.<span class="expect"><b>Note:</b> a real abuser has unlimited phone numbers. If nothing catches this harder case, log it as a real, open gap rather than a test failure. Vector 10 pushes this same idea to real scale.</span></li>
+  </ol>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Vector 3</div>
+  <h2>Overload the free tier</h2>
+  <ol class="steps">
+    <li><span class="who">You</span><br>Connect every channel type to this one trial tenant &mdash; WhatsApp, Telegram, widget &mdash; and send bursts on all of them at once.<span class="expect"><b>Expect:</b> combined usage across every channel counts against one single trial ceiling, not a separate free allowance per channel.</span></li>
+  </ol>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Vector 4</div>
+  <h2>Fake or delay payment</h2>
+  <ol class="steps">
+    <li><span class="who">You</span><br>Open the upgrade modal, start an M-Pesa STK payment, then close the tab before it resolves either way.<span class="expect"><b>Expect:</b> reopening billing later shows the true current state &mdash; never stuck "processing," never a plan change that didn't actually happen.</span></li>
+    <li><span class="who">You</span><br>Start a payment, and while it's "waiting," open a second tab and try to trigger the same invoice's payment a second time.<span class="expect"><b>Expect:</b> no double-charge, no way to end up with two successful payments against one invoice.</span></li>
+  </ol>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Vector 5</div>
+  <h2>Push functional limits</h2>
+  <ol class="steps">
+    <li><span class="who">You</span><br>Try adding far more team members, channels, or connectors than Tenant 5's plan should allow.<span class="expect"><b>Expect:</b> a clear "your plan allows up to N" message, never a silent allowance or a server error.</span></li>
+  </ol>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Vector 6</div>
+  <h2>Probe for other tenants' data</h2>
+  <ol class="steps">
+    <li><span class="who">You</span><br>While logged in as Tenant 5, edit the browser's address bar to a dashboard URL containing another tenant's id (copy one from Tenant 1's session while testing it, paste it in here).<span class="expect"><b>Expect:</b> a clean "not found" or "forbidden" &mdash; never another tenant's real data rendering on screen. This is the single most serious class of bug this whole manual exists to catch.</span></li>
+  </ol>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Vector 7</div>
+  <h2>Access from outside Kenya, undetected</h2>
+  <p class="chapter-sub">If P2Less ever restricts access to Kenya only, this chapter tests whether that restriction holds against an ordinary person with a VPN &mdash; and, if it catches them, whether they can escape it.</p>
+
+  <h4 class="sub">Step A — Establish your real, unmasked baseline first</h4>
+  <ol class="steps">
+    <li><span class="who">You</span><br>Go to <code>ipinfo.io</code>. Write down the <b>Country</b> it reports right now &mdash; your honest starting point.</li>
+    <li><span class="who">You</span><br>Without changing anything, try signing up as <code>Tenant 7a &mdash; Outside Kenya, unmasked</code>.<span class="expect"><b>Expect (if a restriction exists):</b> a specific, honest message. <b>Expect (if none exists yet):</b> signup succeeds &mdash; note this plainly; it means the restriction isn't enforced yet, which is itself the finding.</span></li>
+  </ol>
+
+  <h4 class="sub">Step B — Install a VPN</h4>
+  <ol class="steps">
+    <li><span class="who">You — VPN</span><br>Go to <code>protonvpn.com/download</code>, download, install with default options.</li>
+    <li><span class="who">You — VPN</span><br>Open the app, <b class="click">Create Account</b> with a throwaway email, choose the <b>Free</b> plan, log in.</li>
+  </ol>
+
+  <h4 class="sub">Step C — Connect and verify the mask actually worked</h4>
+  <ol class="steps">
+    <li><span class="who">You — VPN</span><br>Pick Kenya if listed; otherwise the closest available African country, noted honestly.</li>
+    <li><span class="who">You</span><br>Reload <code>ipinfo.io</code>.<span class="expect"><b>Expect:</b> Country now shows the VPN's country and a new IP. If it still shows your real country, the VPN isn't actually connected.</span></li>
+  </ol>
+
+  <h4 class="sub">Step D — Mask the signals a VPN doesn't cover</h4>
+  <ol class="steps">
+    <li><span class="who">You — Windows</span><br>Start &rarr; type <code>Date and time settings</code> &rarr; turn off <b>Set time zone automatically</b> &rarr; set it to <b class="click">(UTC+03:00) Nairobi</b>.</li>
+    <li><span class="who">You — Chrome</span><br><code>chrome://settings/languages</code> &rarr; <b class="click">Add languages</b> &rarr; add <b>English (Kenya)</b>, move it to the top.</li>
+    <li><span class="who">You</span><br>Optional: use a real Kenyan (+254) phone number if you legitimately have access to one, for the extra realism.</li>
+  </ol>
+
+  <h4 class="sub">Step E — Try again, masked</h4>
+  <ol class="steps">
+    <li><span class="who">You</span><br>Fresh Incognito window, VPN still connected, sign up as <code>Tenant 7b &mdash; Outside Kenya, masked</code>.<span class="expect"><b>Expect &amp; how to read it:</b> use the status-code cheat sheet. A clean sign-up with everything masked means the restriction can be defeated with a free VPN and a clock change. A block that still appears is a stronger, layered restriction worth documenting as such.</span></li>
+  </ol>
+
+  <h4 class="sub">Step F — If it catches you anyway: try to escape it</h4>
+  <ol class="steps">
+    <li><span class="who">You</span><br>Go to <code>browserleaks.com/webrtc</code> while connected to the VPN.<span class="expect"><b>Expect to find:</b> some browsers leak your real IP through WebRTC even with a VPN active. If this page shows your real IP alongside your VPN one, that leak may be exactly what exposed you.</span></li>
+    <li><span class="who">You — Chrome</span><br>If a leak shows up, install a "WebRTC leak block" extension, enable it, reload the leak-check page to confirm it's fixed.</li>
+    <li><span class="who">You — VPN</span><br>Disconnect and reconnect to a different server. Recheck <code>ipinfo.io</code> for a new IP.</li>
+    <li><span class="who">You — DevTools</span><br><b class="click">Application &rarr; Storage &rarr; Clear site data</b> for P2Less's address.</li>
+    <li><span class="who">You</span><br>Retry as <code>Tenant 7c</code>, fresh IP, cleared browser.<span class="expect"><b>Expect:</b> if this works after Steps 1&ndash;4 but the first masked attempt didn't, the restriction is IP/fingerprint-based and rotates around fairly easily. If still blocked, it's tied to something sturdier &mdash; also a good outcome, and worth documenting as such.</span></li>
+    <li><span class="who">You</span><br>If an already-signed-up account gets flagged mid-use instead, run the whole <b>Suspended — trying to get back in</b> chapter against it rather than duplicating those steps here.</li>
+  </ol>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Vector 8</div>
+  <h2>Rate limits and brute force</h2>
+  <p class="chapter-sub">Every place P2Less accepts an attempt &mdash; a login, an OTP code, a message send &mdash; should eventually say "slow down" if hit fast enough. This is where you find out if it actually does.</p>
+
+  <ol class="steps">
+    <li><span class="who">You — Burp Suite</span><br>Set up Burp exactly as in the Burp deep-dive chapter, with its browser open and Tenant 5 logged out, sitting on the login page.</li>
+    <li><span class="who">You — Burp Suite</span><br>Submit one deliberately wrong login attempt (right email, wrong password) so Burp captures the request. Find it in <b class="click">Proxy &rarr; HTTP history</b>, right-click &rarr; <b class="click">Send to Intruder</b>.</li>
+    <li><span class="who">You — Burp Suite</span><br>On <b class="click">Positions</b>, clear the automatic marks and mark only the password field. On <b class="click">Payloads</b>, load a short list of 20&ndash;30 plausible guesses (or Burp's built-in <b>Simple list</b> payload type with a handful typed in by hand). Click <b class="click">Start attack</b>.<span class="expect"><b>Expect:</b> after some number of attempts &mdash; ideally in the single digits or low tens &mdash; responses should start coming back with a <code>429</code> status, or the response text should start saying something like "too many attempts," rather than silently continuing to check each guess forever.</span></li>
+    <li><span class="who">You — Burp Suite</span><br>Repeat the same idea against the <b>OTP verification</b> request from sign-up (see Vector 9 for the exact request to target) and against sending a message through a connected channel &mdash; rapid-fire the same send request many times in a row via Repeater's <b class="click">Send</b> button clicked repeatedly, or Intruder with a list of near-identical message bodies.<span class="expect"><b>Expect:</b> the same pattern &mdash; a real ceiling that kicks in, not indefinite silent acceptance.</span></li>
+  </ol>
+
+  <div class="check-box">
+    <div class="k">What "good" looks like here</div>
+    <ul>
+      <li>A rate limit exists and triggers within a reasonably small number of attempts, not thousands.</li>
+      <li>The limit is enforced by the server (still triggers no matter which tool sends the requests), not just by the UI disabling a button after one click.</li>
+      <li>The limit's response is honest (a real <code>429</code> or a clear message), not a silent drop that just looks the same as success.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Vector 9</div>
+  <h2>OTP without the phone, and slipping extra values into the database</h2>
+  <p class="chapter-sub">Two related tests: can verification be satisfied without ever actually receiving the code, and can the same form be used to write values into the database that a signup form was never meant to control?</p>
+
+  <h3 class="step-group">Part 1 — getting past OTP without receiving it</h3>
+  <ol class="steps">
+    <li><span class="who">You</span><br>Go to <code>receive-sms-online.info</code> (or any similar site) and pick any listed public number. These numbers are genuinely public &mdash; anyone can view messages sent to them, which is exactly the property being tested here.</li>
+    <li><span class="who">You</span><br>Start a P2Less signup using that public number as <b>Your phone number</b>.<span class="expect"><b>Expect:</b> P2Less's real SMS provider is not yet configured in production, so today the OTP is shown directly on screen in the "Demo only" box rather than actually sent anywhere &mdash; meaning this specific technique can't be meaningfully tested until real SMS delivery is live. Note this plainly as "not yet testable" rather than skipping it silently; re-run this exact step the day real SMS sending ships, checking whether the code sent to a public number can be read by anyone who visits that number's public inbox page.</span></li>
+    <li><span class="who">You — DevTools</span><br>Regardless of the above, check for a leak in the meantime: with the Network tab open and Preserve log on, go through signup up to the OTP screen, then look through every captured request's <b>Response</b> tab so far &mdash; not just what's shown on screen.<span class="expect"><b>Expect:</b> the real code should never appear inside a network response that reaches the browser before or independently of the clearly-labeled demo box. If you find it in a response the demo box didn't already show you, that's a real leak &mdash; the code is reaching the client through a channel that isn't honestly labeled as insecure.</span></li>
+    <li><span class="who">You — Burp Suite</span><br>Use Intruder against the OTP verification request itself (see the Intruder walkthrough in the Burp deep-dive chapter) &mdash; Numbers payload, <code>000000</code> to <code>999999</code>, 6 digits &mdash; and start the attack.<span class="expect"><b>Expect:</b> Vector 8's rate limit should kick in long before this brute force could realistically succeed. If it doesn't, a 6-digit code is only 1,000,000 possibilities &mdash; genuinely guessable by brute force in a realistic amount of time without one.</span></li>
+    <li><span class="who">You</span><br>Try skipping the OTP screen entirely: after starting a signup but before entering any code, edit the browser's address bar directly to whatever URL the dashboard normally lives at.<span class="expect"><b>Expect:</b> refused / redirected back to verification &mdash; the account must not be usable until the code is actually confirmed server-side.</span></li>
+  </ol>
+
+  <h3 class="step-group">Part 2 — slipping extra values into the database (mass assignment)</h3>
+  <div class="callout info">
+    <span class="k">The idea in plain terms</span>
+    A signup form is only supposed to let you set a few things: your name, phone, email, organization. Behind the scenes, the server writes a new row into a database table that also has other columns you were never shown &mdash; things like which plan you're on, whether your phone is verified, how many days your trial has left, or your account's role. A well-built form only ever writes the fields it showed you. A poorly-built one sometimes blindly writes whatever fields it's given &mdash; so if you can sneak extra fields into the request, you might be able to set values you were never supposed to touch.
+  </div>
+  <ol class="steps">
+    <li><span class="who">You — DevTools</span><br>Go through signup normally, find the actual sign-up submission request in the Network tab, right-click &rarr; <b class="click">Edit and Resend</b>.</li>
+    <li><span class="who">You — DevTools</span><br>Look at the request body. Remember P2Less's forms are Next.js Server Actions, so the body is a plain ordered list of argument values rather than named JSON fields &mdash; you're looking for a place to <em>add</em> to that list, not to find a field by name.</li>
+    <li><span class="who">You — Burp Suite</span><br>This is easier with more room to work: send the same request to Repeater instead. Try appending extra values onto the end of the argument list &mdash; for instance, an extra <code>true</code> (testing for something like "already verified"), an extra number far above any real plan's limit (testing for something like a pre-set balance or message allowance), or a recognizable plan name/id copied from a plan you haven't paid for (testing for something like being assigned straight onto a paid plan). Send it.<span class="expect"><b>Expect:</b> the extra values are silently ignored and have zero effect on the resulting account &mdash; it should come out exactly as if you'd sent the normal, unmodified request. If your account instead comes out already verified, on a paid plan, or with an inflated balance you never bought, that's a serious, reportable mass-assignment bug.</span></li>
+    <li><span class="who">You</span><br>Whatever the outcome, check the resulting account for every field you tried to influence &mdash; the trial dates, the plan, the verification status, the message/AI balances &mdash; not just the one thing that prompted the test.</li>
+  </ol>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Vector 10</div>
+  <h2>Mass account creation with a browser extension</h2>
+  <p class="chapter-sub">A real abuser doesn't sign up once by hand &mdash; they install a free browser extension, record the sign-up flow one time, and let it replay itself dozens of times unattended. This is that exact tool, used the exact way.</p>
+
+  <ol class="steps">
+    <li><span class="who">You — Selenium IDE</span><br>Go to the Chrome Web Store, search <b>Selenium IDE</b> (official, published by SeleniumHQ), click <b class="click">Add to Chrome</b>.</li>
+    <li><span class="who">You — Selenium IDE</span><br>Click its new toolbar icon. Choose <b class="click">Create a new project</b>, name it <code>P2Less mass signup test</code>.</li>
+    <li><span class="who">You — Selenium IDE</span><br>Click the red <b class="click">Record</b> button. A new browser window opens, already tracked by the extension.</li>
+    <li><span class="who">You — Selenium IDE</span><br>In that window, go through one entire P2Less signup by hand &mdash; organization name, phone, name, email, submit, enter the on-screen demo OTP, verify.<span class="expect"><b>Expect:</b> every click and every typed character appears as a new row in Selenium IDE's command list as you go.</span></li>
+    <li><span class="who">You — Selenium IDE</span><br>Click <b class="click">Stop recording</b> when you land on the dashboard.</li>
+    <li><span class="who">You — Selenium IDE</span><br>In the recorded command list, find the row that typed your organization name, and the row that typed your phone number. Change each one's value to a placeholder like <code>${orgName}</code> and <code>${phone}</code>.</li>
+    <li><span class="who">You — Selenium IDE</span><br>Click the project's menu &rarr; <b class="click">Data-driven testing</b> (or the equivalent "Run with data" option in your version) and load a small CSV file with a few rows, each providing a different <code>orgName</code> and <code>phone</code> value &mdash; e.g. <code>Tenant Bulk 1,+254700200001</code>, <code>Tenant Bulk 2,+254700200002</code>, and a handful more.</li>
+    <li><span class="who">You — Selenium IDE</span><br>Click <b class="click">Run</b> (or <b class="click">Run all</b>) to replay the recorded signup once per row in your data file, unattended.<span class="expect"><b>Expect &amp; what to check afterward:</b> the real question isn't whether the macro runs &mdash; it's what P2Less does about it. Check: did every single one succeed and get a full 7-day trial with no friction at all (a real gap &mdash; this exact tool is free and takes ten minutes to set up)? Did the system slow down, block, or flag the pattern after some number of rapid, near-identical signups from the same browser/IP? Is there any rate limit at all on the signup endpoint itself, separate from the OTP one tested in Vector 9?</span></li>
+  </ol>
+
+  <div class="callout warn">
+    <span class="k">Why this one matters as much as it does</span>
+    Every technique elsewhere in this manual takes a person, sitting there, clicking. This is the one that takes a person ten minutes to set up once and then walks away. If nothing catches a dozen near-identical signups fired back to back with no delay, an actual abuser could do this at a scale far beyond anything one afternoon of manual testing could ever show you.
+  </div>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Real request tampering</div>
+  <h2>Now open the toolbox for real</h2>
+  <p class="chapter-sub">The highest-value section for money, plans, and identity specifically. Each technique is shown both the plain-DevTools way and the Burp way.</p>
+
+  <div class="callout info">
+    <span class="k">A real detail about how P2Less's forms work</span>
+    P2Less is built on Next.js, and most of its buttons (upgrade, top-up, connect, save) use a <b>Server Action</b> &mdash; the browser sends a plain <code>POST</code> to the SAME page address you're already on, carrying a <code>Next-Action</code> header, with the actual arguments packed into the body as a plain, readable, ordered piece of text rather than named JSON fields like <code>{"planId": "..."}</code>. Don't look for a field literally called <code>planId</code>. Look for anything in that body text you recognize &mdash; a number you just typed, the exact plan name you clicked, an amount matching what was on screen &mdash; and edit that value in place.
+  </div>
+
+  <h3 class="step-group">1. Tamper with dates</h3>
+  <ol class="steps">
+    <li><span class="who">You — DevTools</span><br>Open the upgrade modal on Tenant 5. Find the request that fires when it opens (a <code>POST</code> to the current billing URL with a <code>Next-Action</code> header). Right-click &rarr; <b class="click">Edit and Resend</b>.</li>
+    <li><span class="who">You — DevTools</span><br>Find anything resembling a date/timestamp in the body, change it far into the past or future, keep the surrounding punctuation identical, click <b class="click">Send</b>.<span class="expect"><b>Expect:</b> the response still reflects the server's own real clock, never the date you supplied.</span></li>
+  </ol>
+
+  <h3 class="step-group">2. Tamper with plan or price mid-flight</h3>
+  <ol class="steps">
+    <li><span class="who">You — Burp Suite</span><br>Start an upgrade to the most expensive plan. Find that request in <b class="click">Proxy &rarr; HTTP history</b>, send to Repeater.</li>
+    <li><span class="who">You — Burp Suite</span><br>Swap the plan's identifying text for a cheaper plan's, or lower any number matching a price you saw on screen. Send.<span class="expect"><b>Expect:</b> the server recomputes the true price itself from its own database using only the plan id it trusts &mdash; the invoice should come back unchanged and correct, or be rejected outright.</span></li>
+  </ol>
+
+  <h3 class="step-group">3. Tamper with the payment amount</h3>
+  <ol class="steps">
+    <li><span class="who">You — DevTools</span><br>Trigger a payment submission. Find it, <b class="click">Edit and Resend</b>, lower the amount field below what's actually owed.<span class="expect"><b>Expect:</b> rejected outright, or the invoice correctly stays "partially paid" &mdash; the plan must never upgrade on a client-invented amount.</span></li>
+  </ol>
+
+  <h3 class="step-group">4. Tamper with identity and session</h3>
+  <ol class="steps">
+    <li><span class="who">You — DevTools</span><br>While logged into Tenant 5, edit a single character of the session cookie (<b class="click">Application &rarr; Cookies</b>), reload.<span class="expect"><b>Expect:</b> logged out or refused.</span></li>
+    <li><span class="who">You — Burp Suite</span><br>Log in as Tenant 1 in ordinary Chrome, Tenant 5 in the Burp browser. Find a Tenant 5 request whose body contains a tenant/subscription id, send to Repeater, substitute Tenant 1's id while keeping Tenant 5's session cookie. Send.<span class="expect"><b>Expect:</b> refused. The server must check the logged-in session actually owns the id inside the body, not just trust whatever id the client sends &mdash; the same class of gap as a real, historical bug already found and fixed once in this codebase. If this succeeds, it's the single highest-severity finding this manual could produce.</span></li>
+  </ol>
+
+  <h3 class="step-group">5. Tamper generally — observe everything</h3>
+  <ol class="steps">
+    <li><span class="who">You — Burp Suite</span><br>Spend 20 minutes clicking through Tenant 5's dashboard with Burp recording. Send five or six varied requests to Repeater, try small edits to any numeric field, id, or boolean you find. No single expected outcome &mdash; the goal is coverage.</li>
+  </ol>
+
+  <div class="callout crit">
+    <span class="k">If any of the five actually work</span>
+    Stop. Save the exact request (Burp: <b>Copy as curl command</b>; DevTools: <b>Copy &rarr; Copy as cURL</b>) and the exact unexpected response. Treat it as a real, urgent bug. Don't keep probing the same hole &mdash; report it.
+  </div>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">The hardest test</div>
+  <h2>Suspended — trying to get back in</h2>
+  <p class="chapter-sub">P2Less's admins can suspend a tenant they've spotted abusing the system. This chapter tries every realistic way a suspended user might claw their way back.</p>
+
+  <ol class="steps">
+    <li class="tech"><span class="who">Tech — Admin console</span><br>A teammate, logged in as admin, suspends Tenant 5 from <code>/admin/tenants</code>.<span class="expect"><b>Expect:</b> the status visibly changes in the admin list, with a real, audited log entry recording who and when.</span></li>
+    <li><span class="who">You</span><br>In a tab where you were already logged in before the suspension, click any dashboard link without reloading first.<span class="expect"><b>Expect:</b> blocked immediately, with a clear message &mdash; testing whether suspension cuts you off mid-session, not just at the next login.</span></li>
+    <li><span class="who">You</span><br>Try a full fresh login.<span class="expect"><b>Expect:</b> a specific, honest "account suspended" message, not a generic wrong-password error.</span></li>
+    <li><span class="who">You — DevTools</span><br>If you saved Tenant 5's old session cookie value beforehand, add it manually to a fresh Incognito window's Cookies for P2Less's address.<span class="expect"><b>Expect:</b> refused too &mdash; suspension should invalidate the session itself, not just block the login form.</span></li>
+    <li><span class="who">You</span><br>Try <b class="click">Forgot password</b> with Tenant 5's real email, all the way through.<span class="expect"><b>Expect:</b> either the reset is blocked, or it succeeds but landing in the dashboard is still blocked the same way &mdash; a reset must never be a side door.</span></li>
+    <li><span class="who">You — Burp Suite</span><br>Replay an old captured Tenant 5 request from Repeater's history.<span class="expect"><b>Expect:</b> refused with the same suspended-account error everywhere &mdash; the real test of whether suspension is checked on every action, not just at login.</span></li>
+    <li><span class="who">You</span><br>Sign up fresh, reusing Tenant 5's phone but a new email (or vice versa).<span class="expect"><b>Expect:</b> the suspension follows the identity, not just the account record.</span></li>
+    <li><span class="who">You</span><br>If any "Contact support" or appeal link exists on the blocked screens, use it and note exactly what happens.</li>
+  </ol>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">The other hardest test</div>
+  <h2>Re-enabling a disabled button or channel</h2>
+  <p class="chapter-sub">Sometimes P2Less turns a control off in the UI. This chapter tries to turn it back on from outside the rules.</p>
+
+  <ol class="steps">
+    <li><span class="who">You</span><br>Find a greyed-out control on Tenant 5's dashboard &mdash; a channel above this plan's allowance, or an action blocked by a usage limit.</li>
+    <li><span class="who">You — DevTools</span><br>Element picker (<code>Ctrl+Shift+C</code>), click the control.<span class="expect"><b>Expect:</b> Elements jumps to its exact tag.</span></li>
+    <li><span class="who">You — DevTools</span><br>Look for a bare <code>disabled</code> attribute, <code>aria-disabled="true"</code>, or a class like <code>opacity-50</code>/<code>pointer-events-none</code>/<code>cursor-not-allowed</code>.</li>
+    <li><span class="who">You — DevTools</span><br>If it's a bare <code>disabled</code> attribute: double-click it, delete it, press <code>Enter</code>.<span class="expect"><b>Expect:</b> visually clickable again immediately.</span></li>
+    <li><span class="who">You — DevTools</span><br>If it's class-based: in the <b>Styles</b> panel, find the rule setting opacity/pointer-events, strike it out.</li>
+    <li><span class="who">You — DevTools</span><br>Click the control, watch the Network tab.<span class="expect"><b>Two outcomes, both meaningful:</b> (a) a real request fires, and either succeeds (a genuine bug) or is rejected server-side (correct &mdash; the UI disable was only a hint); or (b) nothing happens &mdash; no new row at all.</span></li>
+    <li><span class="who">You — DevTools / Burp Suite</span><br>If (b): find a request from a moment an <i>allowed</i> tenant performed the equivalent action (e.g. Tenant 1 connecting a plan-included channel). <b class="click">Edit and Resend</b> or send to Repeater, keep Tenant 5's session cookie, swap in the restricted feature. Send.<span class="expect"><b>Expect:</b> refused by the server. If it succeeds, the restriction only ever existed as a greyed-out button &mdash; a serious, reportable gap, since anyone with DevTools open (free, built into every browser) could find this the same way you just did.</span></li>
+  </ol>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Vector 11 — forward-looking</div>
+  <h2>Face verification, tested before it ships</h2>
+  <span class="badge future">Not built yet — keep this chapter ready</span>
+  <p class="chapter-sub" style="margin-top:10px;">P2Less doesn't have face verification today. This chapter exists so the day it does, this manual doesn't need to be rewritten &mdash; just re-run against the real feature the same way everything else above already was.</p>
+
+  <div class="callout warn"><span class="k">Why this matters as much as OTP does</span>Face verification exists to prove a real, specific, live person is present. Every known real-world attack against it targets exactly one of those three words: is it really a face (not a photo), is it really that person (not someone else's), and is it really happening now (not a recording).</div>
+
+  <h3 class="step-group">When the day comes, test these in order</h3>
+  <ol class="steps">
+    <li><span class="who">You</span><br><b>The photo test.</b> Print a clear, well-lit photo of a face (yours or a colleague's, with consent), hold it up to the camera during verification instead of your live face.<span class="expect"><b>Expect:</b> rejected &mdash; a system with real liveness detection should notice the complete absence of natural micro-movement, blinking, and depth.</span></li>
+    <li><span class="who">You</span><br><b>The screen-replay test.</b> Play a recorded video of a face on a second phone or tablet, held up to the camera in place of a live feed.<span class="expect"><b>Expect:</b> rejected &mdash; screen glare, refresh-rate flicker, and the video's fixed loop should all be things real liveness detection is built to catch.</span></li>
+    <li><span class="who">You</span><br><b>The wrong-person test.</b> With one person's account already verified, have a genuinely different person attempt to pass that same account's ongoing/repeat verification.<span class="expect"><b>Expect:</b> rejected &mdash; whatever reference image or embedding was captured at enrollment must actually be compared against, not just "a face was present."</span></li>
+    <li><span class="who">You</span><br><b>The liveness-prompt-replay test.</b> If verification asks for an action (blink, turn your head, smile), record that exact sequence once, then try replaying the recording for a second, separate verification attempt.<span class="expect"><b>Expect:</b> rejected, or the system asks for a different, unpredictable sequence each time specifically so an old recording can't be replayed.</span></li>
+    <li><span class="who">You — DevTools/Burp Suite</span><br><b>The in-flight swap.</b> Let the camera capture happen normally, but intercept the actual upload request afterward (Edit-and-Resend, or Burp Repeater) and swap the submitted image file for a different one before it reaches the server.<span class="expect"><b>Expect:</b> rejected, or ideally structurally impossible &mdash; the strongest designs never let a raw image file travel client-side at all between capture and server-side check.</span></li>
+    <li><span class="who">You</span><br><b>The storage question.</b> Once verification is live, ask directly (of the system, and of whoever built it): where is the captured face data stored, is it encrypted, who can access it, and can a tenant request it be deleted? Biometric data deserves a straight answer to all four before this feature ships to real customers, not just after.</li>
+  </ol>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Vector 12</div>
+  <h2>Inflating your own message or AI balance</h2>
+  <p class="chapter-sub">Distinct from paying too little (Vector 4 and Real request tampering Technique 3): this chapter tests whether the balance number itself &mdash; the thing that actually gates whether a message can send &mdash; can be pushed up without a real payment behind it at all, or credited more than once for a single real payment.</p>
+
+  <div class="callout info">
+    <span class="k">Why this is its own vector, not just "money tampering" again</span>
+    P2Less's real design keeps the balance as the single source of truth for whether sends are allowed, and only ever increases it inside the one function that also verifies a matching real payment exists. This chapter exists to test that specific design decision directly &mdash; not the price shown on an invoice, but the number that actually gets written to the account.
+  </div>
+
+  <h4 class="sub">Step A — Push the top-up number past what the UI allows</h4>
+  <ol class="steps">
+    <li><span class="who">You</span><br>Open the upgrade modal, move the extra-messages slider to its maximum, and note the highest number the slider itself will let you pick.</li>
+    <li><span class="who">You — Burp Suite</span><br>Start the top-up at that maximum, find the resulting invoice-creation request in Burp's history, send it to Repeater.</li>
+    <li><span class="who">You — Burp Suite</span><br>In the body, find the number matching the slider value you picked and replace it with something far larger &mdash; e.g. <code>999999999</code>. Send.<span class="expect"><b>Expect:</b> the server clamps or rejects the out-of-range number rather than trusting it &mdash; the resulting invoice amount and any credited balance should never reflect a number the real UI would never have allowed you to pick.</span></li>
+  </ol>
+
+  <h4 class="sub">Step B — Try to credit the balance with no real payment at all</h4>
+  <ol class="steps">
+    <li><span class="who">You — Burp Suite</span><br>Start a top-up or upgrade so the invoice exists, but stop right before submitting any payment method.</li>
+    <li><span class="who">You — Burp Suite</span><br>In Burp's history, look for whatever request fires once a payment is confirmed (in demo mode, this is the request right after clicking <b class="click">Pay</b> that produces "Recorded (demo mode)&hellip; Your upgrade is now active"). Send that specific request to Repeater.</li>
+    <li><span class="who">You — Burp Suite</span><br>Send it again, now, directly &mdash; without ever having gone through the actual payment step for this particular invoice.<span class="expect"><b>Expect:</b> rejected, or it has no effect, because the real underlying check is a genuine sum of confirmed <code>Payment</code> records against what's actually owed &mdash; a status flip alone, without a matching payment record behind it, should never be enough to move the balance.</span></li>
+  </ol>
+
+  <h4 class="sub">Step C — Try to get credited twice for one real payment</h4>
+  <ol class="steps">
+    <li><span class="who">You</span><br>Complete one real (or demo-mode) top-up all the way through to "Payment confirmed," and note the resulting balance shown on the dashboard.</li>
+    <li><span class="who">You — Burp Suite</span><br>Find that same confirmation request in Burp's history &mdash; the one that just succeeded &mdash; and send it to Repeater. Click <b class="click">Send</b> two or three more times in a row.</li>
+    <li><span class="who">You</span><br>Reload the real dashboard and check the balance again.<span class="expect"><b>Expect:</b> unchanged from Step C.1's number &mdash; a real compare-and-swap on the invoice's own status should mean the second and third replay find the invoice already settled and do nothing further, no matter how many times the confirmation is resent.</span></li>
+  </ol>
+
+  <h4 class="sub">Step D — Two tabs at once (a race condition)</h4>
+  <ol class="steps">
+    <li><span class="who">You</span><br>Open the same pending invoice's payment step in two separate browser tabs, side by side.</li>
+    <li><span class="who">You</span><br>Trigger the confirmation in both tabs as close together in time as you can manage &mdash; two clicks, back to back, as fast as possible.<span class="expect"><b>Expect:</b> only one credit is ever applied, not two &mdash; if the two nearly-simultaneous requests both slipped past a status check before either had written its result, that's a real race-condition bug worth reporting, distinct from the simpler sequential-replay test in Step C.</span></li>
+  </ol>
+
+  <h4 class="sub">Step E — A quick sanity check: the display isn't the truth</h4>
+  <ol class="steps">
+    <li><span class="who">You — DevTools</span><br>On the dashboard, use the element picker to find the on-screen text showing your current balance, and directly edit its text via <b class="click">Edit as HTML</b> to a large number.<span class="expect"><b>Expect:</b> this changes nothing real &mdash; it's purely cosmetic in your own browser. Reload the page and it reverts to the true, server-held number. This step exists only to confirm, plainly, that the display is not where the real balance lives &mdash; the meaningful tests are B, C, and D above, not this one.</span></li>
+  </ol>
+
+  <div class="check-box">
+    <div class="k">What "good" looks like across this whole vector</div>
+    <ul>
+      <li>The number the server actually enforces sends against is never influenced by anything the client merely displays or requests &mdash; only by a genuinely verified payment.</li>
+      <li>One real payment can never be replayed into two credits.</li>
+      <li>Two near-simultaneous confirmations for the same invoice never both succeed.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Result log</div>
+  <h2>Record every attempt here</h2>
+  <table class="reflog">
+    <thead><tr><th>Vector</th><th>What you tried</th><th>Tool used</th><th>Expected</th><th>Actual</th><th>Held / Broke</th></tr></thead>
+    <tbody><tr><td colspan="6">Not started &mdash; nothing logged yet.</td></tr></tbody>
+  </table>
+  <p class="footer-note">Five-Tenant Readiness Dossier &middot; Volume II of II &middot; P2Less, 2026-08-27</p>
+</div>

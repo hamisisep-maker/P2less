@@ -1,0 +1,387 @@
+<title>P2Less Test Execution Guide</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+@page { size: A4; margin: 20mm 16mm 22mm; }
+* { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; background: #FBFAF7; color: #1B1F1C; font-family: "IBM Plex Sans", system-ui, sans-serif; font-size: 10.3pt; line-height: 1.55; }
+.mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+h1, h2, h3, h4 { font-family: "Newsreader", Georgia, serif; text-wrap: balance; margin: 0; color: #12211D; }
+code { font-family: "IBM Plex Mono", monospace; background: #EEECE5; padding: 0.05em 0.4em; border-radius: 3px; font-size: 0.92em; color: #0A4E43; }
+a { color: #0F6B5C; }
+.cover { min-height: 240mm; display: flex; flex-direction: column; justify-content: center; page-break-after: always; }
+.cover-eyebrow { font-family: "IBM Plex Mono", monospace; font-size: 10pt; letter-spacing: 0.14em; text-transform: uppercase; color: #0F6B5C; display: flex; align-items: center; gap: 10px; }
+.cover-eyebrow::before { content: ""; width: 26px; height: 1px; background: #0F6B5C; }
+.cover h1 { font-size: 36pt; font-weight: 500; margin-top: 14px; }
+.cover .dek { max-width: 66ch; color: #4A4F49; font-size: 11.5pt; margin-top: 16px; }
+.cover .meta-row { display: flex; gap: 22px; margin-top: 26px; font-family: "IBM Plex Mono", monospace; font-size: 8.6pt; color: #83887F; flex-wrap: wrap; }
+.cover .meta-row b { color: #1B1F1C; display: block; font-size: 9.6pt; margin-bottom: 2px; }
+.cover .warn-box { margin-top: 22px; border: 1px solid #DCD9CF; border-left: 3px solid #B23A3A; background: #FFFFFF; border-radius: 8px; padding: 12px 16px; max-width: 70ch; }
+.cover .warn-box .label { font-family: "IBM Plex Mono", monospace; font-size: 8.6pt; letter-spacing: 0.08em; text-transform: uppercase; color: #B23A3A; font-weight: 600; }
+.cover .warn-box p { margin: 5px 0 0; color: #4A4F49; font-size: 9.5pt; }
+.page2 { page-break-before: always; }
+.toc-h { font-family: "IBM Plex Mono", monospace; font-size: 9pt; letter-spacing: 0.1em; text-transform: uppercase; color: #83887F; margin-bottom: 8px; }
+.toc ol { margin: 0 0 20px; padding-left: 20px; color: #4A4F49; font-size: 9.3pt; columns: 2; column-gap: 28px; }
+.toc li { margin-bottom: 5px; break-inside: avoid; }
+table.covmap { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 8.8pt; }
+table.covmap th { text-align: left; font-family: "IBM Plex Mono", monospace; font-size: 7.8pt; text-transform: uppercase; letter-spacing: 0.05em; color: #83887F; padding: 5px 8px; border-bottom: 1px solid #DCD9CF; }
+table.covmap td { padding: 6px 8px; border-bottom: 1px solid #EEECE5; color: #1B1F1C; }
+table.covmap td.ch { color: #0A4E43; font-family: "IBM Plex Mono", monospace; font-size: 8.2pt; }
+.chapter { page-break-before: always; }
+.chapter-eyebrow { font-family: "IBM Plex Mono", monospace; font-size: 9pt; letter-spacing: 0.12em; text-transform: uppercase; color: #83887F; }
+.chapter h2 { font-size: 20pt; font-weight: 500; margin-top: 6px; }
+.chapter .chapter-sub { color: #4A4F49; font-size: 10.2pt; margin-top: 6px; max-width: 72ch; }
+h3.step-group { font-size: 12.8pt; font-weight: 500; margin-top: 22px; padding-bottom: 6px; border-bottom: 1px solid #DCD9CF; color: #0A4E43; }
+h4.sub { font-family: "IBM Plex Mono", monospace; font-size: 8.8pt; text-transform: uppercase; letter-spacing: 0.06em; color: #83887F; margin-top: 16px; margin-bottom: 4px; }
+ol.steps { list-style: none; counter-reset: step; margin: 12px 0 0; padding: 0; }
+ol.steps > li { counter-increment: step; position: relative; padding: 8px 0 8px 34px; margin-bottom: 2px; border-bottom: 1px solid #EEECE5; page-break-inside: avoid; font-size: 9.6pt; }
+ol.steps > li::before { content: counter(step); position: absolute; left: 0; top: 7px; width: 22px; height: 22px; border-radius: 50%; background: #E1EDE9; color: #0A4E43; font-family: "IBM Plex Mono", monospace; font-size: 9.3pt; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+ol.steps > li b.click { color: #0A4E43; }
+ol.steps > li .expect { display: block; margin-top: 4px; color: #4A4F49; font-size: 8.6pt; padding: 6px 10px; background: #F1F0EB; border-radius: 6px; border-left: 2px solid #0F6B5C; }
+ol.steps > li .expect b { color: #0A4E43; }
+ol.steps > li.tech { background: #F6F0E4; border-radius: 8px; padding-left: 34px; }
+ol.steps > li.tech::before { background: #F6ECD9; color: #A9721A; content: "⚙"; font-size: 11pt; }
+ol.steps > li.tech .who { font-family: "IBM Plex Mono", monospace; font-size: 8.1pt; text-transform: uppercase; letter-spacing: 0.05em; color: #A9721A; font-weight: 700; }
+ol.steps > li.you .who { font-family: "IBM Plex Mono", monospace; font-size: 8.1pt; text-transform: uppercase; letter-spacing: 0.05em; color: #0F6B5C; font-weight: 700; }
+.field { font-family: "IBM Plex Mono", monospace; background: #fff; border: 1px solid #DCD9CF; border-radius: 4px; padding: 0 6px; font-size: 0.95em; }
+.check-box { border: 1px solid #DCD9CF; border-radius: 8px; padding: 11px 15px; margin-top: 14px; background: #FFFFFF; }
+.check-box .k { font-family: "IBM Plex Mono", monospace; font-size: 8.8pt; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; color: #0F6B5C; }
+.check-box ul { margin: 7px 0 0; padding-left: 18px; color: #4A4F49; font-size: 9.1pt; }
+.check-box ul li { margin-bottom: 4px; }
+.callout { border-radius: 8px; padding: 11px 15px; margin: 13px 0; font-size: 9.1pt; }
+.callout.info { background: #E1EDE9; color: #0A4E43; }
+.callout.warn { background: #F6ECD9; color: #7A5714; }
+.callout.crit { background: #F5E3E1; color: #7A2929; border: 1px dashed #B23A3A; }
+.callout .k { font-family: "IBM Plex Mono", monospace; font-size: 8.3pt; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; display: block; margin-bottom: 4px; }
+table.reflog { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 8.6pt; }
+table.reflog th { text-align: left; font-family: "IBM Plex Mono", monospace; font-size: 7.8pt; text-transform: uppercase; letter-spacing: 0.05em; color: #83887F; padding: 6px 8px; border-bottom: 1px solid #DCD9CF; }
+table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49; font-style: italic; }
+.footer-note { margin-top: 40px; font-size: 8.5pt; color: #83887F; text-align: center; }
+.badge-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.badge { font-family: "IBM Plex Mono", monospace; font-size: 7.8pt; padding: 3px 9px; border-radius: 999px; font-weight: 600; }
+.badge.you { background: #E1EDE9; color: #0A4E43; }
+.badge.tech { background: #F6ECD9; color: #A9721A; }
+.tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.tool-card { border: 1px solid #DCD9CF; border-radius: 8px; padding: 10px 12px; background: #FFFFFF; break-inside: avoid; }
+.tool-card .name { font-family: "IBM Plex Mono", monospace; font-size: 9.6pt; font-weight: 700; color: #12211D; }
+.tool-card .cat { display: inline-block; margin-left: 6px; font-family: "IBM Plex Mono", monospace; font-size: 7.2pt; text-transform: uppercase; letter-spacing: 0.05em; color: #83887F; }
+.tool-card .desc { font-size: 8.7pt; color: #4A4F49; margin-top: 4px; }
+.tool-card .use { font-size: 8.5pt; color: #0A4E43; margin-top: 4px; }
+.tool-card .src { font-size: 7.8pt; color: #83887F; margin-top: 5px; font-family: "IBM Plex Mono", monospace; }
+</style>
+
+<div class="cover">
+  <div class="cover-eyebrow">Volume I of II — Complete Test Execution Guide</div>
+  <h1>The Four Tenants</h1>
+  <p class="dek">A literal, click-by-click walkthrough of every real action for Tenants 1&ndash;4 &mdash; from opening a browser at the sign-up page through three simulated months of paid use. Every tool used is named and explained before it's needed, every step says exactly what to click and what to type, and every step says exactly how to tell it worked from how to tell it didn't.</p>
+  <div class="meta-row">
+    <div><b>Companion to</b>Five-Tenant Readiness Dossier</div>
+    <div><b>Covers</b>Phases 1&ndash;4, complete</div>
+    <div><b>Written</b>2026-08-27</div>
+  </div>
+  <div class="warn-box">
+    <div class="label">How to read this guide</div>
+    <p>Each numbered step is tagged <span class="badge you" style="margin:0 4px;">YOU — click this yourself</span> or <span class="badge tech" style="margin:0 4px;">TECH — engineer sets this up</span>, and names the exact tool it uses. A few real-world situations &mdash; a partial M-Pesa payment, a payment that never confirms, three months of history &mdash; can't be produced by clicking buttons in real time, so those are staged directly against the database by the engineer, with the exact tool and exact values spelled out at each step.</p>
+  </div>
+</div>
+
+<div class="page2">
+  <div class="toc-h">In this guide</div>
+  <ol class="toc">
+    <li>Before you start</li>
+    <li>The tools used in this guide</li>
+    <li>Chrome DevTools, from zero</li>
+    <li>The admin console, from zero</li>
+    <li>Prisma Studio, from zero</li>
+    <li>Tenant 1 — WhatsApp Only → Starter</li>
+    <li>Tenant 2 — Messenger Only → Professional</li>
+    <li>Tenant 3 — Telegram Only → Business</li>
+    <li>Tenant 4 — Widget Only → Enterprise</li>
+    <li>Payment edge cases</li>
+    <li>Three simulated months</li>
+    <li>Result log</li>
+  </ol>
+
+  <div class="toc-h">Coverage map</div>
+  <table class="covmap">
+    <thead><tr><th>What's being verified</th><th>Covered in</th></tr></thead>
+    <tbody>
+      <tr><td>Sign-up, OTP verification, trial creation</td><td class="ch">Tenants 1–4, "Sign up" step group</td></tr>
+      <tr><td>Every channel type connected at least once</td><td class="ch">Tenants 1–4, "Connect" step groups (WhatsApp, Messenger, Telegram, Widget)</td></tr>
+      <tr><td>Every paid tier reached at least once</td><td class="ch">Tenants 1–4, "Upgrade" step groups (Starter, Professional, Business, Enterprise)</td></tr>
+      <tr><td>Full payment, partial payment, delayed settlement, failed payment</td><td class="ch">Payment edge cases</td></tr>
+      <tr><td>Usage exhausting a real cap, and resetting on schedule</td><td class="ch">Three simulated months</td></tr>
+      <tr><td>Dashboard correctness, per tenant</td><td class="ch">Every "Verify before moving on" box</td></tr>
+      <tr><td>Admin-side correctness, per tenant</td><td class="ch">Every "Verify before moving on" box; Three simulated months</td></tr>
+      <tr><td>Profit margin and money reconciliation</td><td class="ch">Three simulated months</td></tr>
+      <tr><td>Audit trail completeness</td><td class="ch">Three simulated months</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Before you start</div>
+  <h2>Ground rules</h2>
+  <p class="chapter-sub">Read once, applies to every tenant below.</p>
+
+  <div class="check-box">
+    <div class="k">What you'll need</div>
+    <ul>
+      <li>A browser (any modern one), pointed at <code>https://p2less-app-production.up.railway.app</code>.</li>
+      <li>Four throwaway test identities &mdash; a name, an <code>@example.com</code>-style email, and an obviously-fake phone number for each tenant. Suggested pattern: <code>+254700111001</code> for Tenant 1, <code>...002</code> for Tenant 2, and so on.</li>
+      <li>An admin login for whoever plays the "Tech" role in the steps marked that way.</li>
+      <li>Nothing else. No AI provider usage happens anywhere in this guide &mdash; every reply path used below is deterministic (menu numbers, OTP codes, templated lookups), never a real AI call.</li>
+    </ul>
+  </div>
+
+  <div class="callout info">
+    <span class="k">Why the OTP code shows on screen</span>
+    Production doesn't have a real SMS provider configured yet, so the sign-up flow honestly labels this "Demo only" and prints the real 6-digit code directly on the page instead of texting it. This is the actual, current, honest behavior of the app &mdash; not a workaround for this test.
+  </div>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Tools</div>
+  <h2>Every tool used in this guide, explained first</h2>
+  <p class="chapter-sub">Unlike the abuser's manual, this guide mostly needs nothing but a browser. The few extra tools are only for the "Tech" steps, and each is explained fully, from zero, in the three short chapters right after this one.</p>
+
+  <div class="tool-grid">
+    <div class="tool-card"><span class="name">Chrome (or any browser)</span><span class="cat">Everything a customer sees</span><div class="desc">The only tool needed for every step tagged "You" &mdash; sign-up, channel connection, upgrades, payment.</div><div class="use">Used for: essentially this whole guide.</div></div>
+    <div class="tool-card"><span class="name">Chrome DevTools</span><span class="cat">Optional, for reading responses</span><div class="desc">A panel built into Chrome (<code>F12</code>). Lets you see the exact reply the server sent back for any action, not just what the page renders.</div><div class="use">Used for: double-checking a payment or invoice response when the on-screen message alone isn't enough to be sure.</div></div>
+    <div class="tool-card"><span class="name">The P2Less admin console</span><span class="cat">Tech role</span><div class="desc">P2Less's own internal dashboard for staff &mdash; tenant list, billing records, platform-wide usage. A real part of the product, not a testing tool.</div><div class="use">Used for: every admin-side correctness check, and the one Enterprise plan change that's deliberately admin-only.</div></div>
+    <div class="tool-card"><span class="name">Prisma Studio</span><span class="cat">Tech role</span><div class="desc">A free, official, local tool that comes with this project's database layer (Prisma). Running one command opens a web page showing every table as an editable spreadsheet.</div><div class="use">Used for: the handful of things no amount of clicking can produce &mdash; a partial payment, a late payment, three months of dated history.</div></div>
+  </div>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Tool primer, part 1</div>
+  <h2>Chrome DevTools, from zero</h2>
+  <p class="chapter-sub">You won't need this for most of the guide &mdash; the on-screen messages are usually enough. It's here for the moments where you want to see the real, underlying server response with your own eyes.</p>
+  <ol class="steps">
+    <li><span class="who">You — DevTools</span><br>With Chrome open on any page, press <code>F12</code>. (If nothing happens, right-click the page &rarr; <b class="click">Inspect</b>.)<span class="expect"><b>Expect:</b> a panel opens with tabs across the top &mdash; Elements, Console, Network, Application, and more.</span></li>
+    <li><span class="who">You — DevTools</span><br>Click <b class="click">Network</b>, then tick <b class="click">Preserve log</b> so the list doesn't clear as you navigate.</li>
+    <li><span class="who">You — DevTools</span><br>Click any row in the list to see its <b>Status</b> code and its <b>Response</b> tab &mdash; the server's actual reply. A <code>200</code> means it succeeded; a <code>400</code>/<code>401</code>/<code>403</code> means it was refused; a <code>500</code> means the server itself broke. The Response tab often has a short, readable message explaining exactly which of those happened and why.</li>
+  </ol>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Tool primer, part 2</div>
+  <h2>The admin console, from zero</h2>
+  <p class="chapter-sub">Whoever plays the Tech role for admin-side checks should be comfortable here before Tenant 1 even signs up.</p>
+  <ol class="steps">
+    <li><span class="who">Tech</span><br>Log into P2Less as a platform admin, then go to <code>/admin/tenants</code>.<span class="expect"><b>Expect:</b> a list of every tenant on the platform, each row showing its name, plan, and status at a glance.</span></li>
+    <li><span class="who">Tech</span><br>Click any tenant's row.<span class="expect"><b>Expect:</b> that tenant's own detail page &mdash; plan, subscription status, owner contact, and (depending on what's built) recent activity.</span></li>
+    <li><span class="who">Tech</span><br>Go to <code>/admin/billing</code>.<span class="expect"><b>Expect:</b> a platform-wide list of invoices and payments, each tied back to a tenant, with amounts and statuses.</span></li>
+    <li><span class="who">Tech</span><br>Note the URL pattern for each &mdash; you'll be asked to revisit these exact pages, filtered to a specific tenant, throughout this guide.</li>
+  </ol>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Tool primer, part 3</div>
+  <h2>Prisma Studio, from zero</h2>
+  <p class="chapter-sub">The one tool this guide asks an engineer to actually install and run. It's already part of the project &mdash; nothing new to download.</p>
+  <ol class="steps">
+    <li><span class="who">Tech</span><br>Open a terminal in the project's folder (<code>p2less-platform</code>) and run <code>npx prisma studio</code>.<span class="expect"><b>Expect:</b> a message that it's running, and a browser tab opens automatically at <code>localhost:5555</code>.</span></li>
+    <li><span class="who">Tech</span><br>On the left, you'll see every table in the database &mdash; <code>Tenant</code>, <code>Subscription</code>, <code>Payment</code>, <code>Invoice</code>, <code>UsageEvent</code>, <code>AiRequestLog</code>, and more. Click any one to see its rows as an editable spreadsheet.</li>
+    <li><span class="who">Tech</span><br>To add a row: click <b class="click">Add record</b> (usually top-right), fill in the fields shown, click <b class="click">Save 1 change</b>. To edit one: click directly into any cell, change it, save the same way.</li>
+    <li><span class="who">Tech</span><br>Leave this tab open for the whole guide &mdash; you'll come back to it for every step tagged "Tech."</li>
+  </ol>
+  <div class="callout warn"><span class="k">Be careful with this tool</span>It has full read/write access to the real production-shaped database you point it at. Every "Tech" step in this guide tells you exactly which table and which fields to touch &mdash; stick to those, and double-check you're pointed at the intended database (test/staging, not a real customer's data) before saving anything.</div>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Tenant 1</div>
+  <h2>WhatsApp Only &rarr; Starter</h2>
+  <p class="chapter-sub">A small business signing up, connecting WhatsApp, and upgrading to the cheapest paid tier.</p>
+
+  <h3 class="step-group">Sign up</h3>
+  <ol class="steps">
+    <li class="you"><span class="who">You — Browser</span><br><b class="click">Open a browser</b> and go to <code>p2less-app-production.up.railway.app/onboard</code>.<span class="expect"><b>Expect:</b> a page titled "Your conversational platform, ready in minutes," with a 3-step outline (Tell us about your organization &middot; Verify your phone &middot; Start exploring).</span></li>
+    <li class="you"><span class="who">You — Browser</span><br>Scroll to the form. In <b>Organization name</b>, type <code>Tenant 1 &mdash; WhatsApp Only</code>. Leave Industry as <b>Business</b>.</li>
+    <li class="you"><span class="who">You — Browser</span><br>In <b>Your phone number</b>, type your Tenant 1 test number, e.g. <code>+254700111001</code>.</li>
+    <li class="you"><span class="who">You — Browser</span><br>Fill <b>Your name</b> and <b>Your email</b> with your Tenant 1 test identity, then click <b class="click">Create my workspace</b>.<span class="expect"><b>Expect:</b> the page advances to "Verify your phone number," with an orange "Demo only" box showing a real 6-digit code.</span></li>
+    <li class="you"><span class="who">You — Browser</span><br>Type that exact code into the <b>6-digit code</b> field and click <b class="click">Verify and create workspace</b>. Wait for the page to finish &mdash; don't navigate away.<span class="expect"><b>How to know it worked:</b> you land signed-in, on either <code>/explore</code> or the real dashboard, with a visible "Welcome" heading. If instead you're bounced back to the OTP screen, the code was mistyped or already used &mdash; reload <code>/onboard</code> and start over from a clean state rather than retrying the same code.</span></li>
+  </ol>
+
+  <h3 class="step-group">Check the trial is real</h3>
+  <ol class="steps">
+    <li class="you"><span class="who">You — Browser</span><br>Go to <code>/dashboard</code>. Look at the card titled <b>Free trial balance</b> near the top.<span class="expect"><b>Expect:</b> a badge reading "7 days left" (or close to it), and two progress bars both showing <code>0 / 200</code> and <code>0 / 100</code>.</span></li>
+    <li class="tech"><span class="who">Tech — Prisma Studio</span><br>In the already-open Prisma Studio tab, click the <code>Subscription</code> table, find Tenant 1's row (match it by its <code>tenantId</code>, cross-referenced from the <code>Tenant</code> table by name), and look at its <code>trialEndsAt</code> column.<span class="expect"><b>How to know it's right:</b> a real date roughly 7 days from today, not blank/null.</span></li>
+  </ol>
+
+  <h3 class="step-group">Connect WhatsApp</h3>
+  <ol class="steps">
+    <li class="you"><span class="who">You — Browser</span><br>In the left sidebar, click <b class="click">Channels</b>.</li>
+    <li class="you"><span class="who">You — Browser</span><br>Under the WhatsApp section, click <b class="click">Connect via alternative</b> (the camera-free, typed-pairing-code path is the most reliable one to test with).</li>
+    <li class="you"><span class="who">You — Browser</span><br>Optionally type a real WhatsApp number of your own into "Camera not working? Enter your WhatsApp number," then submit.<span class="expect"><b>How to know it worked:</b> a "Scan to connect" modal opens showing either a QR code or a typed pairing code, and stays open (this exact modal not disappearing on its own was a real bug found and fixed earlier this week &mdash; worth specifically confirming it still holds by waiting 15&ndash;20 seconds without clicking anything and checking it hasn't vanished).</span></li>
+    <li class="you"><span class="who">You — Browser</span><br>If you have a real phone free to pair, finish linking it. If not, close the modal and note that connection was left pending &mdash; that's a legitimate, logged outcome, not a failure of this step.</li>
+  </ol>
+
+  <h3 class="step-group">Upgrade to Starter</h3>
+  <ol class="steps">
+    <li class="you"><span class="who">You — Browser</span><br>Go to <code>/dashboard/billing</code>. Find the <b>Starter</b> row and click <b class="click">Upgrade</b>.<span class="expect"><b>Expect:</b> a modal opens, briefly says "Calculating your upgrade&hellip;," then shows a real invoice: Invoice number, Current plan (Trial allowance), Current plan value KES 0, Starter plan price KES 1,500, Amount payable KES 1,500.</span></li>
+    <li class="you"><span class="who">You — Browser</span><br>Click <b class="click">M-Pesa STK Push</b>, enter a real or test phone number, click <b class="click">Pay KES 1,500</b>.<span class="expect"><b>Expect (demo mode):</b> "Recorded (demo mode)&hellip; Your upgrade is now active" almost immediately, since no real Daraja keys are configured. <b>Expect (if Daraja IS configured):</b> a real STK prompt on the phone &mdash; approve it, then wait for the page to detect confirmation.</span></li>
+    <li class="you"><span class="who">You — Browser</span><br>Once the modal shows "Payment confirmed," click <b class="click">Done</b>, then reload <code>/dashboard</code>.<span class="expect"><b>How to know it worked:</b> the subtitle under "Welcome" now reads "&hellip; &middot; Starter plan," and the usage card now shows a real KES balance instead of the trial progress bars. If the subtitle still says trial after a reload, the payment didn't actually settle &mdash; check DevTools' Network tab response for the payment request for a clearer reason.</span></li>
+  </ol>
+
+  <div class="check-box">
+    <div class="k">Verify before moving on</div>
+    <ul>
+      <li><b>Tech — Admin console:</b> go to <code>/admin/tenants</code>, find Tenant 1's row.<span class="expect"><b>Expect:</b> plan column reads "Starter," status "active," owner email matches what you signed up with.</span></li>
+      <li><b>Tech — Admin console:</b> go to <code>/admin/billing</code>, filter or search for Tenant 1.<span class="expect"><b>Expect:</b> one real payment of KES 1,500 against this tenant, status "paid" or equivalent.</span></li>
+      <li><b>You — Browser:</b> reload the Channels page.<span class="expect"><b>Expect:</b> WhatsApp's real connection status shown accurately &mdash; connected, pending, or not connected, matching whatever you actually did above, never a stale or mismatched badge.</span></li>
+    </ul>
+  </div>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Tenant 2</div>
+  <h2>Messenger Only &rarr; Professional</h2>
+  <p class="chapter-sub">Same shape as Tenant 1, on Messenger, upgrading one tier higher.</p>
+
+  <h3 class="step-group">Sign up &amp; verify trial</h3>
+  <ol class="steps">
+    <li class="you"><span class="who">You — Browser</span><br>Repeat the Tenant 1 sign-up steps exactly, using <code>Tenant 2 &mdash; Messenger Only</code> and your Tenant 2 test identity/phone (e.g. <code>+254700111002</code>).</li>
+    <li class="you"><span class="who">You — Browser</span><br>Confirm the same "7 days left," 0/200, 0/100 usage card as Tenant 1.</li>
+  </ol>
+
+  <h3 class="step-group">Connect Messenger</h3>
+  <ol class="steps">
+    <li class="you"><span class="who">You — Browser</span><br>Go to <b class="click">Channels</b>, find the Facebook Messenger section, click <b class="click">Connect a Facebook Page</b>.<span class="expect"><b>Expect:</b> Meta's real OAuth page opens if a test Facebook Page and app config are available.</span></li>
+    <li class="you"><span class="who">You — Browser</span><br>If no real test Page is available, stop here and log it plainly: <i>"External dependency &mdash; no test Facebook Page available, Messenger connection not exercised."</i> This is a real, honest gap to record, not something to fake past.</li>
+  </ol>
+
+  <h3 class="step-group">Upgrade to Professional</h3>
+  <ol class="steps">
+    <li class="you"><span class="who">You — Browser</span><br>Same as Tenant 1's upgrade steps, but click <b class="click">Upgrade</b> on the <b>Professional</b> row instead. Confirm the invoice shows KES 4,900.</li>
+    <li class="you"><span class="who">You — Browser</span><br>Complete payment the same way, confirm the plan switches.</li>
+  </ol>
+
+  <div class="check-box">
+    <div class="k">Verify before moving on</div>
+    <ul>
+      <li><b>Tech — Admin console:</b> <code>/admin/tenants</code> shows Tenant 2 as Professional.</li>
+      <li><b>You — Browser:</b> the dashboard subtitle and the billing page both agree on the plan name &mdash; check both, not just one.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Tenant 3</div>
+  <h2>Telegram Only &rarr; Business</h2>
+  <p class="chapter-sub">The easiest channel to connect for real &mdash; genuinely free and instant, no excuse to skip it.</p>
+
+  <h3 class="step-group">Sign up &amp; verify trial</h3>
+  <ol class="steps">
+    <li class="you"><span class="who">You — Browser</span><br>Repeat sign-up as <code>Tenant 3 &mdash; Telegram Only</code>, phone e.g. <code>+254700111003</code>. Confirm the trial card.</li>
+  </ol>
+
+  <h3 class="step-group">Connect Telegram</h3>
+  <ol class="steps">
+    <li class="you"><span class="who">You — Telegram app</span><br>On your own phone or Telegram Desktop, message <b class="click">@BotFather</b>, send <code>/newbot</code>, follow its prompts, and copy the token it gives you.<span class="expect"><b>How to know it worked:</b> BotFather's final message includes a long token string starting with a number, a colon, then letters and digits.</span></li>
+    <li class="you"><span class="who">You — Browser</span><br>In P2Less, go to <b class="click">Channels</b> &rarr; Telegram, paste the token into <b class="click">Connect bot</b>, submit.<span class="expect"><b>Expect:</b> the section shows a real connected bot username, no approval wait of any kind.</span></li>
+    <li class="you"><span class="who">You — Telegram app</span><br>From your own Telegram, message the bot something a deterministic path can answer (e.g. a number from its menu) &mdash; not a free-form question that would need a real AI call.<span class="expect"><b>How to know it worked:</b> the bot replies within a few seconds with the expected menu response.</span></li>
+  </ol>
+
+  <h3 class="step-group">Upgrade to Business</h3>
+  <ol class="steps">
+    <li class="you"><span class="who">You — Browser</span><br>Same upgrade flow, <b>Business</b> row, confirm invoice KES 19,900, complete payment.</li>
+  </ol>
+
+  <div class="check-box">
+    <div class="k">Verify before moving on</div>
+    <ul>
+      <li><b>You — Browser:</b> go to <code>/dashboard/conversations</code>.<span class="expect"><b>Expect:</b> the real inbound Telegram message you sent actually appears as a Conversation with at least one Message.</span></li>
+      <li><b>Tech — Admin console:</b> <code>/admin/tenants</code> shows Tenant 3 as Business, with the correct revenue recorded on <code>/admin/billing</code>.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Tenant 4</div>
+  <h2>Widget Only &rarr; Enterprise</h2>
+  <p class="chapter-sub">The negotiated-contract tier &mdash; admin-assigned, not self-service.</p>
+
+  <h3 class="step-group">Sign up &amp; verify trial</h3>
+  <ol class="steps">
+    <li class="you"><span class="who">You — Browser</span><br>Repeat sign-up as <code>Tenant 4 &mdash; Widget Only</code>, phone e.g. <code>+254700111004</code>.</li>
+  </ol>
+
+  <h3 class="step-group">Connect the widget</h3>
+  <ol class="steps">
+    <li class="you"><span class="who">You — Browser</span><br>Go to <b class="click">Channels</b> &rarr; Website widget, create a widget key.</li>
+    <li class="you"><span class="who">You — Browser</span><br>Copy the embed snippet, open <code>/dashboard/widget</code>'s own preview (or a blank HTML page pasted with the snippet) and send one deterministic test message.<span class="expect"><b>How to know it worked:</b> the message appears back in the P2Less dashboard's conversation list within a few seconds.</span></li>
+  </ol>
+
+  <h3 class="step-group">Move to Enterprise</h3>
+  <div class="callout warn"><span class="k">Not self-service, by design</span>Enterprise is deliberately admin-only &mdash; the self-service Upgrade modal correctly refuses it. This is the one tenant whose plan change is done from the admin side, on purpose.</div>
+  <ol class="steps">
+    <li class="tech"><span class="who">Tech — Admin console</span><br>From <code>/admin/tenants/[Tenant 4's id]</code>, use the real admin plan-change action to move Tenant 4 onto Enterprise, with a realistic negotiated note.</li>
+    <li class="you"><span class="who">You — Browser</span><br>Reload Tenant 4's own dashboard, confirm the plan name updated.<span class="expect"><b>Expect:</b> the usage card now shows "unlimited"/no ceiling, not a stale trial or Starter view.</span></li>
+  </ol>
+
+  <div class="check-box">
+    <div class="k">Verify before moving on</div>
+    <ul>
+      <li><b>Tech — Admin console:</b> check for a real audit-log entry for this plan change, attributing it to the admin who made it.</li>
+      <li><b>You — Browser:</b> Tenant 4's own billing page correctly reflects Enterprise's postpaid/negotiated framing, not a payable invoice.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Payment edge cases</div>
+  <h2>What happens when money gets messy</h2>
+  <p class="chapter-sub">These situations are real, but none of them can be produced by simply clicking through the UI in real time &mdash; they're staged directly in Prisma Studio, then observed through the same UI a real customer would see.</p>
+
+  <h3 class="step-group">A partial payment lands</h3>
+  <ol class="steps">
+    <li class="you"><span class="who">You — Browser</span><br>Pick one tenant with an open invoice (e.g. start a fresh upgrade on Tenant 2 without paying yet). Note the invoice's <code>payableKes</code> value shown on screen.</li>
+    <li class="tech"><span class="who">Tech — Prisma Studio</span><br>Click the <code>Payment</code> table, click <b class="click">Add record</b>. Set <code>invoiceId</code> to that invoice's id (copy it from the <code>Invoice</code> table, matching by tenant and creation time), set <code>amountKes</code> to something less than the full amount owed &mdash; e.g. half of it &mdash; set <code>status</code> to whatever value the table uses for "confirmed" (check an existing paid row for the exact spelling), save.</li>
+    <li class="you"><span class="who">You — Browser</span><br>Reopen that tenant's upgrade modal.<span class="expect"><b>How to know it worked:</b> it shows "We received KES X toward this invoice &mdash; KES Y still due," and does <b>not</b> claim the plan has changed. If it instead shows the plan as upgraded already, that's a real bug &mdash; a partial payment must never be treated as a full one.</span></li>
+  </ol>
+
+  <h3 class="step-group">Paid, but the money hasn't arrived yet</h3>
+  <ol class="steps">
+    <li class="you"><span class="who">You — Browser</span><br>Start a real STK payment and, instead of approving it, just wait past the confirmation window without doing anything on the phone.<span class="expect"><b>Expect:</b> after ~90 seconds, the modal honestly says it's still waiting and offers to try again &mdash; never a false "success."</span></li>
+    <li class="tech"><span class="who">Tech — Prisma Studio</span><br>Minutes later, add the real Payment row as if it had arrived late (same steps as the partial-payment case above, but for the full amount this time), then, from a terminal in the project folder, run the real settlement function directly &mdash; ask your engineer for the exact one-off script command, since it calls internal code rather than clicking a button.<span class="expect"><b>How to know it worked:</b> reload the tenant's dashboard &mdash; it should now show the upgraded plan, even though the original request had already timed out on screen. A late arrival must still count.</span></li>
+  </ol>
+
+  <h3 class="step-group">Payment fails or is cancelled</h3>
+  <ol class="steps">
+    <li class="you"><span class="who">You — Browser</span><br>Start a real STK payment and cancel/decline it on the phone (or simulate a decline).<span class="expect"><b>How to know it worked:</b> "Payment was cancelled or failed. Your plan has not changed" &mdash; and reloading the dashboard confirms the plan genuinely didn't move.</span></li>
+  </ol>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Three simulated months</div>
+  <h2>A realistic usage history, without any real AI cost</h2>
+  <p class="chapter-sub">Entirely a Prisma Studio job &mdash; there's no honest way to "click" three months into existence. What matters is that what gets inserted is realistic and checkable.</p>
+
+  <ol class="steps">
+    <li class="tech"><span class="who">Tech — Prisma Studio</span><br>For each of Tenants 1&ndash;4, click the <code>UsageEvent</code> table, <b class="click">Add record</b> repeatedly (or, if your Prisma Studio version supports pasting multiple rows, use that) to insert rows dated across a 3-month span, at a volume appropriate to their plan &mdash; deliberately including one month where one tenant's volume crosses their real cap. Set each row's <code>tenantId</code> and <code>createdAt</code> deliberately, in the past.</li>
+    <li class="tech"><span class="who">Tech — Prisma Studio</span><br>Click the <code>AiRequestLog</code> table, insert a handful of rows with realistic <code>totalTokens</code>/<code>costUsd</code> figures matching the real <code>ModelPricing</code> table (check its values first) &mdash; never by calling a real AI provider.</li>
+    <li class="you"><span class="who">You — Browser</span><br>For each tenant, send a small number of genuinely real messages over a deterministic path (a menu tap, an OTP entry, a templated lookup) &mdash; enough to confirm the real send pipeline works, not enough to represent the full 3 months.</li>
+  </ol>
+
+  <div class="check-box">
+    <div class="k">The real questions this answers</div>
+    <ul>
+      <li><b>You — Browser:</b> for the tenant whose volume crossed their cap, does the dashboard actually show them blocked that month, and correctly reset the next?</li>
+      <li><b>You — Browser:</b> do the dashboard's message-volume chart and usage numbers match what was actually inserted in Prisma Studio?</li>
+      <li><b>Tech — Admin console:</b> does <code>/admin</code>'s platform-wide view aggregate all four tenants correctly &mdash; do the totals shown there actually add up to what you inserted per tenant?</li>
+      <li><b>Tech — Prisma Studio + Admin console:</b> compare the <code>costUsd</code> sums in <code>AiRequestLog</code> against the real KES revenue shown in <code>/admin/billing</code> for the same tenants and period &mdash; is revenue genuinely higher than cost, per tenant, and as one platform total?</li>
+      <li><b>Tech — Admin console:</b> does the audit trail account for every plan change, payment, and balance movement across the whole period, with the tamper-evident hash chain still holding?</li>
+    </ul>
+  </div>
+</div>
+
+<div class="chapter">
+  <div class="chapter-eyebrow">Result log</div>
+  <h2>Record every step here</h2>
+  <p class="chapter-sub">Copy this table (or the one in the Dossier artifact) and fill in a row per step above as it's actually run.</p>
+  <table class="reflog">
+    <thead><tr><th>Tenant</th><th>Step</th><th>Tool used</th><th>Expected</th><th>Actual</th><th>Pass / Fail</th></tr></thead>
+    <tbody><tr><td colspan="6">Not started &mdash; nothing logged yet.</td></tr></tbody>
+  </table>
+  <p class="footer-note">Five-Tenant Readiness Dossier &middot; Volume I of II &middot; P2Less, 2026-08-27</p>
+</div>
