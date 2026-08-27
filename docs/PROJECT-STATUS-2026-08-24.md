@@ -92,7 +92,7 @@ Everything below is shipped, live-verified (not just typechecked), and deployed 
 
 ### Deliberately unscoped, future-strategic — no work started, and shouldn't be until there's a real need
 
-Mode 2 outbound/proactive messaging (marketing, notifications, follow-ups to known contacts); the Public Social Agent (auto-replying to public posts/comments — "Grok-on-X" style); social-media connectors, OCR/document ingestion beyond PDF, research/plagiarism tooling (Phase 7's unscoped remainder); X/Twitter as a channel (viable but costs money both directions — $0.025/round-trip); Voice/IVR (real and buildable, not started); TikTok (deferred). LinkedIn was evaluated and **rejected** — genuinely incompatible with P2Less's auto-reply model under LinkedIn's own policy.
+Mode 2 outbound/proactive messaging (marketing, notifications, follow-ups to known contacts) — **now has a real scope written**: [`OUTBOUND-MARKETING-MESSAGING-SCOPE-2026-08-27.md`](OUTBOUND-MARKETING-MESSAGING-SCOPE-2026-08-27.md), which found this needs consent tracking (doesn't exist), real Meta message-template integration (doesn't exist), a new campaign data model, and batch-aware billing/rate-limiting, built in that order, Meta-official-transport only — not a quick add on top of the current reply-only pipeline; the Public Social Agent (auto-replying to public posts/comments — "Grok-on-X" style); social-media connectors, OCR/document ingestion beyond PDF, research/plagiarism tooling (Phase 7's unscoped remainder); X/Twitter as a channel (viable but costs money both directions — $0.025/round-trip); Voice/IVR (real and buildable, not started); TikTok (deferred). LinkedIn was evaluated and **rejected** — genuinely incompatible with P2Less's auto-reply model under LinkedIn's own policy.
 
 ---
 
