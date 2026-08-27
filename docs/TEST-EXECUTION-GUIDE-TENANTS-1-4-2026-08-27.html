@@ -67,6 +67,9 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
 .tool-card .desc { font-size: 8.7pt; color: #4A4F49; margin-top: 4px; }
 .tool-card .use { font-size: 8.5pt; color: #0A4E43; margin-top: 4px; }
 .tool-card .src { font-size: 7.8pt; color: #83887F; margin-top: 5px; font-family: "IBM Plex Mono", monospace; }
+.mockup { border: 1px solid #DCD9CF; border-radius: 10px; overflow: hidden; margin: 14px 0; background: #fff; box-shadow: 0 1px 4px rgba(18,33,29,0.08); page-break-inside: avoid; }
+.mockup .mockup-cap { font-family: "IBM Plex Mono", monospace; font-size: 7.8pt; color: #83887F; padding: 6px 12px; border-top: 1px solid #EEECE5; background: #FBFAF7; }
+.mockup svg { display: block; width: 100%; height: auto; }
 </style>
 
 <div class="cover">
@@ -202,11 +205,108 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
     <li class="you"><span class="who">You — Browser</span><br>Type that exact code into the <b>6-digit code</b> field and click <b class="click">Verify and create workspace</b>. Wait for the page to finish &mdash; don't navigate away.<span class="expect"><b>How to know it worked:</b> you land signed-in, on either <code>/explore</code> or the real dashboard, with a visible "Welcome" heading. If instead you're bounced back to the OTP screen, the code was mistyped or already used &mdash; reload <code>/onboard</code> and start over from a clean state rather than retrying the same code.</span></li>
   </ol>
 
+  <figure class="mockup">
+    <svg viewBox="0 0 720 430" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="430" fill="#ffffff"/>
+      <rect x="0" y="0" width="720" height="28" fill="#E9E7E0"/>
+      <circle cx="16" cy="14" r="4" fill="#DCD9CF"/><circle cx="30" cy="14" r="4" fill="#DCD9CF"/><circle cx="44" cy="14" r="4" fill="#DCD9CF"/>
+      <rect x="66" y="6" width="360" height="16" rx="4" fill="#ffffff"/>
+      <text x="76" y="17" font-family="IBM Plex Mono, monospace" font-size="10" fill="#4A4F49">p2less-app-production.up.railway.app/onboard</text>
+      <text x="24" y="58" font-family="Newsreader, Georgia, serif" font-size="19" fill="#12211D">Your conversational platform, ready in minutes</text>
+      <text x="24" y="76" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="#4A4F49">Create your workspace and verify it's really you.</text>
+      <rect x="24" y="98" width="672" height="308" rx="10" fill="#ffffff" stroke="#DCD9CF"/>
+      <text x="44" y="126" font-family="IBM Plex Sans" font-size="10" font-weight="600" fill="#12211D">Organization name</text>
+      <rect x="44" y="133" width="290" height="26" rx="5" fill="#fff" stroke="#DCD9CF"/>
+      <text x="52" y="150" font-family="IBM Plex Sans" font-size="10" fill="#12211D">Tenant 1 — WhatsApp Only</text>
+      <text x="352" y="126" font-family="IBM Plex Sans" font-size="10" font-weight="600" fill="#12211D">Industry</text>
+      <rect x="352" y="133" width="296" height="26" rx="5" fill="#fff" stroke="#DCD9CF"/>
+      <text x="360" y="150" font-family="IBM Plex Sans" font-size="10" fill="#12211D">Business</text>
+      <text x="44" y="187" font-family="IBM Plex Sans" font-size="10" font-weight="600" fill="#12211D">Your phone number</text>
+      <rect x="44" y="194" width="290" height="26" rx="5" fill="#fff" stroke="#0F6B5C" stroke-width="2"/>
+      <text x="52" y="211" font-family="IBM Plex Mono" font-size="10" fill="#12211D">+254700111001</text>
+      <text x="44" y="234" font-family="IBM Plex Sans" font-size="8.5" fill="#83887F">We'll text a code to confirm it's really you.</text>
+      <text x="44" y="266" font-family="IBM Plex Sans" font-size="10" font-weight="600" fill="#12211D">Your name</text>
+      <rect x="44" y="273" width="290" height="26" rx="5" fill="#fff" stroke="#DCD9CF"/>
+      <text x="52" y="290" font-family="IBM Plex Sans" font-size="10" fill="#12211D">(your test identity)</text>
+      <text x="352" y="266" font-family="IBM Plex Sans" font-size="10" font-weight="600" fill="#12211D">Your email</text>
+      <rect x="352" y="273" width="296" height="26" rx="5" fill="#fff" stroke="#DCD9CF"/>
+      <text x="360" y="290" font-family="IBM Plex Sans" font-size="10" fill="#12211D">(your test email)</text>
+      <rect x="44" y="352" width="628" height="34" rx="7" fill="#0F6B5C"/>
+      <text x="358" y="373" text-anchor="middle" font-family="IBM Plex Sans" font-size="11" font-weight="600" fill="#ffffff">Create my workspace</text>
+      <path d="M 340 200 L 400 200" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowT1a)"/>
+      <text x="406" y="196" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">step 3</text>
+      <text x="406" y="209" font-family="IBM Plex Sans" font-size="9" fill="#7A2929">type your Tenant 1 test number</text>
+      <path d="M 358 400 L 358 420" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowT1a)"/>
+      <text x="370" y="424" font-family="IBM Plex Sans" font-size="9" fill="#7A2929">step 4 — click to submit</text>
+      <defs><marker id="arrowT1a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">Recreated from the real onboarding form — same fields, same layout, same button text.</div>
+  </figure>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 340" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="340" fill="#ffffff"/>
+      <rect x="0" y="0" width="720" height="28" fill="#E9E7E0"/>
+      <circle cx="16" cy="14" r="4" fill="#DCD9CF"/><circle cx="30" cy="14" r="4" fill="#DCD9CF"/><circle cx="44" cy="14" r="4" fill="#DCD9CF"/>
+      <rect x="66" y="6" width="360" height="16" rx="4" fill="#ffffff"/>
+      <text x="76" y="17" font-family="IBM Plex Mono, monospace" font-size="10" fill="#4A4F49">p2less-app-production.up.railway.app/onboard</text>
+      <rect x="24" y="48" width="672" height="270" rx="10" fill="#ffffff" stroke="#DCD9CF"/>
+      <text x="44" y="78" font-family="Newsreader, Georgia, serif" font-size="16" fill="#12211D">Verify your phone number</text>
+      <text x="44" y="100" font-family="IBM Plex Sans" font-size="9.5" fill="#4A4F49">We sent a 6-digit code to +254700111001 to confirm it's really you.</text>
+      <rect x="44" y="114" width="632" height="44" rx="6" fill="#FBEFD9" stroke="#E9C27C"/>
+      <text x="56" y="140" font-family="IBM Plex Sans" font-size="9.5" fill="#7A5714">Demo only. No SMS provider is configured yet, so nothing was actually texted. Your code is <tspan font-family="IBM Plex Mono" font-weight="700">097873</tspan>.</text>
+      <text x="44" y="184" font-family="IBM Plex Sans" font-size="10" font-weight="600" fill="#12211D">6-digit code</text>
+      <rect x="44" y="191" width="290" height="28" rx="5" fill="#fff" stroke="#0F6B5C" stroke-width="2"/>
+      <text x="52" y="210" font-family="IBM Plex Mono" font-size="11" fill="#12211D">097873</text>
+      <rect x="44" y="238" width="632" height="34" rx="7" fill="#0F6B5C"/>
+      <text x="358" y="259" text-anchor="middle" font-family="IBM Plex Sans" font-size="11" font-weight="600" fill="#ffffff">Verify and create workspace</text>
+      <text x="44" y="292" font-family="IBM Plex Sans" font-size="8.5" fill="#83887F">Code expires in 5 minutes.   Resend code · Start over</text>
+      <path d="M 400 136 L 350 130" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowT1b)"/>
+      <text x="404" y="128" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">the real code</text>
+      <text x="404" y="140" font-family="IBM Plex Sans" font-size="9" fill="#7A2929">printed right here — copy it</text>
+      <path d="M 340 205 L 400 205" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowT1b)"/>
+      <text x="406" y="200" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">step 5</text>
+      <text x="406" y="213" font-family="IBM Plex Sans" font-size="9" fill="#7A2929">type the same code here</text>
+      <path d="M 358 275 L 358 292" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowT1b)"/>
+      <text x="370" y="288" font-family="IBM Plex Sans" font-size="9" fill="#7A2929">click to finish sign-up</text>
+      <defs><marker id="arrowT1b" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">The OTP screen — the demo code is printed on the page itself, since no real SMS provider is wired up yet.</div>
+  </figure>
+
   <h3 class="step-group">Check the trial is real</h3>
   <ol class="steps">
     <li class="you"><span class="who">You — Browser</span><br>Go to <code>/dashboard</code>. Look at the card titled <b>Free trial balance</b> near the top.<span class="expect"><b>Expect:</b> a badge reading "7 days left" (or close to it), and two progress bars both showing <code>0 / 200</code> and <code>0 / 100</code>.</span></li>
     <li class="tech"><span class="who">Tech — Prisma Studio</span><br>In the already-open Prisma Studio tab, click the <code>Subscription</code> table, find Tenant 1's row (match it by its <code>tenantId</code>, cross-referenced from the <code>Tenant</code> table by name), and look at its <code>trialEndsAt</code> column.<span class="expect"><b>How to know it's right:</b> a real date roughly 7 days from today, not blank/null.</span></li>
   </ol>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="220" fill="#ffffff"/>
+      <rect x="0" y="0" width="720" height="28" fill="#E9E7E0"/>
+      <circle cx="16" cy="14" r="4" fill="#DCD9CF"/><circle cx="30" cy="14" r="4" fill="#DCD9CF"/><circle cx="44" cy="14" r="4" fill="#DCD9CF"/>
+      <rect x="66" y="6" width="300" height="16" rx="4" fill="#ffffff"/>
+      <text x="76" y="17" font-family="IBM Plex Mono, monospace" font-size="10" fill="#4A4F49">p2less-app-production.up.railway.app/dashboard</text>
+      <rect x="24" y="48" width="672" height="150" rx="10" fill="#ffffff" stroke="#DCD9CF"/>
+      <text x="44" y="76" font-family="IBM Plex Sans" font-size="11" font-weight="700" fill="#12211D">Free trial balance</text>
+      <rect x="220" y="62" width="76" height="20" rx="10" fill="#F6ECD9"/>
+      <text x="258" y="76" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" font-weight="700" fill="#8A5A17">7 days left</text>
+      <text x="44" y="106" font-family="IBM Plex Sans" font-size="9" fill="#4A4F49">Messages</text>
+      <rect x="44" y="112" width="300" height="10" rx="5" fill="#EEECE5"/>
+      <rect x="44" y="112" width="0" height="10" rx="5" fill="#0F6B5C"/>
+      <text x="44" y="134" font-family="IBM Plex Mono" font-size="9" fill="#83887F">0 / 200</text>
+      <text x="376" y="106" font-family="IBM Plex Sans" font-size="9" fill="#4A4F49">AI understanding</text>
+      <rect x="376" y="112" width="300" height="10" rx="5" fill="#EEECE5"/>
+      <rect x="376" y="112" width="0" height="10" rx="5" fill="#0F6B5C"/>
+      <text x="376" y="134" font-family="IBM Plex Mono" font-size="9" fill="#83887F">0 / 100</text>
+      <path d="M 300 72 L 258 90" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowT1c)"/>
+      <text x="304" y="102" font-family="IBM Plex Sans" font-size="9" fill="#7A2929">this badge is what you're checking</text>
+      <path d="M 200 122 L 200 150" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowT1c)"/>
+      <text x="150" y="164" font-family="IBM Plex Sans" font-size="9" fill="#7A2929">both bars start at zero — a real, unused trial</text>
+      <defs><marker id="arrowT1c" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">The dashboard's "Free trial balance" card — this is the thing to look at, not the whole page.</div>
+  </figure>
 
   <h3 class="step-group">Connect WhatsApp</h3>
   <ol class="steps">
@@ -216,12 +316,81 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
     <li class="you"><span class="who">You — Browser</span><br>If you have a real phone free to pair, finish linking it. If not, close the modal and note that connection was left pending &mdash; that's a legitimate, logged outcome, not a failure of this step.</li>
   </ol>
 
+  <figure class="mockup">
+    <svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="300" fill="#F1F0EB"/>
+      <rect x="0" y="0" width="720" height="28" fill="#E9E7E0"/>
+      <circle cx="16" cy="14" r="4" fill="#DCD9CF"/><circle cx="30" cy="14" r="4" fill="#DCD9CF"/><circle cx="44" cy="14" r="4" fill="#DCD9CF"/>
+      <rect x="66" y="6" width="300" height="16" rx="4" fill="#ffffff"/>
+      <text x="76" y="17" font-family="IBM Plex Mono, monospace" font-size="10" fill="#4A4F49">.../dashboard/channels</text>
+      <rect x="24" y="44" width="130" height="230" rx="8" fill="#ffffff" stroke="#DCD9CF"/>
+      <text x="40" y="68" font-family="IBM Plex Sans" font-size="9.5" fill="#83887F">Overview</text>
+      <rect x="32" y="82" width="114" height="24" rx="6" fill="#E1EDE9"/>
+      <text x="40" y="98" font-family="IBM Plex Sans" font-size="9.5" font-weight="700" fill="#0A4E43">Channels</text>
+      <text x="40" y="124" font-family="IBM Plex Sans" font-size="9.5" fill="#83887F">Billing</text>
+      <rect x="196" y="44" width="240" height="230" rx="8" fill="#ffffff" stroke="#DCD9CF"/>
+      <text x="212" y="68" font-family="IBM Plex Sans" font-size="10" font-weight="700" fill="#12211D">WhatsApp</text>
+      <rect x="212" y="80" width="208" height="28" rx="6" fill="#0F6B5C"/>
+      <text x="316" y="98" text-anchor="middle" font-family="IBM Plex Sans" font-size="9" font-weight="600" fill="#fff">Connect via alternative</text>
+      <text x="212" y="128" font-family="IBM Plex Sans" font-size="8" fill="#83887F">Camera not working? Enter your</text>
+      <text x="212" y="140" font-family="IBM Plex Sans" font-size="8" fill="#83887F">WhatsApp number</text>
+      <rect x="452" y="60" width="244" height="196" rx="10" fill="#ffffff" stroke="#DCD9CF" filter="drop-shadow(0 2px 6px rgba(0,0,0,0.12))"/>
+      <text x="574" y="86" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" font-weight="700" fill="#12211D">Scan to connect</text>
+      <rect x="502" y="102" width="144" height="120" rx="6" fill="#F1F0EB" stroke="#DCD9CF"/>
+      <text x="574" y="166" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="#83887F">[ QR / pairing code ]</text>
+      <text x="574" y="242" text-anchor="middle" font-family="IBM Plex Sans" font-size="8" fill="#83887F">stays open until you scan it</text>
+      <path d="M 300 84 L 340 60" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowT1d)"/>
+      <text x="344" y="56" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">step 2</text>
+      <path d="M 452 130 L 424 100" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowT1d)"/>
+      <text x="420" y="285" font-family="IBM Plex Sans" font-size="9" fill="#7A2929">confirm this modal is still open after ~20 seconds — the bug this test checks for</text>
+      <defs><marker id="arrowT1d" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">Channels → WhatsApp → the "Scan to connect" modal that must stay open, not vanish on its own.</div>
+  </figure>
+
   <h3 class="step-group">Upgrade to Starter</h3>
   <ol class="steps">
     <li class="you"><span class="who">You — Browser</span><br>Go to <code>/dashboard/billing</code>. Find the <b>Starter</b> row and click <b class="click">Upgrade</b>.<span class="expect"><b>Expect:</b> a modal opens, briefly says "Calculating your upgrade&hellip;," then shows a real invoice: Invoice number, Current plan (Trial allowance), Current plan value KES 0, Starter plan price KES 1,500, Amount payable KES 1,500.</span></li>
     <li class="you"><span class="who">You — Browser</span><br>Click <b class="click">M-Pesa STK Push</b>, enter a real or test phone number, click <b class="click">Pay KES 1,500</b>.<span class="expect"><b>Expect (demo mode):</b> "Recorded (demo mode)&hellip; Your upgrade is now active" almost immediately, since no real Daraja keys are configured. <b>Expect (if Daraja IS configured):</b> a real STK prompt on the phone &mdash; approve it, then wait for the page to detect confirmation.</span></li>
     <li class="you"><span class="who">You — Browser</span><br>Once the modal shows "Payment confirmed," click <b class="click">Done</b>, then reload <code>/dashboard</code>.<span class="expect"><b>How to know it worked:</b> the subtitle under "Welcome" now reads "&hellip; &middot; Starter plan," and the usage card now shows a real KES balance instead of the trial progress bars. If the subtitle still says trial after a reload, the payment didn't actually settle &mdash; check DevTools' Network tab response for the payment request for a clearer reason.</span></li>
   </ol>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 360" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="360" fill="#F1F0EB"/>
+      <rect x="0" y="0" width="720" height="28" fill="#E9E7E0"/>
+      <circle cx="16" cy="14" r="4" fill="#DCD9CF"/><circle cx="30" cy="14" r="4" fill="#DCD9CF"/><circle cx="44" cy="14" r="4" fill="#DCD9CF"/>
+      <rect x="66" y="6" width="300" height="16" rx="4" fill="#ffffff"/>
+      <text x="76" y="17" font-family="IBM Plex Mono, monospace" font-size="10" fill="#4A4F49">.../dashboard/billing</text>
+      <rect x="180" y="44" width="360" height="300" rx="10" fill="#ffffff" stroke="#DCD9CF"/>
+      <text x="360" y="70" text-anchor="middle" font-family="Newsreader, Georgia, serif" font-size="14" fill="#12211D">Upgrade to Starter</text>
+      <line x1="200" y1="84" x2="520" y2="84" stroke="#EEECE5"/>
+      <text x="200" y="106" font-family="IBM Plex Mono" font-size="8.5" fill="#83887F">Invoice number</text>
+      <text x="520" y="106" text-anchor="end" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">INV-1042</text>
+      <text x="200" y="126" font-family="IBM Plex Sans" font-size="9" fill="#4A4F49">Current plan (Trial allowance)</text>
+      <text x="520" y="126" text-anchor="end" font-family="IBM Plex Mono" font-size="9" fill="#12211D">KES 0</text>
+      <text x="200" y="146" font-family="IBM Plex Sans" font-size="9" fill="#4A4F49">Starter plan price</text>
+      <text x="520" y="146" text-anchor="end" font-family="IBM Plex Mono" font-size="9" fill="#12211D">KES 1,500</text>
+      <line x1="200" y1="158" x2="520" y2="158" stroke="#EEECE5"/>
+      <text x="200" y="180" font-family="IBM Plex Sans" font-size="10" font-weight="700" fill="#12211D">Amount payable</text>
+      <text x="520" y="180" text-anchor="end" font-family="IBM Plex Mono" font-size="11" font-weight="700" fill="#0A4E43">KES 1,500</text>
+      <rect x="200" y="200" width="320" height="30" rx="6" fill="#0F6B5C"/>
+      <text x="360" y="220" text-anchor="middle" font-family="IBM Plex Sans" font-size="9.5" font-weight="600" fill="#fff">M-Pesa STK Push</text>
+      <rect x="200" y="240" width="320" height="26" rx="5" fill="#fff" stroke="#DCD9CF"/>
+      <text x="208" y="257" font-family="IBM Plex Mono" font-size="9" fill="#83887F">+254 7&hellip; phone number</text>
+      <rect x="200" y="276" width="320" height="30" rx="6" fill="#12211D"/>
+      <text x="360" y="296" text-anchor="middle" font-family="IBM Plex Sans" font-size="9.5" font-weight="600" fill="#fff">Pay KES 1,500</text>
+      <text x="200" y="330" font-family="IBM Plex Sans" font-size="8.5" fill="#0A4E43" font-style="italic">"Recorded (demo mode)… Your upgrade is now active"</text>
+      <path d="M 130 175 L 195 175" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowT1e)"/>
+      <text x="20" y="170" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">check this number</text>
+      <text x="20" y="183" font-family="IBM Plex Sans" font-size="9" fill="#7A2929">matches the plan's real price</text>
+      <path d="M 130 292 L 195 292" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowT1e)"/>
+      <text x="20" y="288" font-family="IBM Plex Sans" font-size="9" fill="#7A2929">this line only appears</text>
+      <text x="20" y="300" font-family="IBM Plex Sans" font-size="9" fill="#7A2929">after a real success</text>
+      <defs><marker id="arrowT1e" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">The upgrade modal's invoice + demo-mode M-Pesa payment — the exact numbers and success text to expect.</div>
+  </figure>
 
   <div class="check-box">
     <div class="k">Verify before moving on</div>

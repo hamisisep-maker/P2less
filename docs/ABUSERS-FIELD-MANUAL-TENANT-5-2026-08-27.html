@@ -66,6 +66,9 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
 .tool-card .desc { font-size: 8.7pt; color: #4A4F49; margin-top: 4px; }
 .tool-card .use { font-size: 8.5pt; color: #7A2929; margin-top: 4px; }
 .tool-card .src { font-size: 7.8pt; color: #83887F; margin-top: 5px; font-family: "IBM Plex Mono", monospace; }
+.mockup { border: 1px solid #DCD9CF; border-radius: 10px; overflow: hidden; margin: 14px 0; background: #fff; box-shadow: 0 1px 4px rgba(18,33,29,0.08); page-break-inside: avoid; }
+.mockup .mockup-cap { font-family: "IBM Plex Mono", monospace; font-size: 7.8pt; color: #83887F; padding: 6px 12px; border-top: 1px solid #EEECE5; background: #FBFAF7; }
+.mockup svg { display: block; width: 100%; height: auto; }
 </style>
 
 <div class="cover">
@@ -216,12 +219,67 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
     <li><span class="who">You — DevTools</span><br>If it feels cramped, click the three dots (<code>⋮</code>) in DevTools' own top-right corner and pick a dock position that gives you more room, or pop it into its own window.</li>
   </ol>
 
+  <figure class="mockup">
+    <svg viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="260" fill="#ffffff"/>
+      <rect x="0" y="0" width="440" height="260" fill="#F1F0EB"/>
+      <text x="20" y="26" font-family="IBM Plex Sans" font-size="10" fill="#83887F">(the P2Less page itself, above)</text>
+      <rect x="440" y="0" width="280" height="260" fill="#2B2B2B"/>
+      <rect x="440" y="0" width="280" height="26" fill="#3C3C3C"/>
+      <text x="452" y="17" font-family="IBM Plex Sans" font-size="9" fill="#DCD9CF">Elements</text>
+      <text x="512" y="17" font-family="IBM Plex Sans" font-size="9" fill="#8A8F87">Console</text>
+      <text x="568" y="17" font-family="IBM Plex Sans" font-size="9" fill="#8A8F87">Sources</text>
+      <rect x="625" y="6" width="52" height="15" rx="3" fill="#0F6B5C"/>
+      <text x="651" y="17" text-anchor="middle" font-family="IBM Plex Sans" font-size="8.5" fill="#fff">Network</text>
+      <text x="686" y="17" font-family="IBM Plex Sans" font-size="9" fill="#8A8F87">App</text>
+      <circle cx="704" cy="13" r="6" fill="none" stroke="#8A8F87"/>
+      <text x="701" y="16" font-family="IBM Plex Sans" font-size="8" fill="#8A8F87">⋮</text>
+      <text x="452" y="46" font-family="IBM Plex Mono" font-size="9" fill="#DCD9CF">(tab content appears here)</text>
+      <path d="M 440 60 L 385 30" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowDT0)"/>
+      <text x="230" y="20" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">F12 opens this whole panel</text>
+      <path d="M 651 24 L 651 38" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowDT0)"/>
+      <text x="560" y="52" font-family="IBM Plex Sans" font-size="9" fill="#E8A87C">this is the tab used most in this manual</text>
+      <path d="M 700 24 L 706 36" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowDT0)"/>
+      <text x="640" y="52" font-family="IBM Plex Sans" font-size="8.5" fill="#E8A87C">⋮ = dock / pop-out</text>
+      <defs><marker id="arrowDT0" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">Pressing F12 — the real page stays on the left, DevTools opens as a dark panel alongside it.</div>
+  </figure>
+
   <h3 class="step-group">The Elements tab — editing what's on screen</h3>
   <ol class="steps">
     <li><span class="who">You — DevTools</span><br>Click <b class="click">Elements</b>. You'll see the page's raw structure &mdash; a tree of tags like <code>&lt;button&gt;</code>, <code>&lt;div&gt;</code>, <code>&lt;input&gt;</code>, matching what's on screen.</li>
     <li><span class="who">You — DevTools</span><br>Click the element picker icon (top-left of the panel, a cursor pointing at a square; shortcut <code>Ctrl+Shift+C</code>), then click anything on the actual page.<span class="expect"><b>Expect:</b> the Elements tree jumps to and highlights the exact tag for what you clicked.</span></li>
     <li><span class="who">You — DevTools</span><br>With a tag selected, double-click any attribute (a <code>word="value"</code> pair, or a bare word like <code>disabled</code>) to edit it, or right-click the tag &rarr; <b class="click">Edit as HTML</b> to rewrite it freely. Press <code>Enter</code> or click away to apply.<span class="expect"><b>Expect:</b> the change is temporary and visible only to you &mdash; reloading undoes it. It never touches the real server.</span></li>
   </ol>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="220" fill="#2B2B2B"/>
+      <rect x="0" y="0" width="720" height="24" fill="#3C3C3C"/>
+      <rect x="10" y="5" width="60" height="14" rx="3" fill="#0F6B5C"/>
+      <text x="40" y="15" text-anchor="middle" font-family="IBM Plex Sans" font-size="8" fill="#fff">Elements</text>
+      <text x="30" y="46" font-family="IBM Plex Mono" font-size="9.5" fill="#8FBFB4">&lt;button</text>
+      <text x="88" y="46" font-family="IBM Plex Mono" font-size="9.5" fill="#E8A87C">class</text>
+      <text x="118" y="46" font-family="IBM Plex Mono" font-size="9.5" fill="#DCD9CF">=</text>
+      <text x="126" y="46" font-family="IBM Plex Mono" font-size="9.5" fill="#C98A5E">"btn-connect"</text>
+      <rect x="228" y="34" width="66" height="16" rx="3" fill="#5A2E2E"/>
+      <text x="234" y="46" font-family="IBM Plex Mono" font-size="9.5" fill="#F0A7A7">disabled</text>
+      <text x="302" y="46" font-family="IBM Plex Mono" font-size="9.5" fill="#8FBFB4">&gt;</text>
+      <text x="46" y="66" font-family="IBM Plex Mono" font-size="9.5" fill="#DCD9CF">Connect (plan limit reached)</text>
+      <text x="30" y="86" font-family="IBM Plex Mono" font-size="9.5" fill="#8FBFB4">&lt;/button&gt;</text>
+      <rect x="20" y="112" width="500" height="30" rx="4" fill="#3C3C3C" stroke="#5A5A5A"/>
+      <text x="30" y="131" font-family="IBM Plex Mono" font-size="10" fill="#F0A7A7" text-decoration="line-through">disabled</text>
+      <text x="120" y="131" font-family="IBM Plex Mono" font-size="9" fill="#8A8F87">← double-click, then Delete, then Enter</text>
+      <path d="M 261 52 L 261 105" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowDT1)"/>
+      <text x="330" y="100" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">this is what you'll remove</text>
+      <text x="30" y="176" font-family="IBM Plex Mono" font-size="9.5" fill="#8FBFB4">&lt;button class="btn-connect"&gt;</text>
+      <text x="46" y="196" font-family="IBM Plex Mono" font-size="9.5" fill="#DCD9CF">Connect (plan limit reached)</text>
+      <text x="360" y="176" font-family="IBM Plex Sans" font-size="9" fill="#9FD8C6" font-weight="700">← after: button now looks clickable</text>
+      <defs><marker id="arrowDT1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">The Elements tab, before and after removing a <code>disabled</code> attribute — this is what the "re-enabling a button" chapter actually looks like.</div>
+  </figure>
 
   <h3 class="step-group">The Network tab — watching what the page sends</h3>
   <ol class="steps">
@@ -232,12 +290,75 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
     <li><span class="who">You — DevTools</span><br>Right-click a row &rarr; <b class="click">Edit and Resend</b>.<span class="expect"><b>Expect:</b> the whole request opens as editable plain text. Change anything, click <b class="click">Send</b> at the bottom &mdash; the result appears as a new row in the list, exactly as if triggered from the real page.</span></li>
   </ol>
 
+  <figure class="mockup">
+    <svg viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="260" fill="#2B2B2B"/>
+      <rect x="0" y="0" width="720" height="24" fill="#3C3C3C"/>
+      <rect x="10" y="5" width="14" height="14" fill="#0F6B5C"/><text x="20" y="27" font-family="IBM Plex Sans" font-size="8" fill="#8A8F87"> </text>
+      <text x="30" y="15" font-family="IBM Plex Sans" font-size="8.5" fill="#fff">⬤ Preserve log</text>
+      <rect x="0" y="28" width="720" height="18" fill="#333"/>
+      <text x="8" y="41" font-family="IBM Plex Mono" font-size="7.5" fill="#8A8F87">Name</text>
+      <text x="260" y="41" font-family="IBM Plex Mono" font-size="7.5" fill="#8A8F87">Status</text>
+      <text x="330" y="41" font-family="IBM Plex Mono" font-size="7.5" fill="#8A8F87">Type</text>
+      <text x="400" y="41" font-family="IBM Plex Mono" font-size="7.5" fill="#8A8F87">Time</text>
+      <rect x="0" y="46" width="720" height="20" fill="#2F2F2F"/>
+      <text x="8" y="60" font-family="IBM Plex Mono" font-size="8" fill="#DCD9CF">billing (POST)</text>
+      <text x="260" y="60" font-family="IBM Plex Mono" font-size="8" fill="#9FD8C6">200</text>
+      <rect x="0" y="66" width="720" height="20" fill="#292929"/>
+      <text x="8" y="80" font-family="IBM Plex Mono" font-size="8" fill="#DCD9CF">channels (GET)</text>
+      <text x="260" y="80" font-family="IBM Plex Mono" font-size="8" fill="#9FD8C6">200</text>
+      <rect x="0" y="86" width="720" height="20" fill="#3C2E2E"/>
+      <text x="8" y="100" font-family="IBM Plex Mono" font-size="8" fill="#F0C0C0">upgrade (POST)</text>
+      <text x="260" y="100" font-family="IBM Plex Mono" font-size="8" fill="#F0A7A7">403</text>
+      <text x="330" y="100" font-family="IBM Plex Mono" font-size="8" fill="#8A8F87">fetch</text>
+      <path d="M 220 96 L 260 96" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowDT2)"/>
+      <text x="450" y="94" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">right-click this row</text>
+      <rect x="20" y="118" width="680" height="130" rx="6" fill="#333" stroke="#5A5A5A"/>
+      <text x="34" y="138" font-family="IBM Plex Sans" font-size="9" font-weight="700" fill="#fff">Edit and Resend</text>
+      <text x="34" y="158" font-family="IBM Plex Mono" font-size="8.5" fill="#9FD8C6">POST /dashboard/billing HTTP/2</text>
+      <text x="34" y="174" font-family="IBM Plex Mono" font-size="8.5" fill="#8A8F87">Cookie: session=•••••••••••</text>
+      <text x="34" y="190" font-family="IBM Plex Mono" font-size="8.5" fill="#8A8F87">Next-Action: 4f2a9c1b&hellip;</text>
+      <text x="34" y="210" font-family="IBM Plex Mono" font-size="8.5" fill="#E8A87C">["plan_starter", 100]  ← edit values right here</text>
+      <rect x="590" y="222" width="90" height="20" rx="4" fill="#0F6B5C"/>
+      <text x="635" y="236" text-anchor="middle" font-family="IBM Plex Sans" font-size="8.5" fill="#fff">Send</text>
+      <defs><marker id="arrowDT2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">The Network tab's row list, and the Edit-and-Resend panel it opens — this exact panel is used constantly from here on.</div>
+  </figure>
+
   <h3 class="step-group">The Application tab — cookies and stored session data</h3>
   <ol class="steps">
     <li><span class="who">You — DevTools</span><br>Click <b class="click">Application</b> (labeled <b>Storage</b> if the panel is narrow &mdash; click the <code>»</code> at the end of the tab row if you don't see it).</li>
     <li><span class="who">You — DevTools</span><br>Expand <b>Cookies</b> in the left list, click the one entry underneath it.<span class="expect"><b>Expect:</b> a table of every cookie stored for the site, including your login session (named something with "session" or similar).</span></li>
     <li><span class="who">You — DevTools</span><br>Double-click a cookie's Value to edit it, or right-click a row &rarr; <b class="click">Delete</b> to remove it. Both apply the moment you click away or reload.</li>
   </ol>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 190" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="190" fill="#2B2B2B"/>
+      <rect x="0" y="0" width="150" height="190" fill="#252525"/>
+      <text x="12" y="20" font-family="IBM Plex Sans" font-size="8.5" fill="#8A8F87">▾ Cookies</text>
+      <rect x="20" y="26" width="120" height="16" rx="3" fill="#0F6B5C"/>
+      <text x="26" y="38" font-family="IBM Plex Mono" font-size="7.5" fill="#fff">p2less-app-...railway.app</text>
+      <text x="12" y="56" font-family="IBM Plex Sans" font-size="8.5" fill="#8A8F87">▸ Local storage</text>
+      <text x="12" y="72" font-family="IBM Plex Sans" font-size="8.5" fill="#8A8F87">▸ Session storage</text>
+      <rect x="0" y="20" width="18" height="140" fill="#333"/>
+      <rect x="150" y="0" width="570" height="24" fill="#333"/>
+      <text x="158" y="16" font-family="IBM Plex Mono" font-size="7.5" fill="#8A8F87">Name</text>
+      <text x="320" y="16" font-family="IBM Plex Mono" font-size="7.5" fill="#8A8F87">Value</text>
+      <rect x="150" y="24" width="570" height="24" fill="#3C2E2E"/>
+      <text x="158" y="40" font-family="IBM Plex Mono" font-size="8.5" fill="#F0C0C0">p2less_session</text>
+      <text x="320" y="40" font-family="IBM Plex Mono" font-size="8.5" fill="#F0C0C0">eyJhbGciOi&hellip;9f2a</text>
+      <rect x="150" y="48" width="570" height="24" fill="#2F2F2F"/>
+      <text x="158" y="64" font-family="IBM Plex Mono" font-size="8.5" fill="#DCD9CF">csrf_token</text>
+      <text x="320" y="64" font-family="IBM Plex Mono" font-size="8.5" fill="#DCD9CF">8e2f&hellip;c11</text>
+      <path d="M 300 36 L 340 36" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowDT3)"/>
+      <text x="350" y="30" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">this is your login session</text>
+      <text x="350" y="43" font-family="IBM Plex Sans" font-size="8.5" fill="#E8A87C">double-click the value to edit it</text>
+      <defs><marker id="arrowDT3" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">Application → Cookies — the session cookie row is the one this manual asks you to edit or delete in several later chapters.</div>
+  </figure>
 
   <h3 class="step-group">How to tell "it worked" from "it was blocked" — keep coming back to this</h3>
   <div class="check-box">
@@ -294,12 +415,73 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
     <li><span class="who">You — Burp Suite</span><br>Turn <b class="click">Intercept</b> back <b class="click">off</b> when you're done editing one at a time, or every click will pause and wait.</li>
   </ol>
 
+  <figure class="mockup">
+    <svg viewBox="0 0 720 230" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="230" fill="#EDEBE3"/>
+      <rect x="0" y="0" width="720" height="26" fill="#3A3A3A"/>
+      <text x="12" y="17" font-family="IBM Plex Sans" font-size="9" fill="#fff">Burp Suite Community Edition</text>
+      <rect x="0" y="26" width="720" height="22" fill="#DAD6C9"/>
+      <text x="12" y="41" font-family="IBM Plex Sans" font-size="8.5" fill="#5A5648">Dashboard</text>
+      <text x="90" y="41" font-family="IBM Plex Sans" font-size="8.5" fill="#5A5648">Target</text>
+      <rect x="150" y="29" width="60" height="16" rx="3" fill="#8A5A17"/>
+      <text x="180" y="41" text-anchor="middle" font-family="IBM Plex Sans" font-size="8.5" fill="#fff">Proxy</text>
+      <text x="230" y="41" font-family="IBM Plex Sans" font-size="8.5" fill="#5A5648">Intruder</text>
+      <text x="300" y="41" font-family="IBM Plex Sans" font-size="8.5" fill="#5A5648">Repeater</text>
+      <rect x="20" y="58" width="200" height="20" rx="10" fill="#8A2929"/>
+      <text x="120" y="72" text-anchor="middle" font-family="IBM Plex Sans" font-size="9" font-weight="700" fill="#fff">Intercept is on</text>
+      <text x="234" y="72" font-family="IBM Plex Sans" font-size="8.5" fill="#5A5648">Forward   Drop   Action</text>
+      <rect x="20" y="90" width="680" height="120" rx="4" fill="#ffffff" stroke="#C9C6BC"/>
+      <text x="32" y="110" font-family="IBM Plex Mono" font-size="9" fill="#12211D">POST /dashboard/billing HTTP/2</text>
+      <text x="32" y="128" font-family="IBM Plex Mono" font-size="8.5" fill="#6B6F66">Host: p2less-app-production.up.railway.app</text>
+      <text x="32" y="144" font-family="IBM Plex Mono" font-size="8.5" fill="#6B6F66">Cookie: p2less_session=eyJhbGci&hellip;</text>
+      <text x="32" y="160" font-family="IBM Plex Mono" font-size="8.5" fill="#6B6F66">Next-Action: 4f2a9c1b&hellip;</text>
+      <rect x="30" y="172" width="400" height="20" fill="#FBEFD9"/>
+      <text x="32" y="186" font-family="IBM Plex Mono" font-size="9" fill="#7A5714">["plan_business", 5000]  ← click in, edit this</text>
+      <path d="M 20 68 L 20 58" stroke="#C4432B" stroke-width="0"/>
+      <path d="M 130 82 L 130 88" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowB1)"/>
+      <text x="450" y="70" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">paused here — nothing sent yet</text>
+      <text x="450" y="84" font-family="IBM Plex Sans" font-size="8.5" fill="#7A2929">edit, then click Forward</text>
+      <defs><marker id="arrowB1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">Burp's Intercept tab — a real request paused mid-flight, editable before it ever reaches P2Less's server.</div>
+  </figure>
+
   <h4 class="sub">Step E — Repeater, for editing the same request many times</h4>
   <ol class="steps">
     <li><span class="who">You — Burp Suite</span><br>Click <b class="click">Proxy &rarr; HTTP history</b> for a full list of everything Burp has seen.</li>
     <li><span class="who">You — Burp Suite</span><br>Right-click the request you want &rarr; <b class="click">Send to Repeater</b>, then click the <b class="click">Repeater</b> tab.<span class="expect"><b>Expect:</b> the request, editable on the left; the response appears on the right after you click <b class="click">Send</b>.</span></li>
     <li><span class="who">You — Burp Suite</span><br>Edit, send, read the response, edit again &mdash; as many times as you like, without re-triggering it from the real page each time.</li>
   </ol>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="220" fill="#EDEBE3"/>
+      <rect x="0" y="0" width="720" height="26" fill="#3A3A3A"/>
+      <rect x="270" y="4" width="70" height="18" rx="3" fill="#8A5A17"/>
+      <text x="305" y="17" text-anchor="middle" font-family="IBM Plex Sans" font-size="8.5" fill="#fff">Repeater</text>
+      <rect x="20" y="40" width="330" height="160" rx="4" fill="#ffffff" stroke="#C9C6BC"/>
+      <text x="30" y="60" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">POST /dashboard/billing HTTP/2</text>
+      <text x="30" y="78" font-family="IBM Plex Mono" font-size="8" fill="#6B6F66">Cookie: p2less_session=&hellip;</text>
+      <rect x="28" y="90" width="290" height="18" fill="#FBEFD9"/>
+      <text x="30" y="103" font-family="IBM Plex Mono" font-size="8.5" fill="#7A5714">["plan_starter", 999999999]</text>
+      <rect x="30" y="118" width="80" height="22" rx="4" fill="#0F6B5C"/>
+      <text x="70" y="133" text-anchor="middle" font-family="IBM Plex Sans" font-size="9" fill="#fff">Send ▸</text>
+      <rect x="370" y="40" width="330" height="160" rx="4" fill="#ffffff" stroke="#C9C6BC"/>
+      <text x="380" y="60" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">HTTP/2 400 Bad Request</text>
+      <text x="380" y="78" font-family="IBM Plex Mono" font-size="8" fill="#6B6F66">Content-Type: application/json</text>
+      <text x="380" y="100" font-family="IBM Plex Mono" font-size="8.5" fill="#7A2929">{"error":"invalid top-up amount"}</text>
+      <path d="M 130 145 L 130 160" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowB2)"/>
+      <text x="30" y="176" font-family="IBM Plex Sans" font-size="8.5" fill="#7A2929">edit this number, click Send again —</text>
+      <text x="30" y="188" font-family="IBM Plex Sans" font-size="8.5" fill="#7A2929">no need to re-trigger from the real page</text>
+      <path d="M 480 105 L 480 118" stroke="#0F6B5C" stroke-width="2" fill="none" marker-end="url(#arrowB2g)"/>
+      <text x="380" y="134" font-family="IBM Plex Sans" font-size="8.5" fill="#0A4E43" font-weight="700">correct outcome — rejected</text>
+      <defs>
+        <marker id="arrowB2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker>
+        <marker id="arrowB2g" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#0F6B5C"/></marker>
+      </defs>
+    </svg>
+    <div class="mockup-cap">Repeater — edit on the left, response on the right, over and over without leaving this screen. Here, an inflated top-up amount is correctly rejected.</div>
+  </figure>
 
   <h4 class="sub">Step F — Intruder, for brute-forcing and rate-limit testing</h4>
   <div class="callout info"><span class="k">What Intruder is for</span>Repeater sends one edited request at a time, by hand. Intruder automates that: give it a request with one value marked as a "payload position," give it a list of values to try there, and it fires the request once per value, collecting every response. It's the right tool whenever "try many things quickly" is the actual test &mdash; brute-forcing an OTP code, or hammering a login form to see when it starts refusing you. Community Edition's Intruder is deliberately throttled (slower than the paid version) &mdash; that's fine for this manual; it still proves the point.</div>
@@ -309,6 +491,44 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
     <li><span class="who">You — Burp Suite</span><br>On the <b class="click">Payloads</b> sub-tab, choose payload type <b class="click">Numbers</b>, set <b>From</b> <code>0</code>, <b>To</b> <code>999999</code>, <b>Step</b> <code>1</code>, and a <b>Min integer digits</b> of <code>6</code> so every value is padded to six digits.</li>
     <li><span class="who">You — Burp Suite</span><br>Click <b class="click">Start attack</b> (top-right).<span class="expect"><b>Expect:</b> a results window listing every attempt with its own Status column and response length. Sort by <b>Status</b> or <b>Length</b> &mdash; a successful guess almost always stands out as the one row with a different status code or a noticeably different response length than all the others.</span></li>
   </ol>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="250" fill="#EDEBE3"/>
+      <rect x="0" y="0" width="720" height="26" fill="#3A3A3A"/>
+      <text x="12" y="17" font-family="IBM Plex Sans" font-size="9" fill="#fff">Intruder — attack results</text>
+      <rect x="20" y="40" width="680" height="20" fill="#DAD6C9"/>
+      <text x="30" y="54" font-family="IBM Plex Mono" font-size="8" fill="#5A5648">#</text>
+      <text x="70" y="54" font-family="IBM Plex Mono" font-size="8" fill="#5A5648">Payload</text>
+      <text x="260" y="54" font-family="IBM Plex Mono" font-size="8" fill="#5A5648">Status</text>
+      <text x="360" y="54" font-family="IBM Plex Mono" font-size="8" fill="#5A5648">Length</text>
+      <rect x="20" y="60" width="680" height="18" fill="#ffffff"/>
+      <text x="30" y="73" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">1</text>
+      <text x="70" y="73" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">000000</text>
+      <text x="260" y="73" font-family="IBM Plex Mono" font-size="8.5" fill="#7A2929">400</text>
+      <text x="360" y="73" font-family="IBM Plex Mono" font-size="8.5" fill="#5A5648">1,204</text>
+      <rect x="20" y="78" width="680" height="18" fill="#F4F2EA"/>
+      <text x="30" y="91" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">2</text>
+      <text x="70" y="91" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">000001</text>
+      <text x="260" y="91" font-family="IBM Plex Mono" font-size="8.5" fill="#7A2929">400</text>
+      <text x="360" y="91" font-family="IBM Plex Mono" font-size="8.5" fill="#5A5648">1,204</text>
+      <rect x="20" y="96" width="680" height="18" fill="#ffffff"/>
+      <text x="30" y="109" font-family="IBM Plex Mono" font-size="8.5" fill="#83887F">&hellip;</text>
+      <rect x="20" y="114" width="680" height="18" fill="#F6ECD9"/>
+      <text x="30" y="127" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">14</text>
+      <text x="70" y="127" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">000013</text>
+      <text x="260" y="127" font-family="IBM Plex Mono" font-size="8.5" fill="#8A5A17" font-weight="700">429</text>
+      <text x="360" y="127" font-family="IBM Plex Mono" font-size="8.5" fill="#5A5648">340</text>
+      <path d="M 300 123 L 340 123" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowB3)"/>
+      <text x="450" y="118" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">rate limit kicked in here</text>
+      <text x="450" y="132" font-family="IBM Plex Sans" font-size="8.5" fill="#7A2929">— good: it stopped a brute force early</text>
+      <rect x="20" y="150" width="680" height="18" fill="#F4F2EA"/>
+      <text x="30" y="163" font-family="IBM Plex Mono" font-size="8.5" fill="#83887F">15&ndash;1,000,000</text>
+      <text x="260" y="163" font-family="IBM Plex Mono" font-size="8.5" fill="#83887F">still 429&hellip;</text>
+      <text x="30" y="200" font-family="IBM Plex Sans" font-size="9" fill="#4A4F49">Sort by clicking the Status or Length column header — the odd one out is usually the finding.</text>
+    </svg>
+    <div class="mockup-cap">Intruder's results table, one row per attempt — this is what a working rate limit looks like: a wall of <code>429</code>s after a handful of tries.</div>
+  </figure>
 </div>
 
 <div class="chapter">
@@ -369,6 +589,22 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
     <li><span class="who">You</span><br>Do nothing &mdash; leave Tenant 5 on the trial exactly as created.</li>
     <li><span class="who">You</span><br>Connect a channel and send messages right up to the trial's 200-message / 100-AI-request ceiling, then keep going past it.<span class="expect"><b>Expect:</b> once either ceiling is hit, further sends are refused with a clear, specific reason &mdash; never a silent failure and never an uncapped continuation.</span></li>
   </ol>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="150" fill="#F1F0EB"/>
+      <rect x="220" y="20" width="280" height="110" rx="10" fill="#ffffff" stroke="#B23A3A"/>
+      <text x="360" y="46" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" font-weight="700" fill="#7A2929">Trial allowance used up</text>
+      <text x="360" y="66" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="#12211D">200 / 200 messages</text>
+      <text x="360" y="82" text-anchor="middle" font-family="IBM Plex Sans" font-size="8" fill="#4A4F49">This send was refused, not queued.</text>
+      <rect x="250" y="94" width="220" height="22" rx="5" fill="#0F6B5C"/>
+      <text x="360" y="109" text-anchor="middle" font-family="IBM Plex Sans" font-size="8.5" fill="#fff">Choose a plan to continue</text>
+      <path d="M 210 60 L 216 60" stroke="#C4432B" stroke-width="0"/>
+      <text x="40" y="60" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">what "refused, not</text>
+      <text x="40" y="74" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">silently uncapped" looks like</text>
+    </svg>
+    <div class="mockup-cap">Hitting the trial ceiling — a real, specific block, not a silent pass-through.</div>
+  </figure>
 </div>
 
 <div class="chapter">
@@ -377,6 +613,29 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
   <ol class="steps">
     <li><span class="who">You</span><br>Once Tenant 5's trial is exhausted or expired, open an Incognito window (<code>Ctrl+Shift+N</code>) and go to <code>/onboard</code> again.</li>
     <li><span class="who">You</span><br>Sign up as <code>Tenant 5b</code>, reusing the exact same phone number and/or email as Tenant 5.<span class="expect"><b>Expect:</b> the system recognizes the reused identity and blocks, merges, or flags the signup &mdash; never silently hands out a second, fully fresh trial.</span></li>
+  </ol>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="150" fill="#ffffff"/>
+      <rect x="0" y="0" width="720" height="28" fill="#E9E7E0"/>
+      <circle cx="16" cy="14" r="4" fill="#DCD9CF"/><circle cx="30" cy="14" r="4" fill="#DCD9CF"/><circle cx="44" cy="14" r="4" fill="#DCD9CF"/>
+      <text x="76" y="17" font-family="IBM Plex Mono" font-size="10" fill="#4A4F49">.../onboard (Incognito window)</text>
+      <rect x="210" y="46" width="300" height="88" rx="10" fill="#ffffff" stroke="#DCD9CF"/>
+      <text x="230" y="70" font-family="IBM Plex Sans" font-size="9" fill="#12211D">Your phone number</text>
+      <rect x="230" y="76" width="260" height="24" rx="5" fill="#fff" stroke="#B23A3A" stroke-width="2"/>
+      <text x="238" y="92" font-family="IBM Plex Mono" font-size="9" fill="#12211D">+254700111005</text>
+      <text x="230" y="118" font-family="IBM Plex Sans" font-size="8" fill="#7A2929">This number already has an active workspace.</text>
+      <path d="M 528 88 L 494 88" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowV2)"/>
+      <text x="534" y="84" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">the real test</text>
+      <text x="534" y="97" font-family="IBM Plex Sans" font-size="8.5" fill="#7A2929">is whether this message</text>
+      <text x="534" y="109" font-family="IBM Plex Sans" font-size="8.5" fill="#7A2929">appears at all</text>
+      <defs><marker id="arrowV2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">What catching a reused identity should look like on the sign-up form itself.</div>
+  </figure>
+
+  <ol class="steps" style="counter-reset: step 2;">
     <li><span class="who">You</span><br>If that's blocked, try once more with a genuinely different phone and email but the same organization name and browser.<span class="expect"><b>Note:</b> a real abuser has unlimited phone numbers. If nothing catches this harder case, log it as a real, open gap rather than a test failure. Vector 10 pushes this same idea to real scale.</span></li>
   </ol>
 </div>
@@ -387,6 +646,25 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
   <ol class="steps">
     <li><span class="who">You</span><br>Connect every channel type to this one trial tenant &mdash; WhatsApp, Telegram, widget &mdash; and send bursts on all of them at once.<span class="expect"><b>Expect:</b> combined usage across every channel counts against one single trial ceiling, not a separate free allowance per channel.</span></li>
   </ol>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="150" fill="#ffffff"/>
+      <rect x="24" y="20" width="672" height="110" rx="10" fill="#ffffff" stroke="#DCD9CF"/>
+      <text x="44" y="44" font-family="IBM Plex Sans" font-size="10" font-weight="700" fill="#12211D">Channels</text>
+      <circle cx="58" cy="66" r="6" fill="#0F6B5C"/><text x="72" y="70" font-family="IBM Plex Sans" font-size="9" fill="#12211D">WhatsApp — connected</text>
+      <circle cx="58" cy="86" r="6" fill="#0F6B5C"/><text x="72" y="90" font-family="IBM Plex Sans" font-size="9" fill="#12211D">Telegram — connected</text>
+      <circle cx="58" cy="106" r="6" fill="#0F6B5C"/><text x="72" y="110" font-family="IBM Plex Sans" font-size="9" fill="#12211D">Website widget — connected</text>
+      <text x="420" y="60" font-family="IBM Plex Sans" font-size="9" fill="#4A4F49">Combined trial usage</text>
+      <rect x="420" y="68" width="240" height="12" rx="6" fill="#EEECE5"/>
+      <rect x="420" y="68" width="228" height="12" rx="6" fill="#B23A3A"/>
+      <text x="420" y="94" font-family="IBM Plex Mono" font-size="9" fill="#7A2929">190 / 200 — one shared pool</text>
+      <path d="M 380 68 L 415 74" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowV3)"/>
+      <text x="220" y="60" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">three channels, one bar</text>
+      <defs><marker id="arrowV3" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">Correct pooling — three channels firing at once, but one shared trial ceiling underneath.</div>
+  </figure>
 </div>
 
 <div class="chapter">
@@ -396,6 +674,24 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
     <li><span class="who">You</span><br>Open the upgrade modal, start an M-Pesa STK payment, then close the tab before it resolves either way.<span class="expect"><b>Expect:</b> reopening billing later shows the true current state &mdash; never stuck "processing," never a plan change that didn't actually happen.</span></li>
     <li><span class="who">You</span><br>Start a payment, and while it's "waiting," open a second tab and try to trigger the same invoice's payment a second time.<span class="expect"><b>Expect:</b> no double-charge, no way to end up with two successful payments against one invoice.</span></li>
   </ol>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="150" fill="#F1F0EB"/>
+      <rect x="70" y="20" width="280" height="110" rx="10" fill="#ffffff" stroke="#DCD9CF"/>
+      <text x="210" y="46" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" font-weight="700" fill="#12211D">Tab 1</text>
+      <circle cx="210" cy="72" r="14" fill="none" stroke="#0F6B5C" stroke-width="3" stroke-dasharray="18 8"/>
+      <text x="210" y="105" text-anchor="middle" font-family="IBM Plex Sans" font-size="8.5" fill="#4A4F49">Waiting for confirmation&hellip;</text>
+      <rect x="370" y="20" width="280" height="110" rx="10" fill="#ffffff" stroke="#DCD9CF"/>
+      <text x="510" y="46" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" font-weight="700" fill="#12211D">Tab 2 — same invoice</text>
+      <rect x="400" y="60" width="220" height="24" rx="5" fill="#0F6B5C"/>
+      <text x="510" y="76" text-anchor="middle" font-family="IBM Plex Sans" font-size="8.5" fill="#fff">Pay KES 1,500</text>
+      <text x="510" y="104" text-anchor="middle" font-family="IBM Plex Sans" font-size="8" fill="#7A2929">clicked at nearly the same instant</text>
+      <path d="M 350 75 L 366 75" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowV4)"/>
+      <defs><marker id="arrowV4" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">The double-submit race — two tabs, one invoice, fired as close together as you can manage.</div>
+  </figure>
 </div>
 
 <div class="chapter">
@@ -404,6 +700,21 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
   <ol class="steps">
     <li><span class="who">You</span><br>Try adding far more team members, channels, or connectors than Tenant 5's plan should allow.<span class="expect"><b>Expect:</b> a clear "your plan allows up to N" message, never a silent allowance or a server error.</span></li>
   </ol>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 130" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="130" fill="#ffffff"/>
+      <rect x="220" y="16" width="280" height="98" rx="10" fill="#F6ECD9" stroke="#E9C27C"/>
+      <text x="360" y="42" text-anchor="middle" font-family="IBM Plex Sans" font-size="9.5" font-weight="700" fill="#7A5714">Team members</text>
+      <text x="360" y="64" text-anchor="middle" font-family="IBM Plex Mono" font-size="9" fill="#7A5714">Your plan allows up to 2.</text>
+      <text x="360" y="80" text-anchor="middle" font-family="IBM Plex Sans" font-size="8" fill="#7A5714">You already have 2. Upgrade to add more.</text>
+      <path d="M 200 65 L 216 65" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowV5)"/>
+      <text x="30" y="60" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">a real number,</text>
+      <text x="30" y="74" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">not a vague error</text>
+      <defs><marker id="arrowV5" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">A correctly specific limit message — names the actual number, not a generic failure.</div>
+  </figure>
 </div>
 
 <div class="chapter">
@@ -412,6 +723,24 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
   <ol class="steps">
     <li><span class="who">You</span><br>While logged in as Tenant 5, edit the browser's address bar to a dashboard URL containing another tenant's id (copy one from Tenant 1's session while testing it, paste it in here).<span class="expect"><b>Expect:</b> a clean "not found" or "forbidden" &mdash; never another tenant's real data rendering on screen. This is the single most serious class of bug this whole manual exists to catch.</span></li>
   </ol>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="150" fill="#ffffff"/>
+      <rect x="0" y="0" width="720" height="28" fill="#E9E7E0"/>
+      <circle cx="16" cy="14" r="4" fill="#DCD9CF"/><circle cx="30" cy="14" r="4" fill="#DCD9CF"/><circle cx="44" cy="14" r="4" fill="#DCD9CF"/>
+      <rect x="66" y="6" width="500" height="16" rx="4" fill="#ffffff" stroke="#B23A3A"/>
+      <text x="74" y="17" font-family="IBM Plex Mono" font-size="9" fill="#12211D">.../dashboard/conversations/<tspan fill="#B23A3A" font-weight="700">cnv_tenant1_9f2a</tspan> ← swapped in</text>
+      <rect x="220" y="46" width="280" height="80" rx="10" fill="#ffffff" stroke="#DCD9CF"/>
+      <text x="360" y="76" text-anchor="middle" font-family="IBM Plex Sans" font-size="11" font-weight="700" fill="#12211D">Not found</text>
+      <text x="360" y="96" text-anchor="middle" font-family="IBM Plex Sans" font-size="8.5" fill="#83887F">This conversation doesn't exist for your account.</text>
+      <path d="M 500 86 L 530 86" stroke="#0F6B5C" stroke-width="2" fill="none" marker-end="url(#arrowV6)"/>
+      <text x="536" y="82" font-family="IBM Plex Sans" font-size="8.5" fill="#0A4E43" font-weight="700">correct — no distinction</text>
+      <text x="536" y="94" font-family="IBM Plex Sans" font-size="8.5" fill="#0A4E43" font-weight="700">from "doesn't exist at all"</text>
+      <defs><marker id="arrowV6" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#0F6B5C"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">Swapping in another tenant's id — a clean, generic "not found" is the only acceptable result.</div>
+  </figure>
 </div>
 
 <div class="chapter">
@@ -436,6 +765,32 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
     <li><span class="who">You — VPN</span><br>Pick Kenya if listed; otherwise the closest available African country, noted honestly.</li>
     <li><span class="who">You</span><br>Reload <code>ipinfo.io</code>.<span class="expect"><b>Expect:</b> Country now shows the VPN's country and a new IP. If it still shows your real country, the VPN isn't actually connected.</span></li>
   </ol>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 240" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="240" fill="#ffffff"/>
+      <rect x="20" y="20" width="330" height="200" rx="10" fill="#F1F0EB" stroke="#DCD9CF"/>
+      <text x="185" y="46" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" font-weight="700" fill="#83887F">BEFORE — no VPN</text>
+      <rect x="46" y="60" width="278" height="130" rx="8" fill="#fff" stroke="#DCD9CF"/>
+      <text x="185" y="90" text-anchor="middle" font-family="Newsreader, Georgia, serif" font-size="14" fill="#12211D">ipinfo.io</text>
+      <text x="60" y="120" font-family="IBM Plex Sans" font-size="9" fill="#4A4F49">Country</text>
+      <text x="290" y="120" text-anchor="end" font-family="IBM Plex Mono" font-size="10" font-weight="700" fill="#7A2929">Not Kenya</text>
+      <text x="60" y="144" font-family="IBM Plex Sans" font-size="9" fill="#4A4F49">IP address</text>
+      <text x="290" y="144" text-anchor="end" font-family="IBM Plex Mono" font-size="9" fill="#12211D">102.14.xx.xx</text>
+      <text x="370" y="20" font-family="IBM Plex Sans" font-size="14" fill="#83887F">→</text>
+      <rect x="390" y="20" width="330" height="200" rx="10" fill="#E1EDE9" stroke="#0F6B5C"/>
+      <text x="555" y="46" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" font-weight="700" fill="#0A4E43">AFTER — VPN connected</text>
+      <rect x="416" y="60" width="278" height="130" rx="8" fill="#fff" stroke="#0F6B5C"/>
+      <text x="555" y="90" text-anchor="middle" font-family="Newsreader, Georgia, serif" font-size="14" fill="#12211D">ipinfo.io</text>
+      <text x="430" y="120" font-family="IBM Plex Sans" font-size="9" fill="#4A4F49">Country</text>
+      <text x="660" y="120" text-anchor="end" font-family="IBM Plex Mono" font-size="10" font-weight="700" fill="#0A4E43">Kenya</text>
+      <text x="430" y="144" font-family="IBM Plex Sans" font-size="9" fill="#4A4F49">IP address</text>
+      <text x="660" y="144" text-anchor="end" font-family="IBM Plex Mono" font-size="9" fill="#12211D">41.90.xx.xx</text>
+      <rect x="416" y="164" width="278" height="18" rx="4" fill="#0F6B5C"/>
+      <text x="555" y="177" text-anchor="middle" font-family="IBM Plex Sans" font-size="8.5" fill="#fff">ProtonVPN — Connected · Kenya</text>
+    </svg>
+    <div class="mockup-cap">What "the mask actually worked" looks like — the same ipinfo.io check, before and after connecting.</div>
+  </figure>
 
   <h4 class="sub">Step D — Mask the signals a VPN doesn't cover</h4>
   <ol class="steps">
@@ -472,6 +827,23 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
     <li><span class="who">You — Burp Suite</span><br>Repeat the same idea against the <b>OTP verification</b> request from sign-up (see Vector 9 for the exact request to target) and against sending a message through a connected channel &mdash; rapid-fire the same send request many times in a row via Repeater's <b class="click">Send</b> button clicked repeatedly, or Intruder with a list of near-identical message bodies.<span class="expect"><b>Expect:</b> the same pattern &mdash; a real ceiling that kicks in, not indefinite silent acceptance.</span></li>
   </ol>
 
+  <figure class="mockup">
+    <svg viewBox="0 0 720 140" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="140" fill="#F1F0EB"/>
+      <rect x="220" y="16" width="280" height="108" rx="10" fill="#ffffff" stroke="#DCD9CF"/>
+      <text x="360" y="42" text-anchor="middle" font-family="Newsreader, Georgia, serif" font-size="13" fill="#12211D">Welcome back</text>
+      <rect x="240" y="52" width="240" height="20" rx="5" fill="#EEECE5"/>
+      <rect x="240" y="76" width="240" height="20" rx="5" fill="#EEECE5"/>
+      <rect x="240" y="100" width="240" height="16" rx="4" fill="#F5E3E1" stroke="#B23A3A"/>
+      <text x="360" y="111" text-anchor="middle" font-family="IBM Plex Sans" font-size="7.5" fill="#7A2929">Too many attempts. Try again in 14 minutes.</text>
+      <path d="M 200 108 L 216 108" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowV8)"/>
+      <text x="20" y="100" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">this is what "good"</text>
+      <text x="20" y="114" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">looks like — a real lockout</text>
+      <defs><marker id="arrowV8" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">The human-facing side of a working rate limit, on the login form itself — not just Intruder's raw table.</div>
+  </figure>
+
   <div class="check-box">
     <div class="k">What "good" looks like here</div>
     <ul>
@@ -496,6 +868,24 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
     <li><span class="who">You</span><br>Try skipping the OTP screen entirely: after starting a signup but before entering any code, edit the browser's address bar directly to whatever URL the dashboard normally lives at.<span class="expect"><b>Expect:</b> refused / redirected back to verification &mdash; the account must not be usable until the code is actually confirmed server-side.</span></li>
   </ol>
 
+  <figure class="mockup">
+    <svg viewBox="0 0 720 160" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="160" fill="#ffffff"/>
+      <rect x="0" y="0" width="720" height="26" fill="#E9E7E0"/>
+      <text x="12" y="17" font-family="IBM Plex Mono" font-size="9" fill="#4A4F49">receive-sms-online.info/+254-700-XXX-XXX</text>
+      <rect x="20" y="38" width="680" height="30" fill="#F1F0EB"/>
+      <text x="30" y="57" font-family="IBM Plex Sans" font-size="9" fill="#83887F">This number is public. Anyone can view messages sent here.</text>
+      <rect x="20" y="70" width="680" height="26" fill="#ffffff" stroke="#EEECE5"/>
+      <text x="30" y="87" font-family="IBM Plex Mono" font-size="9" fill="#12211D">From: P2LESS &nbsp;&nbsp; "Your code is 483920" &nbsp;&nbsp; 2 min ago</text>
+      <rect x="20" y="96" width="680" height="26" fill="#F1F0EB"/>
+      <text x="30" y="113" font-family="IBM Plex Mono" font-size="9" fill="#83887F">From: OTHERAPP &nbsp;&nbsp; "Your OTP is 118203" &nbsp;&nbsp; 9 min ago</text>
+      <path d="M 350 76 L 350 60" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowV9a)"/>
+      <text x="360" y="140" font-family="IBM Plex Sans" font-size="8.5" fill="#7A2929">if this row ever exists for real, so does the leak</text>
+      <defs><marker id="arrowV9a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">What a public SMS-receiving inbox looks like — the thing that makes phone-number verification meaningless once real SMS is live.</div>
+  </figure>
+
   <h3 class="step-group">Part 2 — slipping extra values into the database (mass assignment)</h3>
   <div class="callout info">
     <span class="k">The idea in plain terms</span>
@@ -506,6 +896,27 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
     <li><span class="who">You — DevTools</span><br>Look at the request body. Remember P2Less's forms are Next.js Server Actions, so the body is a plain ordered list of argument values rather than named JSON fields &mdash; you're looking for a place to <em>add</em> to that list, not to find a field by name.</li>
     <li><span class="who">You — Burp Suite</span><br>This is easier with more room to work: send the same request to Repeater instead. Try appending extra values onto the end of the argument list &mdash; for instance, an extra <code>true</code> (testing for something like "already verified"), an extra number far above any real plan's limit (testing for something like a pre-set balance or message allowance), or a recognizable plan name/id copied from a plan you haven't paid for (testing for something like being assigned straight onto a paid plan). Send it.<span class="expect"><b>Expect:</b> the extra values are silently ignored and have zero effect on the resulting account &mdash; it should come out exactly as if you'd sent the normal, unmodified request. If your account instead comes out already verified, on a paid plan, or with an inflated balance you never bought, that's a serious, reportable mass-assignment bug.</span></li>
     <li><span class="who">You</span><br>Whatever the outcome, check the resulting account for every field you tried to influence &mdash; the trial dates, the plan, the verification status, the message/AI balances &mdash; not just the one thing that prompted the test.</li>
+  </ol>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 150" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="150" fill="#EDEBE3"/>
+      <rect x="20" y="20" width="680" height="110" rx="4" fill="#ffffff" stroke="#C9C6BC"/>
+      <text x="32" y="40" font-family="IBM Plex Mono" font-size="9" fill="#12211D">POST /onboard HTTP/2</text>
+      <text x="32" y="58" font-family="IBM Plex Mono" font-size="8.5" fill="#6B6F66">Next-Action: 9c1a4f2b&hellip;</text>
+      <rect x="30" y="68" width="480" height="18" fill="#F1F0EB"/>
+      <text x="34" y="81" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">["Sunrise Bakery","+254700111005","amina@...","Amina"]</text>
+      <rect x="30" y="88" width="480" height="18" fill="#FBEFD9"/>
+      <text x="34" y="101" font-family="IBM Plex Mono" font-size="8.5" fill="#7A5714">,"verified",true,"plan_enterprise"  ← appended, not in the real form</text>
+      <path d="M 520 96 L 560 96" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowV9b)"/>
+      <text x="566" y="70" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">the test</text>
+      <text x="566" y="83" font-family="IBM Plex Sans" font-size="8.5" fill="#7A2929">does the account that</text>
+      <text x="566" y="95" font-family="IBM Plex Sans" font-size="8.5" fill="#7A2929">comes out actually</text>
+      <text x="566" y="107" font-family="IBM Plex Sans" font-size="8.5" fill="#7A2929">reflect any of this?</text>
+      <defs><marker id="arrowV9b" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">Appending extra values onto the sign-up request's real argument list, in Repeater — the mass-assignment test in practice.</div>
+  </figure>
   </ol>
 </div>
 
@@ -524,6 +935,39 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
     <li><span class="who">You — Selenium IDE</span><br>Click the project's menu &rarr; <b class="click">Data-driven testing</b> (or the equivalent "Run with data" option in your version) and load a small CSV file with a few rows, each providing a different <code>orgName</code> and <code>phone</code> value &mdash; e.g. <code>Tenant Bulk 1,+254700200001</code>, <code>Tenant Bulk 2,+254700200002</code>, and a handful more.</li>
     <li><span class="who">You — Selenium IDE</span><br>Click <b class="click">Run</b> (or <b class="click">Run all</b>) to replay the recorded signup once per row in your data file, unattended.<span class="expect"><b>Expect &amp; what to check afterward:</b> the real question isn't whether the macro runs &mdash; it's what P2Less does about it. Check: did every single one succeed and get a full 7-day trial with no friction at all (a real gap &mdash; this exact tool is free and takes ten minutes to set up)? Did the system slow down, block, or flag the pattern after some number of rapid, near-identical signups from the same browser/IP? Is there any rate limit at all on the signup endpoint itself, separate from the OTP one tested in Vector 9?</span></li>
   </ol>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="260" fill="#ffffff"/>
+      <rect x="0" y="0" width="720" height="26" fill="#E9E7E0"/>
+      <text x="12" y="17" font-family="IBM Plex Sans" font-size="9" font-weight="700" fill="#12211D">Selenium IDE — P2Less mass signup test</text>
+      <rect x="600" y="4" width="60" height="18" rx="9" fill="#8A2929"/>
+      <text x="630" y="17" text-anchor="middle" font-family="IBM Plex Sans" font-size="8" fill="#fff">● Record</text>
+      <rect x="20" y="38" width="330" height="204" rx="4" fill="#fff" stroke="#DCD9CF"/>
+      <text x="30" y="56" font-family="IBM Plex Mono" font-size="8" fill="#83887F" text-transform="uppercase">command list</text>
+      <text x="30" y="76" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">1. open  /onboard</text>
+      <rect x="26" y="84" width="316" height="16" fill="#F6ECD9"/>
+      <text x="30" y="96" font-family="IBM Plex Mono" font-size="8.5" fill="#7A5714">2. type  orgName  ${orgName}</text>
+      <rect x="26" y="102" width="316" height="16" fill="#F6ECD9"/>
+      <text x="30" y="114" font-family="IBM Plex Mono" font-size="8.5" fill="#7A5714">3. type  phone    ${phone}</text>
+      <text x="30" y="132" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">4. click Create my workspace</text>
+      <text x="30" y="150" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">5. type  otp      097873</text>
+      <text x="30" y="168" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">6. click Verify and create&hellip;</text>
+      <path d="M 342 92 L 380 92" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowSEL)"/>
+      <text x="386" y="88" font-family="IBM Plex Mono" font-size="8.5" fill="#C4432B" font-weight="700">these two become</text>
+      <text x="386" y="100" font-family="IBM Plex Sans" font-size="8.5" fill="#7A2929">variables, fed from a CSV</text>
+      <rect x="380" y="112" width="300" height="120" rx="4" fill="#F1F0EB" stroke="#DCD9CF"/>
+      <text x="392" y="130" font-family="IBM Plex Mono" font-size="8" fill="#83887F">bulk-signups.csv</text>
+      <text x="392" y="148" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">orgName,phone</text>
+      <text x="392" y="164" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">Tenant Bulk 1,+254700200001</text>
+      <text x="392" y="180" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">Tenant Bulk 2,+254700200002</text>
+      <text x="392" y="196" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">Tenant Bulk 3,+254700200003</text>
+      <rect x="392" y="206" width="90" height="18" rx="4" fill="#0F6B5C"/>
+      <text x="437" y="219" text-anchor="middle" font-family="IBM Plex Sans" font-size="8.5" fill="#fff">Run all ▸</text>
+      <defs><marker id="arrowSEL" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">Selenium IDE, mid-setup — one recorded flow, two fields turned into variables, replayed once per CSV row.</div>
+  </figure>
 
   <div class="callout warn">
     <span class="k">Why this one matters as much as it does</span>
@@ -547,6 +991,23 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
     <li><span class="who">You — DevTools</span><br>Find anything resembling a date/timestamp in the body, change it far into the past or future, keep the surrounding punctuation identical, click <b class="click">Send</b>.<span class="expect"><b>Expect:</b> the response still reflects the server's own real clock, never the date you supplied.</span></li>
   </ol>
 
+  <figure class="mockup">
+    <svg viewBox="0 0 720 130" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="130" fill="#2B2B2B"/>
+      <rect x="0" y="0" width="720" height="24" fill="#3C3C3C"/>
+      <text x="12" y="16" font-family="IBM Plex Sans" font-size="8.5" fill="#fff">Edit and Resend</text>
+      <text x="30" y="50" font-family="IBM Plex Mono" font-size="8.5" fill="#9FD8C6">POST /dashboard/billing HTTP/2</text>
+      <rect x="26" y="60" width="440" height="18" fill="#3C2E2E"/>
+      <text x="30" y="73" font-family="IBM Plex Mono" font-size="8.5" fill="#F0C0C0">"trialEndsAt":"2019-01-01T00:00:00Z"  ← edited far into the past</text>
+      <path d="M 480 70 L 520 70" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowT1)"/>
+      <text x="526" y="55" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">the test</text>
+      <text x="526" y="68" font-family="IBM Plex Sans" font-size="8.5" fill="#E8A87C">does the reply still use</text>
+      <text x="526" y="80" font-family="IBM Plex Sans" font-size="8.5" fill="#E8A87C">the server's own clock?</text>
+      <defs><marker id="arrowT1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">A date field edited client-side before sending — billing logic should never trust this.</div>
+  </figure>
+
   <h3 class="step-group">2. Tamper with plan or price mid-flight</h3>
   <ol class="steps">
     <li><span class="who">You — Burp Suite</span><br>Start an upgrade to the most expensive plan. Find that request in <b class="click">Proxy &rarr; HTTP history</b>, send to Repeater.</li>
@@ -563,6 +1024,28 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
     <li><span class="who">You — DevTools</span><br>While logged into Tenant 5, edit a single character of the session cookie (<b class="click">Application &rarr; Cookies</b>), reload.<span class="expect"><b>Expect:</b> logged out or refused.</span></li>
     <li><span class="who">You — Burp Suite</span><br>Log in as Tenant 1 in ordinary Chrome, Tenant 5 in the Burp browser. Find a Tenant 5 request whose body contains a tenant/subscription id, send to Repeater, substitute Tenant 1's id while keeping Tenant 5's session cookie. Send.<span class="expect"><b>Expect:</b> refused. The server must check the logged-in session actually owns the id inside the body, not just trust whatever id the client sends &mdash; the same class of gap as a real, historical bug already found and fixed once in this codebase. If this succeeds, it's the single highest-severity finding this manual could produce.</span></li>
   </ol>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 190" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="190" fill="#F1F0EB"/>
+      <rect x="20" y="16" width="320" height="70" rx="8" fill="#E1EDE9" stroke="#0F6B5C"/>
+      <text x="180" y="36" text-anchor="middle" font-family="IBM Plex Sans" font-size="9" font-weight="700" fill="#0A4E43">Ordinary Chrome — Tenant 1</text>
+      <text x="40" y="56" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">tenantId: "ten_1a2b3c"</text>
+      <text x="40" y="72" font-family="IBM Plex Mono" font-size="8.5" fill="#0A4E43">session: (Tenant 1's own, real)</text>
+      <rect x="380" y="16" width="320" height="70" rx="8" fill="#F5E3E1" stroke="#B23A3A"/>
+      <text x="540" y="36" text-anchor="middle" font-family="IBM Plex Sans" font-size="9" font-weight="700" fill="#7A2929">Burp browser — Tenant 5</text>
+      <text x="400" y="56" font-family="IBM Plex Mono" font-size="8.5" fill="#7A2929">tenantId: "ten_1a2b3c" ← SWAPPED IN</text>
+      <text x="400" y="72" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">session: (Tenant 5's own, unchanged)</text>
+      <path d="M 340 50 L 376 50" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowT4)"/>
+      <text x="340" y="38" font-family="IBM Plex Mono" font-size="8" fill="#C4432B" font-weight="700">copied across</text>
+      <rect x="220" y="106" width="280" height="66" rx="8" fill="#ffffff" stroke="#DCD9CF"/>
+      <text x="360" y="132" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" font-weight="700" fill="#12211D">The real question</text>
+      <text x="360" y="152" text-anchor="middle" font-family="IBM Plex Sans" font-size="8.5" fill="#4A4F49">Does the server check the SESSION owns</text>
+      <text x="360" y="164" text-anchor="middle" font-family="IBM Plex Sans" font-size="8.5" fill="#4A4F49">this id — or just trust the id itself?</text>
+      <defs><marker id="arrowT4" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">The highest-severity test in this whole manual — Tenant 5's own valid session, carrying Tenant 1's id.</div>
+  </figure>
 
   <h3 class="step-group">5. Tamper generally — observe everything</h3>
   <ol class="steps">
@@ -584,6 +1067,31 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
     <li class="tech"><span class="who">Tech — Admin console</span><br>A teammate, logged in as admin, suspends Tenant 5 from <code>/admin/tenants</code>.<span class="expect"><b>Expect:</b> the status visibly changes in the admin list, with a real, audited log entry recording who and when.</span></li>
     <li><span class="who">You</span><br>In a tab where you were already logged in before the suspension, click any dashboard link without reloading first.<span class="expect"><b>Expect:</b> blocked immediately, with a clear message &mdash; testing whether suspension cuts you off mid-session, not just at the next login.</span></li>
     <li><span class="who">You</span><br>Try a full fresh login.<span class="expect"><b>Expect:</b> a specific, honest "account suspended" message, not a generic wrong-password error.</span></li>
+  </ol>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="200" fill="#ffffff"/>
+      <rect x="0" y="0" width="720" height="28" fill="#E9E7E0"/>
+      <circle cx="16" cy="14" r="4" fill="#DCD9CF"/><circle cx="30" cy="14" r="4" fill="#DCD9CF"/><circle cx="44" cy="14" r="4" fill="#DCD9CF"/>
+      <text x="76" y="17" font-family="IBM Plex Mono" font-size="10" fill="#4A4F49">.../login</text>
+      <rect x="210" y="48" width="300" height="130" rx="10" fill="#ffffff" stroke="#DCD9CF"/>
+      <text x="360" y="74" text-anchor="middle" font-family="Newsreader, Georgia, serif" font-size="14" fill="#12211D">Welcome back</text>
+      <rect x="228" y="86" width="264" height="22" rx="5" fill="#fff" stroke="#DCD9CF"/>
+      <rect x="228" y="112" width="264" height="22" rx="5" fill="#fff" stroke="#DCD9CF"/>
+      <rect x="228" y="140" width="264" height="26" rx="6" fill="#DCD9CF"/>
+      <text x="360" y="157" text-anchor="middle" font-family="IBM Plex Sans" font-size="9" fill="#83887F">Sign in</text>
+      <rect x="530" y="70" width="180" height="60" rx="6" fill="#F5E3E1" stroke="#B23A3A" stroke-dasharray="3,2"/>
+      <text x="540" y="90" font-family="IBM Plex Sans" font-size="8.5" font-weight="700" fill="#7A2929">This account has</text>
+      <text x="540" y="104" font-family="IBM Plex Sans" font-size="8.5" font-weight="700" fill="#7A2929">been suspended.</text>
+      <text x="540" y="120" font-family="IBM Plex Sans" font-size="7.5" fill="#7A2929">Contact support for help.</text>
+      <path d="M 492 100 L 528 100" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowSUS)"/>
+      <defs><marker id="arrowSUS" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">What a correct, honest suspension message looks like — specific, not a generic "wrong password."</div>
+  </figure>
+
+  <ol class="steps" style="counter-reset: step 3;">
     <li><span class="who">You — DevTools</span><br>If you saved Tenant 5's old session cookie value beforehand, add it manually to a fresh Incognito window's Cookies for P2Less's address.<span class="expect"><b>Expect:</b> refused too &mdash; suspension should invalidate the session itself, not just block the login form.</span></li>
     <li><span class="who">You</span><br>Try <b class="click">Forgot password</b> with Tenant 5's real email, all the way through.<span class="expect"><b>Expect:</b> either the reset is blocked, or it succeeds but landing in the dashboard is still blocked the same way &mdash; a reset must never be a side door.</span></li>
     <li><span class="who">You — Burp Suite</span><br>Replay an old captured Tenant 5 request from Repeater's history.<span class="expect"><b>Expect:</b> refused with the same suspended-account error everywhere &mdash; the real test of whether suspension is checked on every action, not just at login.</span></li>
@@ -596,6 +1104,27 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
   <div class="chapter-eyebrow">The other hardest test</div>
   <h2>Re-enabling a disabled button or channel</h2>
   <p class="chapter-sub">Sometimes P2Less turns a control off in the UI. This chapter tries to turn it back on from outside the rules.</p>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 160" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="160" fill="#F1F0EB"/>
+      <rect x="0" y="0" width="720" height="28" fill="#E9E7E0"/>
+      <circle cx="16" cy="14" r="4" fill="#DCD9CF"/><circle cx="30" cy="14" r="4" fill="#DCD9CF"/><circle cx="44" cy="14" r="4" fill="#DCD9CF"/>
+      <text x="76" y="17" font-family="IBM Plex Mono" font-size="10" fill="#4A4F49">.../dashboard/channels</text>
+      <rect x="24" y="44" width="330" height="96" rx="8" fill="#ffffff" stroke="#DCD9CF"/>
+      <text x="40" y="68" font-family="IBM Plex Sans" font-size="10" font-weight="700" fill="#12211D">Telegram</text>
+      <rect x="40" y="80" width="298" height="26" rx="6" fill="#EEECE5"/>
+      <text x="189" y="97" text-anchor="middle" font-family="IBM Plex Sans" font-size="9" fill="#A3A79C">Connect (upgrade required)</text>
+      <text x="40" y="128" font-family="IBM Plex Sans" font-size="8" fill="#83887F">Trial plan includes WhatsApp only</text>
+      <path d="M 400 92 L 350 92" stroke="#C4432B" stroke-width="2" fill="none" marker-end="url(#arrowDIS)"/>
+      <text x="404" y="80" font-family="IBM Plex Mono" font-size="9" fill="#C4432B" font-weight="700">step 1 — find this</text>
+      <text x="404" y="93" font-family="IBM Plex Sans" font-size="8.5" fill="#7A2929">greyed-out on the real dashboard</text>
+      <text x="404" y="106" font-family="IBM Plex Sans" font-size="8.5" fill="#7A2929">(then go inspect it — see the</text>
+      <text x="404" y="118" font-family="IBM Plex Sans" font-size="8.5" fill="#7A2929">Elements-tab mockup earlier)</text>
+      <defs><marker id="arrowDIS" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#C4432B"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">A real greyed-out control, on the actual dashboard — this is what you're hunting for before opening DevTools.</div>
+  </figure>
 
   <ol class="steps">
     <li><span class="who">You</span><br>Find a greyed-out control on Tenant 5's dashboard &mdash; a channel above this plan's allowance, or an action blocked by a usage limit.</li>
@@ -617,6 +1146,27 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
   <div class="callout warn"><span class="k">Why this matters as much as OTP does</span>Face verification exists to prove a real, specific, live person is present. Every known real-world attack against it targets exactly one of those three words: is it really a face (not a photo), is it really that person (not someone else's), and is it really happening now (not a recording).</div>
 
   <h3 class="step-group">When the day comes, test these in order</h3>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 170" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="170" fill="#12211D"/>
+      <rect x="260" y="20" width="200" height="130" rx="10" fill="#1B2A25" stroke="#4B3B8F" stroke-width="2"/>
+      <circle cx="360" cy="70" r="34" fill="none" stroke="#8FBFB4" stroke-width="2" stroke-dasharray="6,4"/>
+      <text x="360" y="76" text-anchor="middle" font-family="IBM Plex Sans" font-size="9" fill="#8FBFB4">align face</text>
+      <text x="360" y="120" text-anchor="middle" font-family="IBM Plex Sans" font-size="8.5" fill="#DCD9CF">"Turn your head slowly left"</text>
+      <text x="360" y="136" text-anchor="middle" font-family="IBM Plex Mono" font-size="7.5" fill="#8A8F87">a live, unpredictable prompt each time</text>
+      <text x="30" y="50" font-family="IBM Plex Mono" font-size="9" fill="#E4E1F5" font-weight="700">1. real face?</text>
+      <text x="30" y="70" font-family="IBM Plex Sans" font-size="8" fill="#9B96C4">not a printed photo</text>
+      <text x="30" y="98" font-family="IBM Plex Mono" font-size="9" fill="#E4E1F5" font-weight="700">2. that person?</text>
+      <text x="30" y="118" font-family="IBM Plex Sans" font-size="8" fill="#9B96C4">not someone else's</text>
+      <text x="500" y="50" font-family="IBM Plex Mono" font-size="9" fill="#E4E1F5" font-weight="700">3. happening now?</text>
+      <text x="500" y="70" font-family="IBM Plex Sans" font-size="8" fill="#9B96C4">not a recording</text>
+      <text x="500" y="98" font-family="IBM Plex Mono" font-size="9" fill="#E4E1F5" font-weight="700">4. reaches the</text>
+      <text x="500" y="115" font-family="IBM Plex Mono" font-size="9" fill="#E4E1F5" font-weight="700">server unswapped?</text>
+    </svg>
+    <div class="mockup-cap">The four questions this whole chapter reduces to — a conceptual illustration for a feature that doesn't exist yet.</div>
+  </figure>
+
   <ol class="steps">
     <li><span class="who">You</span><br><b>The photo test.</b> Print a clear, well-lit photo of a face (yours or a colleague's, with consent), hold it up to the camera during verification instead of your live face.<span class="expect"><b>Expect:</b> rejected &mdash; a system with real liveness detection should notice the complete absence of natural micro-movement, blinking, and depth.</span></li>
     <li><span class="who">You</span><br><b>The screen-replay test.</b> Play a recorded video of a face on a second phone or tablet, held up to the camera in place of a live feed.<span class="expect"><b>Expect:</b> rejected &mdash; screen glare, refresh-rate flicker, and the video's fixed loop should all be things real liveness detection is built to catch.</span></li>
@@ -643,6 +1193,34 @@ table.reflog td { padding: 8px; border-bottom: 1px solid #EEECE5; color: #4A4F49
     <li><span class="who">You — Burp Suite</span><br>Start the top-up at that maximum, find the resulting invoice-creation request in Burp's history, send it to Repeater.</li>
     <li><span class="who">You — Burp Suite</span><br>In the body, find the number matching the slider value you picked and replace it with something far larger &mdash; e.g. <code>999999999</code>. Send.<span class="expect"><b>Expect:</b> the server clamps or rejects the out-of-range number rather than trusting it &mdash; the resulting invoice amount and any credited balance should never reflect a number the real UI would never have allowed you to pick.</span></li>
   </ol>
+
+  <figure class="mockup">
+    <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="720" height="200" fill="#ffffff"/>
+      <rect x="20" y="20" width="330" height="160" rx="10" fill="#F1F0EB" stroke="#DCD9CF"/>
+      <text x="185" y="44" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" font-weight="700" fill="#83887F">the real slider — capped</text>
+      <text x="40" y="70" font-family="IBM Plex Sans" font-size="9" fill="#4A4F49">Extra messages</text>
+      <text x="300" y="70" text-anchor="end" font-family="IBM Plex Mono" font-size="10" font-weight="700" fill="#12211D">5,000</text>
+      <line x1="40" y1="90" x2="330" y2="90" stroke="#DCD9CF" stroke-width="4"/>
+      <circle cx="330" cy="90" r="8" fill="#0F6B5C"/>
+      <text x="40" y="112" font-family="IBM Plex Sans" font-size="8" fill="#83887F">slider physically stops at 5,000 — the UI's own ceiling</text>
+      <text x="40" y="140" font-family="IBM Plex Sans" font-size="9" fill="#4A4F49">Top-up total</text>
+      <text x="300" y="140" text-anchor="end" font-family="IBM Plex Mono" font-size="10" fill="#0A4E43">KES 15,000</text>
+      <text x="370" y="20" font-family="IBM Plex Sans" font-size="14" fill="#83887F">→</text>
+      <rect x="390" y="20" width="310" height="160" rx="10" fill="#EDEBE3" stroke="#8A5A17"/>
+      <text x="545" y="44" text-anchor="middle" font-family="IBM Plex Sans" font-size="10" font-weight="700" fill="#8A5A17">the same request, in Repeater</text>
+      <rect x="410" y="56" width="270" height="72" rx="4" fill="#fff" stroke="#C9C6BC"/>
+      <text x="420" y="74" font-family="IBM Plex Mono" font-size="8.5" fill="#12211D">POST /dashboard/billing</text>
+      <rect x="418" y="84" width="254" height="16" fill="#FBEFD9"/>
+      <text x="420" y="96" font-family="IBM Plex Mono" font-size="8.5" fill="#7A5714">["plan_x", 999999999]  ← edited</text>
+      <text x="420" y="116" font-family="IBM Plex Mono" font-size="8.5" fill="#7A2929">HTTP/2 400 — "amount out of range"</text>
+      <path d="M 480 100 L 480 112" stroke="#0F6B5C" stroke-width="2" fill="none" marker-end="url(#arrowT12)"/>
+      <text x="410" y="156" font-family="IBM Plex Sans" font-size="8.5" fill="#0A4E43" font-weight="700">correct outcome — server rejects it,</text>
+      <text x="410" y="168" font-family="IBM Plex Sans" font-size="8.5" fill="#0A4E43" font-weight="700">not just the slider's own limit</text>
+      <defs><marker id="arrowT12" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#0F6B5C"/></marker></defs>
+    </svg>
+    <div class="mockup-cap">The slider's own limit vs. what happens when that limit is bypassed directly in the request — the server has to be the real gate, not the slider.</div>
+  </figure>
 
   <h4 class="sub">Step B — Try to credit the balance with no real payment at all</h4>
   <ol class="steps">
