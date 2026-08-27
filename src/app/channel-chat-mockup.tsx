@@ -1,10 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Wifi, Signal, BatteryFull, Mic, Lock, XCircle, CheckCircle2, Package } from "lucide-react";
+import { Wifi, Signal, BatteryFull, Mic, Lock, XCircle, CheckCircle2, Package, Image as ImageIcon, Play } from "lucide-react";
 
 type Product = { name: string; price: string; color: string };
-type Message = { from: "them" | "me"; text: string; time: string; kind?: "text" | "stk" | "cancelled" | "confirmed" | "images"; amount?: number; products?: Product[] };
+type Message = {
+  from: "them" | "me";
+  text: string;
+  time: string;
+  kind?: "text" | "stk" | "cancelled" | "confirmed" | "images" | "photo" | "voice";
+  amount?: number;
+  products?: Product[];
+  duration?: string; // "voice" only — a made-up waveform duration, e.g. "0:07"
+};
 type Channel = { name: string; color: string; bubble: string; icon: string };
 
 const ICON_PATHS: Record<string, string> = {
@@ -79,6 +87,24 @@ const SCENES: Scene[] = [
       { from: "them", text: "Grilled Tilapia for 2, please.", time: "12:31pm" },
       { from: "me", text: "Pay KES 2,400 to confirm your order.", time: "12:31pm", kind: "stk", amount: 2400 },
       { from: "me", text: "Payment confirmed. Your order is being prepared!", time: "12:32pm", kind: "confirmed" },
+    ],
+  },
+  {
+    // Demonstrates real, shipped WhatsApp media handling (both transports,
+    // live-verified in production) — deliberately its own scene rather than
+    // folded into "Retail shop" above, which shows the OPPOSITE direction
+    // (the assistant sending product photos out). Real feedback 2026-08-27:
+    // an image arriving needs something leading the reply, not a flat
+    // "image received" acknowledgement — and a voice note in gets a voice
+    // note back, not a typed transcript.
+    org: "Pharmacy", channel: "whatsapp", customer: "Nancy",
+    messages: [
+      { from: "them", text: "", time: "9:03am", kind: "photo" },
+      { from: "me", text: "I can see it — is this a prescription you'd like filled, or are you checking stock?", time: "9:03am" },
+      { from: "them", text: "Checking if you stock this one.", time: "9:04am" },
+      { from: "me", text: "Yes, Amoxicillin 500mg is in stock — KES 350 for a full course.", time: "9:04am" },
+      { from: "them", text: "", time: "9:05am", kind: "voice", duration: "0:07" },
+      { from: "me", text: "", time: "9:05am", kind: "voice", duration: "0:04" },
     ],
   },
   {
@@ -250,6 +276,39 @@ export function ChannelChatMockup() {
                           ))}
                         </div>
                         <div className="mt-1 px-0.5 text-right text-[10px] text-black/40">{m.time}</div>
+                      </div>
+                    );
+                  }
+                  if (m.kind === "photo") {
+                    return (
+                      <div
+                        key={i}
+                        className={"animate-in w-fit max-w-[65%] overflow-hidden rounded-lg shadow-sm " + (m.from === "me" ? "ml-auto" : "")}
+                        style={m.from === "me" ? { background: channel.bubble } : { background: "#fff" }}
+                      >
+                        <div className="grid h-24 w-36 place-items-center bg-black/10">
+                          <ImageIcon size={22} className="text-black/40" />
+                        </div>
+                        <div className="px-1.5 py-1 text-right text-[10px] text-black/40">{m.time}</div>
+                      </div>
+                    );
+                  }
+                  if (m.kind === "voice") {
+                    return (
+                      <div
+                        key={i}
+                        className={"animate-in flex w-fit max-w-[70%] items-center gap-2 rounded-lg px-3 py-2 shadow-sm " + (m.from === "me" ? "ml-auto" : "bg-white")}
+                        style={m.from === "me" ? { background: channel.bubble } : undefined}
+                      >
+                        <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-white" style={{ background: channel.color }}>
+                          <Play size={11} fill="currentColor" />
+                        </div>
+                        <div className="flex items-center gap-[2px]" aria-hidden="true">
+                          {[6, 10, 4, 13, 8, 15, 5, 11, 7, 9, 4, 12].map((h, bar) => (
+                            <span key={bar} className="w-[2px] rounded-full bg-black/25" style={{ height: h }} />
+                          ))}
+                        </div>
+                        <span className="shrink-0 text-[10px] text-black/40">{m.duration}</span>
                       </div>
                     );
                   }

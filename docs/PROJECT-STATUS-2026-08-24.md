@@ -96,4 +96,4 @@ Mode 2 outbound/proactive messaging (marketing, notifications, follow-ups to kno
 
 ---
 
-*Last updated: 2026-08-27 (fixed the QR/pairing-code modal disappearing instead of opening on both "Forget & pair again" and a brand-new "Connect via alternative" — a real React branch-conditional unmount bug found via direct user report, on top of Channels page clarity + "Forget & pair again" itself and voice-note replies shipped 2026-08-26). Update this doc (and push it) in the same round as any change that ships, closes an external item, or surfaces a new gap — don't let it go stale.*
+*Last updated: 2026-08-27 (fixed P2Less's own FAQ falsely denying its real voice/image capability, fixed the unknown-contact greeting reading backwards — answer before greeting instead of after — and added a real image/voice scene to the landing page's phone mockup; on top of the QR/pairing-code modal fix, Channels page clarity + "Forget & pair again," and voice-note replies all shipped 2026-08-26/27). Update this doc (and push it) in the same round as any change that ships, closes an external item, or surfaces a new gap — don't let it go stale.*

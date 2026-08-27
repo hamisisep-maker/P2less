@@ -1722,7 +1722,11 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     const st0 = (!isGreeting(text) && aiEnabled())
       ? await smallTalk(assistant, text, [...actionsNow0.map((a) => a.name), ...toolCapabilityLines()], history, knownFacts, orgFaqs)
       : null;
-    const intro = st0 ? `${st0}\n\n${hello}` : hello;
+    // Greeting leads, answer follows — real feedback 2026-08-27: "👋 Hello!
+    // You've reached X" landing AFTER the actual answer read backwards, like
+    // an afterthought tacked onto the end of a real response instead of how
+    // a person actually opens a conversation.
+    const intro = st0 ? `${hello}\n\n${st0}` : hello;
     // A tenant with ZERO configured capabilities (e.g. a pure-FAQ/marketing
     // tenant with no connectors at all — found live-testing the landing
     // page's own self-referential widget, 2026-08-22) has no "account" to
