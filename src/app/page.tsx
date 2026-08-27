@@ -58,7 +58,7 @@ const FOOTER_ICON_PATHS = {
 const PROCESS_STEPS = [
   { n: "1", t: "They message your number", d: "WhatsApp, Messenger, Telegram, email, or the widget on your site. Wherever they already are." },
   { n: "2", t: "P2Less identifies and verifies them", d: "Checks who's asking and what they're allowed to see, before anything sensitive moves." },
-  { n: "3", t: "It calls your real systems", d: "Through the specific, permissioned connectors you configure. Never free-form access." },
+  { n: "3", t: "It calls your real systems", d: "Any system with an API, not a fixed list — paste an OpenAPI spec and get a working connector in minutes, or install a ready-made template. Always permissioned, never free-form access." },
   { n: "4", t: "It replies as you", d: "Your name, your number, your answer. Nobody meets P2Less. They meet you, just faster." },
 ];
 
@@ -134,6 +134,7 @@ export default async function Landing() {
               <div className="text-xs font-semibold uppercase tracking-wide text-accent-ink">With P2Less</div>
               <ul className="mt-3 space-y-2.5 text-sm text-ink">
                 <li>Answered instantly, day or night, from your own number</li>
+                <li>Whether it&apos;s 1 customer or 100 messaging at once, nobody waits in line</li>
                 <li>The repeat questions handle themselves. Your team handles what&apos;s actually new</li>
                 <li>Real records released only after verifying who&apos;s asking</li>
                 <li>One number your customers already trust. No new app to learn</li>
