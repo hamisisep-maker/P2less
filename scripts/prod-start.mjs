@@ -286,22 +286,36 @@ if (tp.slug && tp.phone && tp.name && tp.admissionId) {
   }
 }
 
-// Diagnostic only, 2026-08-27 — live-verifying P2Less's own tenant FAQs
-// against what the assistant actually does today. A real webchat test asking
-// "can you read images and listen to voice notes? what about replying with
-// voice?" got back "we don't do voice outputs — the assistant communicates
-// purely through text across every channel" — flatly wrong (voice-note
-// replies and image vision both shipped and were live-verified earlier this
-// same week, items 23/26 in GAP-REGISTER-2026-08-24.md). Logging the real
-// current FAQ content here (never queryable directly — this SQLite volume
-// has no remote connection string, same reason every other one-off prod data
-// fix in this file goes through a boot step) so the exact stale entry can be
-// identified and corrected precisely, not guessed at. Remove this block once
-// the FAQ content has actually been read from a deploy log.
+// Real gap found live, 2026-08-27 — a webchat test asking "can you read
+// images and listen to voice notes? what about replying with voice?" got
+// back "we don't do voice outputs — the assistant communicates purely
+// through text across every channel." Flatly wrong: image vision and
+// voice-note replies both shipped and were live-verified in production
+// earlier this same week (GAP-REGISTER-2026-08-24.md items 23/26). Read the
+// real stored faqs (logged via a prior diagnostic-only version of this
+// block, since this SQLite volume has no remote connection string a local
+// script can query directly) — none of the 30 existing FAQs mention media
+// capabilities at all, so the assistant was guessing rather than grounding,
+// on a question its own "Does the assistant ever make things up? No" FAQ
+// promises it won't do. Scoped to WhatsApp specifically (both transports),
+// not a blanket claim — Messenger's inbound handler passes attachments
+// through generically but was never wired for transcription/voice-reply the
+// way WhatsApp's was, so it isn't claimed here. Idempotent: only appends if
+// this exact question isn't already present, safe to leave in permanently
+// (matches the shape of every other one-time P2Less-tenant fix in this file).
 {
-  const p2less = await db.tenant.findFirst({ where: { name: "P2Less" }, select: { faqs: true } });
+  const p2less = await db.tenant.findFirst({ where: { name: "P2Less" }, select: { id: true, faqs: true } });
   if (p2less) {
-    console.log("[prod-start] P2Less tenant faqs (diagnostic):", JSON.stringify(p2less.faqs));
+    const faqs = Array.isArray(p2less.faqs) ? p2less.faqs : [];
+    const q = "Can it understand images and voice notes, and reply with voice?";
+    if (!faqs.some((f) => f?.q === q)) {
+      faqs.push({
+        q,
+        a: "Yes, on WhatsApp — send a photo and it reads any text in it (receipts, documents, screenshots) and describes what's in it; send a voice note and it listens and understands it, then replies back with a real voice note of its own, not just text. This website chat is text-only for now.",
+      });
+      await db.tenant.update({ where: { id: p2less.id }, data: { faqs } });
+      console.log("[prod-start] P2Less FAQ corrected — added real answer for image/voice capability question.");
+    }
   }
 }
 
