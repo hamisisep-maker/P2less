@@ -36,17 +36,28 @@ type CreateInvoiceResult = { ok: true; invoice: NonNullable<Awaited<ReturnType<t
  *  step, the client never submits an amount. Reuses upgradeSubscriptionPlanAction's
  *  exact direction check (Plan.sort, not priceMonthly — Enterprise prices at
  *  0, same as the internal trial plan, but is the top tier). Reuses an
- *  existing non-expired invoice for the SAME target plan (handles repeated
- *  clicks/navigation without spamming invoices); a DIFFERENT target plan
- *  supersedes (cancels) the stale one rather than trapping the tenant into
- *  paying for a plan they no longer want. */
-export async function createUpgradeInvoiceAction(newPlanId: string): Promise<CreateInvoiceResult> {
+ *  existing non-expired invoice for the SAME target plan AND SAME top-up
+ *  message count (handles repeated clicks/navigation without spamming
+ *  invoices); a DIFFERENT target plan or top-up amount supersedes (cancels)
+ *  the stale one rather than trapping the tenant into paying for something
+ *  they no longer want.
+ *
+ *  `extraMessages` — 2026-08-27, direct request: a plan purchase alone
+ *  doesn't guarantee enough message balance to actually resume replying, so
+ *  a tenant can bundle a real message-balance top-up into the same invoice/
+ *  payment, priced at the exact real per-message rate the balance is
+ *  normally debited at (never a different/discounted number). Re-fetched
+ *  server-side here, never trusted from the client, same as every other
+ *  amount in this flow. */
+export async function createUpgradeInvoiceAction(newPlanId: string, extraMessages = 0): Promise<CreateInvoiceResult> {
   return withTenantUser(async (user) => {
     if (!userPermissions(user).includes(PERMISSIONS.BILLING_MANAGE)) return { error: "You don't have billing permission." };
     const tenantId = user.tenantId!;
-    const [sub, newPlan] = await Promise.all([
+    const safeExtraMessages = Math.max(0, Math.floor(extraMessages) || 0);
+    const [sub, newPlan, pricePerMessage] = await Promise.all([
       db.subscription.findUnique({ where: { tenantId }, include: { plan: true } }),
       db.plan.findUnique({ where: { id: newPlanId } }),
+      getSettingNumber("price_conversation_kes"),
     ]);
     if (!sub) return { error: "No subscription found." };
     if (!newPlan || !newPlan.active) return { error: "That plan isn't available." };
@@ -69,21 +80,23 @@ export async function createUpgradeInvoiceAction(newPlanId: string): Promise<Cre
       orderBy: { createdAt: "desc" },
     });
     if (existing) {
-      if (existing.toPlanId === newPlan.id) {
+      if (existing.toPlanId === newPlan.id && existing.messageTopupMessages === safeExtraMessages) {
         const fresh = await loadFreshInvoiceForAction(existing.id);
         if (fresh) return { ok: true, invoice: fresh };
       } else {
-        // A different plan was chosen — the old invoice no longer reflects
-        // what the tenant wants to pay for. Supersede it rather than
-        // silently trapping them into an old, unrelated payment obligation.
+        // A different plan, or a different top-up amount, was chosen — the
+        // old invoice no longer reflects what the tenant wants to pay for.
+        // Supersede it rather than silently trapping them into an old,
+        // unrelated payment obligation.
         await db.invoice.update({ where: { id: existing.id }, data: { status: "cancelled" } });
-        await audit({ tenantId, requestId: newRequestId(), actorType: "user", actorId: user.id, action: "invoice.superseded", target: existing.invoiceNumber, success: true, detail: { reason: "different plan selected" } });
+        await audit({ tenantId, requestId: newRequestId(), actorType: "user", actorId: user.id, action: "invoice.superseded", target: existing.invoiceNumber, success: true, detail: { reason: existing.toPlanId !== newPlan.id ? "different plan selected" : "top-up amount changed" } });
       }
     }
 
     const now = new Date();
     const proration = computeProration(sub.plan.priceMonthly, sub.currentPeriodStartedAt, sub.renewsAt, now);
-    const payableKes = Math.max(0, newPlan.priceMonthly - proration.remainingValueKes);
+    const messageTopupKes = safeExtraMessages * pricePerMessage;
+    const payableKes = Math.max(0, newPlan.priceMonthly - proration.remainingValueKes) + messageTopupKes;
     const invoiceNumber = await nextInvoiceNumber();
 
     const invoice = await db.invoice.create({
@@ -92,7 +105,8 @@ export async function createUpgradeInvoiceAction(newPlanId: string): Promise<Cre
         fromPlanId: sub.planId, toPlanId: newPlan.id,
         fromPlanValueKes: sub.plan.priceMonthly,
         usedDays: proration.usedDays, remainingDays: proration.remainingDays, daysInCycle: proration.daysInCycle,
-        remainingValueKes: proration.remainingValueKes, toPlanPriceKes: newPlan.priceMonthly, payableKes,
+        remainingValueKes: proration.remainingValueKes, toPlanPriceKes: newPlan.priceMonthly,
+        messageTopupMessages: safeExtraMessages, messageTopupKes, payableKes,
         createdByUserId: user.id,
       },
       include: { toPlan: true, fromPlan: true, tenant: true },

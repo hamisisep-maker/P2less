@@ -53,7 +53,7 @@ export type SettleResult = {
    *  transaction (no tx passed in); when a caller supplies tx, THAT caller
    *  must write it, after their own transaction has actually committed,
    *  using this payload. */
-  auditDetail?: { tenantId: string; invoiceNumber: string; fromPlan: string; toPlan: string; remainingValueKes: number; payableKes: number; paidTotalKes: number; connectorAllowanceChange: { from: number | null; to: number | null } | null };
+  auditDetail?: { tenantId: string; invoiceNumber: string; fromPlan: string; toPlan: string; remainingValueKes: number; payableKes: number; paidTotalKes: number; connectorAllowanceChange: { from: number | null; to: number | null } | null; messageTopupMessages: number; messageTopupKes: number };
 };
 
 /** The ONE place that resolves what an invoice's current state means and
@@ -108,6 +108,7 @@ export async function settleInvoice(invoiceId: string, tx?: Tx): Promise<SettleR
         invoiceNumber: result.auditDetail.invoiceNumber, fromPlan: result.auditDetail.fromPlan, toPlan: result.auditDetail.toPlan,
         remainingValueKes: result.auditDetail.remainingValueKes, payableKes: result.auditDetail.payableKes, paidTotalKes: result.auditDetail.paidTotalKes,
         connectorAllowanceChange: result.auditDetail.connectorAllowanceChange,
+        messageTopupMessages: result.auditDetail.messageTopupMessages, messageTopupKes: result.auditDetail.messageTopupKes,
       },
     }).catch(() => {});
   }
@@ -150,7 +151,14 @@ async function settleInvoiceInTx(tx: Tx, invoiceId: string, expiryHours: number)
   }
   await tx.subscription.update({
     where: { tenantId: before.tenantId },
-    data: { planId: before.toPlanId, pendingPlanId: null },
+    data: {
+      planId: before.toPlanId, pendingPlanId: null,
+      // Real message-balance top-up bundled into this same payment,
+      // 2026-08-27 — credited only now, once payment has actually settled,
+      // same "money moves only when it's real" rule the plan change itself
+      // follows. A no-op increment(0) when no top-up was purchased.
+      ...(before.messageTopupKes > 0 ? { messageBalanceKes: { increment: before.messageTopupKes } } : {}),
+    },
   });
 
   const oldLimits = (before.fromPlan?.limits as PlanLimits | undefined) ?? {};
@@ -163,6 +171,7 @@ async function settleInvoiceInTx(tx: Tx, invoiceId: string, expiryHours: number)
       fromPlan: before.fromPlan?.name ?? "(trial)", toPlan: before.toPlan.name,
       remainingValueKes: before.remainingValueKes, payableKes: before.payableKes, paidTotalKes: paidSoFar,
       connectorAllowanceChange: connectorChange ? { from: oldLimits.connectors ?? null, to: newLimits.connectors ?? null } : null,
+      messageTopupMessages: before.messageTopupMessages, messageTopupKes: before.messageTopupKes,
     },
   };
 }

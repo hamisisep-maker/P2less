@@ -6,6 +6,9 @@ import { monthlyUsage } from "@/lib/usage";
 import { Card, Stat, PageHeader, Badge, timeAgo } from "@/components/ui";
 import { Trend, Modal, InfoTip, TrendAreaChart, StatusPieChart, ConversationsTable, IconStat, type ConvoRow } from "@/components/dashboard-ui";
 import { whatsappConnectionStatus, getChannelGaps, type ConnectionStatus } from "@/lib/channel-status";
+import { getUsageSummary } from "@/lib/prepaid-billing";
+import { getSettingNumber } from "@/lib/platform-settings";
+import { UsageBalanceCard } from "./usage-balance-card";
 
 const TZ = process.env.APP_TIMEZONE || "Africa/Nairobi";
 
@@ -28,6 +31,7 @@ export default async function Overview() {
       conversations, connectors, contacts, sub,
       recentEvents, statusGroups, tenantFaqs,
       firstNumber, messengerChannel, telegramChannel, emailChannel, widgetKeyCount,
+      usageSummary, pricePerMessageKes,
     ] = await Promise.all([
       monthlyUsage(tenantId, "message_in"),
       monthlyUsage(tenantId, "message_out"),
@@ -47,8 +51,21 @@ export default async function Overview() {
       db.channel.findFirst({ where: { tenantId, type: "telegram" } }),
       db.channel.findFirst({ where: { tenantId, type: "email" } }),
       db.widgetKey.count({ where: { tenantId } }),
+      getUsageSummary(tenantId),
+      getSettingNumber("price_conversation_kes"),
     ]);
     const faqCount = Array.isArray(tenantFaqs?.faqs) ? (tenantFaqs.faqs as { q: string; a: string }[]).filter((f) => f?.q && f?.a).length : 0;
+
+    // Every real upgrade option for the usage/balance card's "top up" flow —
+    // same Plan.sort-based "tiers above the current one" logic
+    // billing/page.tsx's own upgradeOptions already uses. Real feedback
+    // 2026-08-27: an earlier version only offered the single nearest plan,
+    // which read as forcing one choice rather than letting the tenant pick —
+    // now every tier is offered, same as a manual upgrade from Billing would show.
+    const upgradePlans = sub
+      ? await db.plan.findMany({ where: { active: true, postpaidUsage: false, sort: { gt: sub.plan.sort } }, orderBy: { sort: "asc" }, select: { id: true, name: true, priceMonthly: true } })
+      : [];
+    const nextPlan = upgradePlans[0] ?? null;
 
     // Phase 3, 2026-08-26 — "interest ≠ connection": the single highest-
     // priority channel the tenant said they wanted (Explore/Settings) but
@@ -112,6 +129,8 @@ export default async function Overview() {
           subtitle={`${user.tenant?.name} · ${sub?.plan.name ?? "No plan"} plan`}
           action={<Link href="/dashboard/connectors/new" className="flex items-center gap-1.5 rounded-xl bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-4 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-accent-glow)] transition-transform hover:-translate-y-0.5"><Plus size={15} /> Add integration</Link>}
         />
+
+        <UsageBalanceCard summary={usageSummary} nextPlan={nextPlan} upgradePlans={upgradePlans} pricePerMessageKes={pricePerMessageKes} />
 
         {topGap && (
           <Card className="mb-4 border-accent/30 bg-accent-soft p-4 text-sm">

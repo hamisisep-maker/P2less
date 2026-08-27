@@ -795,7 +795,20 @@ model Invoice {
   daysInCycle   Int      // real length of THIS billing cycle (renewsAt - currentPeriodStartedAt, in whole EAT calendar days) — naturally 28-31 depending on which real month(s) the cycle spans, since renewal is a rolling one-month anchor (nextRenewalDate(), billing-lifecycle.ts), not calendar-month-aligned.
   remainingValueKes Int  // floor((fromPlanValueKes / daysInCycle) * remainingDays), never negative
   toPlanPriceKes    Int  // toPlan.priceMonthly at invoice creation time
-  payableKes    Int      // max(0, toPlanPriceKes - remainingValueKes) — backend-computed & re-verified at every step; the client never submits an amount at all in this flow
+  // Real message-balance top-up, bundled into the same invoice/payment as a
+  // plan change, 2026-08-27 — direct request/concern: paying for a plan
+  // alone doesn't guarantee enough message balance to actually keep
+  // replying, so a tenant can choose extra messages to prepay for at the
+  // same real price (price_conversation_kes) the balance is normally
+  // debited at. messageTopupMessages is the chosen count (0 = none);
+  // messageTopupKes is that count's real KES cost, computed and re-verified
+  // server-side the same way toPlanPriceKes is — never client-submitted.
+  // Applied to Subscription.messageBalanceKes only on settlement
+  // (settleInvoiceInTx, invoice-settlement.ts), same "money moves only once
+  // real payment lands" rule the plan change itself already follows.
+  messageTopupMessages Int @default(0)
+  messageTopupKes      Int @default(0)
+  payableKes    Int      // max(0, toPlanPriceKes - remainingValueKes) + messageTopupKes — backend-computed & re-verified at every step; the client never submits an amount at all in this flow
   currency      String   @default("KES")
   status        String   @default("awaiting_payment") // awaiting_payment | paid | cancelled | expired
   createdByUserId String?

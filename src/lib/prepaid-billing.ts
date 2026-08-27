@@ -6,6 +6,42 @@ import { sendSms, smsEnabled } from "./sms";
 import { sendEmail } from "./notification-channels";
 import { resolveTenantRecipientEmail } from "./notifications";
 
+type LimitStatus = { ok: boolean; limit: number | null; used: number };
+export type UsageSummary =
+  | { kind: "trial"; messages: LimitStatus; aiRequests: LimitStatus; exhausted: boolean }
+  | { kind: "balance"; messageBalanceKes: number; aiBalanceKes: number; messageLow: boolean; aiLow: boolean; exhausted: boolean }
+  | { kind: "unlimited" };
+
+/** One real, unified answer to "where does this tenant stand right now" —
+ *  built for the dashboard's always-visible usage card and the
+ *  balance-exhausted modal, 2026-08-27 (direct request: show the free-trial
+ *  balance depleting as it's used, alert + redirect to payment once it runs
+ *  out). Deliberately reuses the two gating mechanisms that already decide
+ *  real access (checkLimit() for trial, the prepaid KES balance for real
+ *  plans) rather than inventing a third notion of "usage" — whatever this
+ *  reports is exactly what's actually blocking or not blocking traffic. */
+export async function getUsageSummary(tenantId: string): Promise<UsageSummary> {
+  const sub = await loadGatedSub(tenantId);
+  if (!sub) return { kind: "unlimited" };
+  if (sub.plan.postpaidUsage) return { kind: "unlimited" };
+  if (sub.status === "trial") {
+    const [messages, aiRequests] = await Promise.all([checkLimit(tenantId, "message_in"), checkLimit(tenantId, "ai_request")]);
+    return { kind: "trial", messages, aiRequests, exhausted: !messages.ok || !aiRequests.ok };
+  }
+  const [msgThreshold, aiThreshold] = await Promise.all([
+    getSettingNumber("low_balance_threshold_messages_kes"),
+    getSettingNumber("low_balance_threshold_ai_kes"),
+  ]);
+  return {
+    kind: "balance",
+    messageBalanceKes: sub.messageBalanceKes,
+    aiBalanceKes: sub.aiBalanceKes,
+    messageLow: sub.messageBalanceKes <= msgThreshold,
+    aiLow: sub.aiBalanceKes <= aiThreshold,
+    exhausted: sub.messageBalanceKes <= 0 || sub.aiBalanceKes <= 0,
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Prepaid billing, 2026-08-25 — the gate that makes the whole redesign real:
 // checked BEFORE the actual external cost (the real WhatsApp/channel send,
