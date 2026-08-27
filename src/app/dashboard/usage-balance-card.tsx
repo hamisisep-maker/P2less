@@ -37,16 +37,26 @@ type NextPlan = { id: string; name: string; priceMonthly: number };
  *  withTenantUser callback, pass plain props down" shape for this exact
  *  reason — this now matches it. */
 export function UsageBalanceCard({
-  summary, nextPlan, upgradePlans, pricePerMessageKes,
+  summary, nextPlan, upgradePlans, pricePerMessageKes, pricePerAiKes,
 }: {
-  summary: UsageSummary; nextPlan: NextPlan | null; upgradePlans: NextPlan[]; pricePerMessageKes: number;
+  summary: UsageSummary; nextPlan: NextPlan | null; upgradePlans: NextPlan[]; pricePerMessageKes: number; pricePerAiKes: number;
 }) {
   if (summary.kind === "unlimited") return null;
 
+  // A trial can become exhausted two genuinely different ways — its 7-day
+  // window ending, or its message/AI-request allowance running out within
+  // that window — real feedback 2026-08-27 ("make it a real 7-day trial,
+  // then require upgrade") means these deserve distinct copy, not one
+  // generic "used up" message for both.
+  const trialDaysLeft = summary.kind === "trial" && summary.trialEndsAt
+    ? Math.max(0, Math.ceil((summary.trialEndsAt.getTime() - Date.now()) / 86_400_000))
+    : null;
   const exhaustedReason = summary.exhausted && nextPlan
     ? summary.kind === "trial"
-      ? { title: "Free trial used up", detail: "Your free trial allowance for this month is used up, so your assistant has stopped replying to new messages.", planOptions: upgradePlans, pricePerMessageKes }
-      : { title: "Balance used up", detail: "Your prepaid balance has run out, so your assistant has stopped replying to new messages.", planOptions: upgradePlans, pricePerMessageKes }
+      ? summary.trialExpired
+        ? { title: "Your 7-day trial has ended", detail: "Your free trial period is over, so your assistant has stopped replying to new messages.", planOptions: upgradePlans, pricePerMessageKes, pricePerAiKes }
+        : { title: "Free trial allowance used up", detail: "Your free trial allowance for this month is used up, so your assistant has stopped replying to new messages.", planOptions: upgradePlans, pricePerMessageKes, pricePerAiKes }
+      : { title: "Balance used up", detail: "Your prepaid balance has run out, so your assistant has stopped replying to new messages.", planOptions: upgradePlans, pricePerMessageKes, pricePerAiKes }
     : null;
 
   return (
@@ -55,7 +65,9 @@ export function UsageBalanceCard({
         <>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-display font-semibold">Free trial balance</h2>
-            <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-accent-ink">Trial</span>
+            <span className={"rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide " + (summary.trialExpired ? "bg-rose-soft text-rose" : trialDaysLeft !== null && trialDaysLeft <= 2 ? "bg-amber-soft text-amber" : "bg-accent-soft text-accent-ink")}>
+              {summary.trialExpired ? "Trial ended" : trialDaysLeft !== null ? `${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left` : "Trial"}
+            </span>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             {([["Messages this month", summary.messages], ["AI understanding this month", summary.aiRequests]] as const).map(([label, u]) => {
@@ -100,7 +112,11 @@ export function UsageBalanceCard({
       {summary.exhausted && nextPlan && (
         <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-rose/30 bg-rose-soft px-4 py-3">
           <p className="text-sm text-rose">
-            {summary.kind === "trial" ? "Your free trial is used up — new messages aren't being answered." : "Your balance is used up — new messages aren't being answered."}
+            {summary.kind === "trial"
+              ? summary.trialExpired
+                ? "Your 7-day trial has ended — new messages aren't being answered."
+                : "Your free trial allowance is used up — new messages aren't being answered."
+              : "Your balance is used up — new messages aren't being answered."}
           </p>
           <UpgradeModal planId={nextPlan.id} planName={nextPlan.name} priceMonthly={nextPlan.priceMonthly} exhausted={exhaustedReason} />
         </div>

@@ -620,6 +620,17 @@ model Subscription {
   pendingPlanId String?
   period    String   @default("monthly") // monthly | half_yearly | yearly
   status    String   @default("active") // trial | active | renewal_due | payment_pending | grace_period | suspended | cancelled
+  // Real 7-day trial, 2026-08-27 — before this, "trial" had no actual
+  // expiry anywhere in the code (isGateExempt() exempted status:"trial" from
+  // the balance gate unconditionally, forever) — a genuinely perpetual free
+  // tier despite being named/modeled as a trial. Nullable so existing
+  // pre-this-feature trial subscriptions don't retroactively expire the
+  // instant this ships (see prod-start.mjs's boot-step backfill, which
+  // grants them a fresh 7 days from deploy time, not their original signup
+  // date). Set once at creation (finalizeOnboarding(), actions.ts), never
+  // extended — a real upgrade changes `status` away from "trial" entirely,
+  // so there's nothing left to expire.
+  trialEndsAt DateTime?
   startedAt DateTime @default(now())
   renewsAt  DateTime
   createdAt DateTime @default(now())
@@ -808,6 +819,15 @@ model Invoice {
   // real payment lands" rule the plan change itself already follows.
   messageTopupMessages Int @default(0)
   messageTopupKes      Int @default(0)
+  // A real reply always draws from BOTH balances (a message send AND an AI
+  // understanding call) — real gap found and fixed 2026-08-27, caught before
+  // it shipped broken: the first version only ever topped up
+  // messageBalanceKes, so someone could pay and still get blocked by a
+  // separately-empty aiBalanceKes. One "extra messages" slider now funds
+  // both, at each one's own real per-unit price (price_conversation_kes and
+  // price_ai_kes), so N extra messages genuinely means N more real replies
+  // work, not just N more sends with no AI capacity to answer them.
+  aiTopupKes           Int @default(0)
   payableKes    Int      // max(0, toPlanPriceKes - remainingValueKes) + messageTopupKes — backend-computed & re-verified at every step; the client never submits an amount at all in this flow
   currency      String   @default("KES")
   status        String   @default("awaiting_payment") // awaiting_payment | paid | cancelled | expired

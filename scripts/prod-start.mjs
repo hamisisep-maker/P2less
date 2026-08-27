@@ -248,6 +248,45 @@ if (tp.slug && tp.phone && tp.name && tp.admissionId) {
   }
 }
 
+// Real gap found live, 2026-08-27 — same shape as the Free plan fix above,
+// found while double-checking the paid tiers too: the landing page's pricing
+// cards advertise "Starter: 2,000 messages/mo," "Professional: 10,000
+// messages/mo," "Business: 100,000 messages/mo" — but none of the three real
+// Plan rows had a `messagesPerMonth` limit set at all, meaning today those
+// numbers aren't actually enforced (unlimited, not the advertised cap).
+// Users/connectors on all three already matched and are left untouched.
+{
+  const messageCapByKey = { starter: 2000, professional: 10000, business: 100000 };
+  for (const [key, messagesPerMonth] of Object.entries(messageCapByKey)) {
+    const plan = await db.plan.findUnique({ where: { key } });
+    if (!plan) continue;
+    const currentLimits = plan.limits && typeof plan.limits === "object" ? plan.limits : {};
+    if (currentLimits.messagesPerMonth === messagesPerMonth) continue;
+    const limits = { ...currentLimits, messagesPerMonth };
+    await db.plan.update({ where: { id: plan.id }, data: { limits } });
+    console.log(`[prod-start] ${plan.name} plan messagesPerMonth corrected to ${messagesPerMonth} to match advertised copy.`);
+  }
+}
+
+// Real 7-day trial, 2026-08-27 — Subscription.trialEndsAt is new; every
+// EXISTING trial subscription (created before this feature) has it null.
+// Backfilling it as "already expired" (createdAt + 7 days, likely long past
+// for any real pre-existing trial) would retroactively lock out whoever's
+// mid-evaluation right now, for a policy that didn't exist when they signed
+// up — genuinely unfair, not just a rough edge. Instead this grants a fresh
+// 7 days from THIS deploy, once, ever (the null check itself is the
+// idempotency guard — a real expiry, once set, is never overwritten).
+{
+  const staleTrials = await db.subscription.findMany({ where: { status: "trial", trialEndsAt: null }, select: { id: true } });
+  if (staleTrials.length > 0) {
+    await db.subscription.updateMany({
+      where: { id: { in: staleTrials.map((s) => s.id) } },
+      data: { trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+    });
+    console.log(`[prod-start] Granted a fresh 7-day trial window to ${staleTrials.length} pre-existing trial subscription(s) with no prior expiry.`);
+  }
+}
+
 // P2Less's own internal-training tenant, 2026-08-26 — direct request. This
 // tenant was created directly (via the landing-page/FAQ work), never through
 // the real finalizeOnboarding() signup flow, so it has zero Role rows and no

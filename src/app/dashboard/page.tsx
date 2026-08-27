@@ -31,7 +31,7 @@ export default async function Overview() {
       conversations, connectors, contacts, sub,
       recentEvents, statusGroups, tenantFaqs,
       firstNumber, messengerChannel, telegramChannel, emailChannel, widgetKeyCount,
-      usageSummary, pricePerMessageKes,
+      usageSummary, pricePerMessageKes, pricePerAiKes,
     ] = await Promise.all([
       monthlyUsage(tenantId, "message_in"),
       monthlyUsage(tenantId, "message_out"),
@@ -53,6 +53,7 @@ export default async function Overview() {
       db.widgetKey.count({ where: { tenantId } }),
       getUsageSummary(tenantId),
       getSettingNumber("price_conversation_kes"),
+      getSettingNumber("price_ai_kes"),
     ]);
     const faqCount = Array.isArray(tenantFaqs?.faqs) ? (tenantFaqs.faqs as { q: string; a: string }[]).filter((f) => f?.q && f?.a).length : 0;
 
@@ -130,7 +131,7 @@ export default async function Overview() {
           action={<Link href="/dashboard/connectors/new" className="flex items-center gap-1.5 rounded-xl bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-4 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-accent-glow)] transition-transform hover:-translate-y-0.5"><Plus size={15} /> Add integration</Link>}
         />
 
-        <UsageBalanceCard summary={usageSummary} nextPlan={nextPlan} upgradePlans={upgradePlans} pricePerMessageKes={pricePerMessageKes} />
+        <UsageBalanceCard summary={usageSummary} nextPlan={nextPlan} upgradePlans={upgradePlans} pricePerMessageKes={pricePerMessageKes} pricePerAiKes={pricePerAiKes} />
 
         {topGap && (
           <Card className="mb-4 border-accent/30 bg-accent-soft p-4 text-sm">

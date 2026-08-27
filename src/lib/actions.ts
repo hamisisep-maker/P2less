@@ -351,7 +351,10 @@ async function finalizeOnboarding(
         },
       });
       const freePlan = (await tx.plan.findUnique({ where: { key: "free" } })) ?? (await tx.plan.findFirst({ orderBy: { sort: "asc" } }));
-      if (freePlan) await tx.subscription.create({ data: { tenantId: tenant.id, planId: freePlan.id, period: "monthly", status: "trial", renewsAt: new Date(Date.now() + 30 * 864e5) } });
+      // Real 7-day trial, 2026-08-27 — set once, here, never extended (see
+      // Subscription.trialEndsAt's own schema comment for why a real expiry
+      // didn't exist before this).
+      if (freePlan) await tx.subscription.create({ data: { tenantId: tenant.id, planId: freePlan.id, period: "monthly", status: "trial", renewsAt: new Date(Date.now() + 30 * 864e5), trialEndsAt: new Date(Date.now() + 7 * 864e5) } });
 
       // Roles (staff + contacts) so the org can operate immediately.
       let ownerRoleId = "";

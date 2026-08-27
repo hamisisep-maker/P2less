@@ -20,13 +20,22 @@ export const metadata: Metadata = {
     "Turn the WhatsApp number, Facebook Page, Telegram bot, or website you already have into a real assistant. It verifies who's asking, calls your actual systems, and replies as you. Built for schools, hospitals, SACCOs, government, retail, and developers.",
 };
 
+// Free: a real 7-day trial (Subscription.trialEndsAt), not a permanent free
+// tier — see prepaid-billing.ts's isGateExempt()/getUsageSummary(). Real gap
+// found and fixed 2026-08-27: Starter existed as a real Plan row (used by
+// Billing's own upgrade flow) but had never been added here — this page
+// only ever showed Free/Professional/Business/Enterprise.
 const PLANS = [
   {
-    name: "Free", price: "0", unit: "KES/mo", tagline: "Real, risk-free validation.",
+    name: "Free", price: "0", unit: "KES/mo", tagline: "A real 7-day trial, no card required.",
     features: ["2 users", "200 messages/mo", "1 connector"], highlight: false,
   },
   {
-    name: "Professional", price: "4,900", unit: "KES/mo", tagline: "Most orgs' first paid tier.",
+    name: "Starter", price: "1,500", unit: "KES/mo", tagline: "Your first paid tier.",
+    features: ["5 users", "2,000 messages/mo", "3 connectors"], highlight: false,
+  },
+  {
+    name: "Professional", price: "4,900", unit: "KES/mo", tagline: "Most orgs land here.",
     features: ["15 users", "10,000 messages/mo", "10 connectors"], highlight: true,
   },
   {
@@ -245,7 +254,7 @@ export default async function Landing() {
         <section id="pricing" className="py-12">
           <h2 className="text-center font-display text-2xl font-bold tracking-tight sm:text-3xl">Simple, honest pricing</h2>
           <p className="mx-auto mt-2 max-w-xl text-center text-muted">A flat monthly fee, plus a small cost for what you actually use. Free to start, no card required.</p>
-          <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
             {PLANS.map((p, i) => (
               <div
                 key={p.name}

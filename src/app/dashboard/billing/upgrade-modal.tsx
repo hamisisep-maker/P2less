@@ -16,7 +16,7 @@ const kes = (n: number) => `KES ${n.toLocaleString("en-US")}`;
 type InvoiceView = {
   id: string; invoiceNumber: string; status: string;
   fromPlanValueKes: number; remainingValueKes: number; toPlanPriceKes: number; payableKes: number;
-  messageTopupMessages: number; messageTopupKes: number;
+  messageTopupMessages: number; messageTopupKes: number; aiTopupKes: number;
   usedDays: number; remainingDays: number; daysInCycle: number;
   fromPlan: { name: string } | null; toPlan: { name: string; limits: unknown };
 };
@@ -53,7 +53,7 @@ export function UpgradeModal({
   planId, planName, priceMonthly, exhausted, hideTrigger,
 }: {
   planId: string; planName: string; priceMonthly: number;
-  exhausted?: { title: string; detail: string; planOptions: PlanOption[]; pricePerMessageKes: number } | null;
+  exhausted?: { title: string; detail: string; planOptions: PlanOption[]; pricePerMessageKes: number; pricePerAiKes: number } | null;
   hideTrigger?: boolean;
 }) {
   const router = useRouter();
@@ -231,8 +231,13 @@ export function UpgradeModal({
 
         {step === "extra_messages" && exhausted && (
           <div>
-            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-faint">{activePlan.name} — {kes(activePlan.priceMonthly)}/mo</p>
-            <p className="mb-4 text-sm text-muted">A plan alone doesn&apos;t guarantee enough balance to reply right away — top up your message balance now so replies can resume the moment you pay. You can also skip this and top up later.</p>
+            <div className="mb-1 flex items-center justify-between">
+              <p className="text-xs font-medium uppercase tracking-wide text-faint">{activePlan.name} — {kes(activePlan.priceMonthly)}/mo</p>
+              {exhausted.planOptions.length > 1 && (
+                <button type="button" onClick={() => setStep("choose_plan")} className="text-xs font-medium text-accent hover:underline">← Change plan</button>
+              )}
+            </div>
+            <p className="mb-4 text-sm text-muted">A plan alone doesn&apos;t guarantee enough balance to reply right away — top up now so replies can resume the moment you pay. You can also skip this and top up later.</p>
 
             <div className="rounded-2xl border border-line-soft bg-surface-2 p-4">
               <div className="flex items-baseline justify-between">
@@ -252,15 +257,26 @@ export function UpgradeModal({
                 <span>0</span>
                 <span>{TOPUP_MAX_MESSAGES.toLocaleString("en-US")}</span>
               </div>
-              <div className="mt-3 flex items-center justify-between border-t border-line-soft pt-3 text-sm">
-                <span className="text-muted">{extraMessages.toLocaleString("en-US")} messages × {kes(exhausted.pricePerMessageKes)}</span>
-                <span className="font-semibold">{kes(extraMessages * exhausted.pricePerMessageKes)}</span>
+              <div className="mt-3 space-y-1 border-t border-line-soft pt-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted">{extraMessages.toLocaleString("en-US")} message sends × {kes(exhausted.pricePerMessageKes)}</span>
+                  <span>{kes(extraMessages * exhausted.pricePerMessageKes)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted">{extraMessages.toLocaleString("en-US")} AI understanding × {kes(exhausted.pricePerAiKes)}</span>
+                  <span>{kes(extraMessages * exhausted.pricePerAiKes)}</span>
+                </div>
+                <div className="flex items-center justify-between border-t border-line-soft pt-1 font-semibold">
+                  <span>Top-up total</span>
+                  <span>{kes(extraMessages * (exhausted.pricePerMessageKes + exhausted.pricePerAiKes))}</span>
+                </div>
               </div>
+              <p className="mt-2 text-[11px] text-faint">Funds both real balances a reply draws from — sending the message, and understanding it — so extra messages genuinely means extra replies work, not just extra sends.</p>
             </div>
 
             <div className="mt-4 flex items-center justify-between rounded-xl bg-accent-soft px-4 py-3">
               <span className="text-sm font-medium text-accent-ink">Plan + top-up, due now</span>
-              <span className="font-display text-lg font-bold text-accent-ink">{kes(activePlan.priceMonthly + extraMessages * exhausted.pricePerMessageKes)}</span>
+              <span className="font-display text-lg font-bold text-accent-ink">{kes(activePlan.priceMonthly + extraMessages * (exhausted.pricePerMessageKes + exhausted.pricePerAiKes))}</span>
             </div>
             <p className="mt-1.5 text-[11px] text-faint">Your exact amount due (after any remaining credit from your current plan) is confirmed on the next step, before you pay.</p>
 
@@ -285,6 +301,15 @@ export function UpgradeModal({
 
         {invoice && step !== "loading" && step !== "error" && step !== "paid" && (
           <div>
+            {step === "breakdown" && exhausted && (
+              <button
+                type="button"
+                onClick={() => setStep(exhausted.planOptions.length > 1 ? "choose_plan" : "extra_messages")}
+                className="mb-3 text-xs font-medium text-accent hover:underline"
+              >
+                ← Change plan or top-up
+              </button>
+            )}
             <table className="w-full text-sm">
               <tbody>
                 <Row label="Invoice" value={invoice.invoiceNumber} />
@@ -293,7 +318,10 @@ export function UpgradeModal({
                 <Row label={`Remaining (${invoice.remainingDays} of ${invoice.daysInCycle} days)`} value={`− ${kes(invoice.remainingValueKes)}`} />
                 <Row label={`${invoice.toPlan.name} plan price`} value={kes(invoice.toPlanPriceKes)} />
                 {invoice.messageTopupMessages > 0 && (
-                  <Row label={`Message top-up (${invoice.messageTopupMessages.toLocaleString("en-US")} messages)`} value={kes(invoice.messageTopupKes)} />
+                  <>
+                    <Row label={`Message top-up (${invoice.messageTopupMessages.toLocaleString("en-US")} messages)`} value={kes(invoice.messageTopupKes)} />
+                    <Row label="AI understanding top-up" value={kes(invoice.aiTopupKes)} />
+                  </>
                 )}
                 <tr className="border-t border-line">
                   <td className="py-2.5 font-semibold">Amount payable</td>
@@ -434,7 +462,7 @@ export function UpgradeModal({
             <p className="text-sm text-green">✓ Payment confirmed — invoice {invoice.invoiceNumber}, {kes(invoice.payableKes)} paid.</p>
             <p className="mt-2 text-sm">
               Your plan is now <strong>{invoice.toPlan.name}</strong>.{invoice.remainingValueKes > 0 ? ` Your remaining ${kes(invoice.remainingValueKes)} credit from your previous plan was applied.` : ""}
-              {invoice.messageTopupMessages > 0 ? ` ${kes(invoice.messageTopupKes)} was added to your message balance (${invoice.messageTopupMessages.toLocaleString("en-US")} messages) — replies resume right away.` : ""}
+              {invoice.messageTopupMessages > 0 ? ` ${kes(invoice.messageTopupKes + invoice.aiTopupKes)} was added to your balance (${invoice.messageTopupMessages.toLocaleString("en-US")} messages' worth, sending and understanding both) — replies resume right away.` : ""}
             </p>
             <button type="button" onClick={close} className="mt-4 rounded-xl bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-4 py-2 text-sm font-semibold text-white">Done</button>
           </div>

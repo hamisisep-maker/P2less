@@ -8,9 +8,13 @@ import { resolveTenantRecipientEmail } from "./notifications";
 
 type LimitStatus = { ok: boolean; limit: number | null; used: number };
 export type UsageSummary =
-  | { kind: "trial"; messages: LimitStatus; aiRequests: LimitStatus; exhausted: boolean }
+  | { kind: "trial"; messages: LimitStatus; aiRequests: LimitStatus; trialExpired: boolean; trialEndsAt: Date | null; exhausted: boolean }
   | { kind: "balance"; messageBalanceKes: number; aiBalanceKes: number; messageLow: boolean; aiLow: boolean; exhausted: boolean }
   | { kind: "unlimited" };
+
+function isTrialExpired(sub: Pick<GatedSub, "trialEndsAt">): boolean {
+  return !!sub.trialEndsAt && sub.trialEndsAt.getTime() <= Date.now();
+}
 
 /** One real, unified answer to "where does this tenant stand right now" —
  *  built for the dashboard's always-visible usage card and the
@@ -19,14 +23,19 @@ export type UsageSummary =
  *  out). Deliberately reuses the two gating mechanisms that already decide
  *  real access (checkLimit() for trial, the prepaid KES balance for real
  *  plans) rather than inventing a third notion of "usage" — whatever this
- *  reports is exactly what's actually blocking or not blocking traffic. */
+ *  reports is exactly what's actually blocking or not blocking traffic. A
+ *  trial keeps reporting `kind: "trial"` even once its 7 days are up (rather
+ *  than switching to `kind: "balance"`, which the real gate below falls
+ *  through to) — the DISPLAY reason should say "your trial ended," not show
+ *  a confusing "KES 0 balance" a trial user was never shown a balance for. */
 export async function getUsageSummary(tenantId: string): Promise<UsageSummary> {
   const sub = await loadGatedSub(tenantId);
   if (!sub) return { kind: "unlimited" };
   if (sub.plan.postpaidUsage) return { kind: "unlimited" };
   if (sub.status === "trial") {
     const [messages, aiRequests] = await Promise.all([checkLimit(tenantId, "message_in"), checkLimit(tenantId, "ai_request")]);
-    return { kind: "trial", messages, aiRequests, exhausted: !messages.ok || !aiRequests.ok };
+    const trialExpired = isTrialExpired(sub);
+    return { kind: "trial", messages, aiRequests, trialExpired, trialEndsAt: sub.trialEndsAt, exhausted: !messages.ok || !aiRequests.ok || trialExpired };
   }
   const [msgThreshold, aiThreshold] = await Promise.all([
     getSettingNumber("low_balance_threshold_messages_kes"),
@@ -50,29 +59,33 @@ export async function getUsageSummary(tenantId: string): Promise<UsageSummary> {
 // being billed post-hoc at renewal — see Subscription.messageBalanceKes/
 // aiBalanceKes's own schema comment for the full reasoning.
 //
-// Trial-status subscriptions are NOT gated here at all — they're still
-// checked against the existing count-limit mechanism (checkLimit(), reusing
-// Plan.limits on the internal "free" plan, untouched) further down each
-// caller's own existing pre-check. This module only ever answers "does a
-// REAL, active, non-Enterprise plan have budget," and only ever debits for
-// that same category — trial and Enterprise usage keep being tracked purely
-// via the existing UsageEvent metering, exactly as before.
+// A trial-status subscription is exempt from THIS gate only while its real
+// 7-day trialEndsAt hasn't passed yet (2026-08-27 — previously exempt
+// forever, a genuinely perpetual free tier despite being named/modeled as a
+// trial; see Subscription.trialEndsAt's schema comment). While still within
+// its 7 days, it's checked against the existing count-limit mechanism
+// (checkLimit(), Plan.limits on the internal "free" plan) further down each
+// caller's own existing pre-check, exactly as before. Once the 7 days pass,
+// it deliberately falls straight through to the SAME real-balance check
+// every paid plan uses below — a never-paying trial tenant's balance is
+// always 0, so this naturally blocks with zero extra branching, the same
+// "we're unable to respond right now" message a paid tenant out of balance
+// already gets.
 // ─────────────────────────────────────────────────────────────────────────────
 
-type GatedSub = { id: string; tenantId: string; status: string; messageBalanceKes: number; aiBalanceKes: number; plan: { postpaidUsage: boolean } };
+type GatedSub = { id: string; tenantId: string; status: string; trialEndsAt: Date | null; messageBalanceKes: number; aiBalanceKes: number; plan: { postpaidUsage: boolean } };
+
+function isGateExempt(sub: GatedSub): boolean {
+  if (sub.plan.postpaidUsage) return true;
+  if (sub.status === "trial") return !isTrialExpired(sub);
+  return false;
+}
 
 async function loadGatedSub(tenantId: string): Promise<GatedSub | null> {
   return db.subscription.findUnique({
     where: { tenantId },
-    select: { id: true, tenantId: true, status: true, messageBalanceKes: true, aiBalanceKes: true, plan: { select: { postpaidUsage: true } } },
+    select: { id: true, tenantId: true, status: true, trialEndsAt: true, messageBalanceKes: true, aiBalanceKes: true, plan: { select: { postpaidUsage: true } } },
   });
-}
-
-/** true = this tenant is NOT subject to the prepaid balance gate at all
- *  (Enterprise, or still on trial — trial has its own count-limit gate,
- *  checked by the caller via checkLimit() same as it always has been). */
-function isGateExempt(sub: GatedSub): boolean {
-  return sub.plan.postpaidUsage || sub.status === "trial";
 }
 
 /** Resolves the real per-message price for this send, given which transport
@@ -119,7 +132,7 @@ export async function hasAiBudgetOrTrialAllowance(tenantId: string): Promise<boo
   const sub = await loadGatedSub(tenantId);
   if (!sub) return false;
   if (sub.plan.postpaidUsage) return true;
-  if (sub.status === "trial") return (await checkLimit(tenantId, "ai_request")).ok;
+  if (sub.status === "trial" && !isTrialExpired(sub)) return (await checkLimit(tenantId, "ai_request")).ok;
   const price = await getSettingNumber("price_ai_kes");
   return sub.aiBalanceKes >= price;
 }
