@@ -12,7 +12,19 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 type AiContext = { tenantId: string };
 
-const storage = new AsyncLocalStorage<AiContext>();
+// Backed by globalThis, same reasoning as tenant-context.ts's storageHolder
+// and job-runner.ts's registry Map: Next.js bundles server code into separate
+// module graphs per entry point (conversation.ts's handleInbound, which sets
+// this, vs. ai.ts's cost logger, which reads it, are not guaranteed to share
+// one module instance) — a plain module-level `new AsyncLocalStorage()` can
+// end up as TWO different instances, so a value set via one import path is
+// invisible to code reading it via another. This exact bug was found and
+// fixed in tenant-context.ts on 2026-08-22; this file predates that fix and
+// was flagged at the time as having the same latent risk, not yet
+// investigated. Fixed here the same way, 2026-08-27.
+const storageHolder = globalThis as unknown as { __p2lessAiContextStorage?: AsyncLocalStorage<AiContext> };
+storageHolder.__p2lessAiContextStorage ??= new AsyncLocalStorage<AiContext>();
+const storage = storageHolder.__p2lessAiContextStorage;
 
 /** Call once per inbound request, right after the tenant is known. */
 export function setAiTenantContext(tenantId: string): void {
