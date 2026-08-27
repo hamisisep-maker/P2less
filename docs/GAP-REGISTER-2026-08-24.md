@@ -282,6 +282,14 @@
 - **Live-verified**: `npx tsc --noEmit` clean; the new scene visually confirmed in the dev preview (temporarily pinned the mockup's starting scene/frozen its auto-advance to inspect it, then reverted). Full regression suite: first run showed 29 failures, root-caused immediately to leftover local dev-DB state from earlier same-session manual testing (Hamzone's WhatsAppNumber had been left on `transport: "unofficial"`, `phoneNumber: null` from testing item 27's fix) — not a real regression; restored to its seeded state and re-ran clean, 73/74 both times with a different single test failing each run (already-documented non-deterministic LLM-phrasing flakes, unrelated to this diff).
 - **Explicitly not in this stage**: the mockup is illustrative animation, not a real WhatsApp voice/image round-trip — that's already proven separately in production (item 26's real OggS-verified Opus file). No changes to Messenger's mockup scenes, since Messenger wasn't wired for transcription/voice-reply the same way (see item 28).
 
+### 30. RESOLVED, 2026-08-27 — Free plan's real limits didn't match its own advertised copy
+
+- **Category**: bug fix, trust/accuracy
+- **The trigger**: direct request to confirm the landing page's pricing reflected reality. It didn't: the landing page's pricing cards and P2Less's own FAQ both advertise "Free: 2 users, 200 messages/mo, 1 connector, 100 AI requests/mo, 20 documents/mo" — real, specific numbers a prospect reads before signing up. The actual `Plan.key: "free"` row `finalizeOnboarding()` assigns to every real signup only had `{ messagesPerMonth: 50, aiRequestsPerMonth: 30 }` in its `limits` — under a third of the promised message allowance, with no users/connectors/documents ceiling set at all.
+- **What shipped**: the real Free plan's `limits` corrected to match the advertised copy exactly (`{ users: 2, connectors: 1, messagesPerMonth: 200, aiRequestsPerMonth: 100, documentsPerMonth: 20 }`) — the copy was what a prospect actually decided to sign up against, so the enforcement was raised to meet it, not the other way around. Applied via the same idempotent boot-step pattern as every other one-off prod data fix in this file (no remote connection string exists for this SQLite volume).
+- **Live-verified**: confirmed the corrected `Plan` row locally via direct query; production fix ships via the boot step, self-verifying on next deploy (`current !== JSON.stringify(limits)` guard logs only when it actually changes something).
+- **Explicitly not in this stage**: a broader landing-page-vs-database pricing audit for the paid tiers (Professional/Business/Enterprise) — those were checked and currently match; this fix was scoped to the one real mismatch found.
+
 ---
 
 ## Historical findings (2026-08-23 formal audit + earlier), current status re-verified against code today

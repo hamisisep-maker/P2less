@@ -225,6 +225,29 @@ if (tp.slug && tp.phone && tp.name && tp.admissionId) {
   }
 }
 
+// Real gap found live, 2026-08-27 — the landing page's pricing cards and
+// P2Less's own FAQ both advertise the Free plan as "2 users, 200
+// messages/mo, 1 connector, 100 AI requests/mo, 20 documents/mo," but the
+// real `Plan.key: "free"` row every signup actually gets (finalizeOnboarding
+// in actions.ts) only had `{ messagesPerMonth: 50, aiRequestsPerMonth: 30 }`
+// — under a third of what's promised, with no users/connectors/documents
+// ceiling set at all. A real trial user would hit a wall at 50 messages
+// while being told they get 200 — exactly the wrong moment to break a
+// promise. Raising the real limit to match the advertised copy (not the
+// other way around) — the copy is what a prospect actually read and decided
+// to sign up against.
+{
+  const free = await db.plan.findUnique({ where: { key: "free" } });
+  if (free) {
+    const limits = { users: 2, connectors: 1, messagesPerMonth: 200, aiRequestsPerMonth: 100, documentsPerMonth: 20 };
+    const current = JSON.stringify(free.limits ?? {});
+    if (current !== JSON.stringify(limits)) {
+      await db.plan.update({ where: { id: free.id }, data: { limits } });
+      console.log("[prod-start] Free plan limits corrected to match advertised copy (200 msgs/mo, 100 AI requests/mo, 2 users, 1 connector, 20 docs/mo).");
+    }
+  }
+}
+
 // P2Less's own internal-training tenant, 2026-08-26 — direct request. This
 // tenant was created directly (via the landing-page/FAQ work), never through
 // the real finalizeOnboarding() signup flow, so it has zero Role rows and no
