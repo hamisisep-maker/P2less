@@ -42,6 +42,7 @@ type WaPayload = {
           audio?: { id?: string; mime_type?: string; voice?: boolean };
           document?: { id?: string; mime_type?: string; filename?: string; caption?: string };
           image?: { id?: string; mime_type?: string; caption?: string };
+          video?: { id?: string; mime_type?: string; caption?: string };
         }[];
         // account_update's shape varies by event subtype (Meta docs cover
         // AD_ACCOUNT_LINKED explicitly; the "a Tech Provider's client finished
@@ -143,7 +144,7 @@ async function processEvents(payload: WaPayload): Promise<void> {
 
       for (const m of messages) {
         if (!m.from) continue;
-        if (!["text", "audio", "document", "image"].includes(m.type ?? "")) continue;
+        if (!["text", "audio", "document", "image", "video"].includes(m.type ?? "")) continue;
         if (!firstTimeSeeing(m.id)) continue; // skip Meta re-deliveries
         const name = value?.contacts?.[0]?.profile?.name;
         if (m.id) await sendTyping(phoneNumberId, m.id); // show "typing…" while we work
@@ -162,11 +163,11 @@ async function processEvents(payload: WaPayload): Promise<void> {
           text = transcript;
         }
 
-        // Files (documents / images): download and pass as an attachment for a tool.
-        if (m.type === "document" || m.type === "image") {
-          const mediaId = m.type === "document" ? m.document?.id : m.image?.id;
-          const filename = m.type === "document" ? m.document?.filename : undefined; // images have no filename from WhatsApp
-          const caption = m.type === "document" ? m.document?.caption : m.image?.caption;
+        // Files (documents / images / videos): download and pass as an attachment for a tool.
+        if (m.type === "document" || m.type === "image" || m.type === "video") {
+          const mediaId = m.type === "document" ? m.document?.id : m.type === "image" ? m.image?.id : m.video?.id;
+          const filename = m.type === "document" ? m.document?.filename : undefined; // images/videos have no filename from WhatsApp
+          const caption = m.type === "document" ? m.document?.caption : m.type === "image" ? m.image?.caption : m.video?.caption;
           const dl = mediaId ? await fetchWhatsAppMedia(mediaId, phoneNumberId) : null;
           if (!dl) {
             await sendWhatsAppText(phoneNumberId, m.from, "I couldn't open that file 🙏 Could you send it again?");

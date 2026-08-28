@@ -319,6 +319,23 @@ export async function analyzeImage(base64: string, mimeType: string, caption?: s
   return callGeminiMultimodal(instruction, mimeType || "image/jpeg", base64, { maxOutputTokens: 800, temperature: 0.2, feature: "analyze_image", logTag: "vision" });
 }
 
+/** Describe/watch a video (Gemini is multimodal — it samples frames AND the
+ *  audio track). Same shape as analyzeImage, extended for something that
+ *  unfolds over time. Returns a plain-text description, or null if we can't
+ *  understand it — including when the video is simply too large: this call
+ *  sends the video inline in the request body (not via a separate Files
+ *  API upload), which has a real practical ceiling around 20MB. A normal
+ *  WhatsApp video (capped at 16MB by WhatsApp itself) comfortably fits;
+ *  an unusually long/high-resolution one may not, and fails the same
+ *  graceful way as any other unreadable attachment — never a crash. */
+export async function analyzeVideo(base64: string, mimeType: string, caption?: string): Promise<string | null> {
+  const instruction = `Watch this video and describe it for someone who cannot see it, in the context of a WhatsApp conversation.${caption ? ` The sender's caption was: ${JSON.stringify(caption)}.` : ""}
+- Describe what happens, in order — actions, objects, people (generically, no identity guessing), any spoken words or visible on-screen text (transcribe verbatim if legible).
+- Be factual. Never invent details or dialogue you can't actually see or hear. Keep it concise — a few sentences covering the key moments, not a shot-by-shot breakdown, unless the video is clearly about reading something (a document, a screen recording), in which case prioritize getting that text right.
+- Output plain text only, no markdown headers.`;
+  return callGeminiMultimodal(instruction, mimeType || "video/mp4", base64, { maxOutputTokens: 900, temperature: 0.2, feature: "analyze_video", logTag: "video" });
+}
+
 /** Text-to-speech — the reply-side counterpart to transcribeAudio(). Real
  *  cost per call (unlike text replies), so this is only ever invoked when a
  *  caller has already decided a voice reply is warranted (see whatsapp-

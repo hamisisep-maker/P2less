@@ -279,14 +279,15 @@ async function handleInboundMessagesInner(numberId: string, payload: MessagesUps
     const m = msg.message;
     if (!m) continue;
 
-    // Same four inbound shapes the official Meta transport already handles
-    // (text / audio / document / image) — everything else (video, stickers,
+    // Same five inbound shapes the official Meta transport already handles
+    // (text / audio / document / image / video) — everything else (stickers,
     // location, reactions, ...) this transport doesn't handle yet, same as
     // the official webhook route's own type-allowlist gate.
     const imageMsg = m.imageMessage;
     const audioMsg = m.audioMessage;
     const documentMsg = m.documentMessage;
-    if (!m.conversation && !m.extendedTextMessage && !imageMsg && !audioMsg && !documentMsg) continue;
+    const videoMsg = m.videoMessage;
+    if (!m.conversation && !m.extendedTextMessage && !imageMsg && !audioMsg && !documentMsg && !videoMsg) continue;
 
     const sockForFetch = REGISTRY.sockets.get(numberId);
     if (!sockForFetch) continue;
@@ -321,11 +322,12 @@ async function handleInboundMessagesInner(numberId: string, payload: MessagesUps
       text = transcript;
     }
 
-    // Photos and documents: download and pass as an attachment for a tool
-    // (image-vision.ts / document-intel.ts pick it up from there) — same
-    // dispatch conversation.ts's handleInbound already uses for Meta.
-    if (imageMsg || documentMsg) {
-      const mimeType = (imageMsg?.mimetype || documentMsg?.mimetype) || "application/octet-stream";
+    // Photos, documents, and videos: download and pass as an attachment for
+    // a tool (image-vision.ts / document-intel.ts / video-vision.ts pick it
+    // up from there) — same dispatch conversation.ts's handleInbound already
+    // uses for Meta.
+    if (imageMsg || documentMsg || videoMsg) {
+      const mimeType = (imageMsg?.mimetype || documentMsg?.mimetype || videoMsg?.mimetype) || "application/octet-stream";
       const media = await downloadBaileysMedia(sockForFetch, msg, mimeType);
       if (!media) {
         await sockForFetch.sendMessage(key.remoteJid, { text: "I couldn't open that file 🙏 Could you send it again?" }).catch(() => {});
@@ -333,7 +335,7 @@ async function handleInboundMessagesInner(numberId: string, payload: MessagesUps
       }
       const filename = documentMsg?.fileName || `file.${mimeType.split("/")[1] || "bin"}`;
       attachment = { base64: media.base64, filename, mimeType: media.mimeType };
-      text = (imageMsg?.caption || documentMsg?.caption || "") ?? "";
+      text = (imageMsg?.caption || documentMsg?.caption || videoMsg?.caption || "") ?? "";
     }
 
     if (!text.trim() && !attachment) continue;

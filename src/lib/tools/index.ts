@@ -4,5 +4,6 @@ import "server-only";
 import "./data-analysis";
 import "./document-intel";
 import "./image-vision";
+import "./video-vision";
 
 export { pickTool, allTools, type ToolInput, type ToolResult, type ToolAttachment } from "./registry";
