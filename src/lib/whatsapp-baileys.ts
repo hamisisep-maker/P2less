@@ -82,6 +82,36 @@ function phoneFromJid(jid: string): string {
   return "+" + digits;
 }
 
+/** Resolve the real phone-number-based JID for an inbound message's sender.
+ *  WhatsApp increasingly addresses senders by LID — a privacy-preserving id
+ *  UNRELATED to their phone number (e.g. "272837864628356:23@lid") — rather
+ *  than a plain phone-number JID. phoneFromJid() above assumes every JID IS
+ *  a phone number; for a LID sender that silently produces a garbage "phone
+ *  number" (the raw LID digits), which then gets stored as the Contact's
+ *  address and, later, used to reconstruct a bogus outbound JID for the
+ *  deferred AI reply (sendBaileysMessage). Real bug found live 2026-08-28: a
+ *  genuine inbound "hi" got a real, correctly-generated AI reply — logged in
+ *  the DB as sent — that never reached the sender's phone, because it was
+ *  addressed to a JID built from the LID's digits instead of their actual
+ *  number. Baileys exposes the real phone-number JID two ways: `remoteJidAlt`
+ *  on the message key itself (populated directly when already known), or,
+ *  failing that, an async lookup via the socket's own LID↔PN mapping store.
+ *  Falls back to the raw (broken) JID only if neither resolves — better than
+ *  crashing, but should be rare; logged when it happens so it stays visible. */
+async function resolveInboundJid(sock: WASocket, key: { remoteJid?: string | null; remoteJidAlt?: string | null }): Promise<string> {
+  const raw = key.remoteJid ?? "";
+  if (!raw.endsWith("@lid")) return raw;
+  if (key.remoteJidAlt) return key.remoteJidAlt;
+  try {
+    const pn = await sock.signalRepository.lidMapping.getPNForLID(raw);
+    if (pn) return pn;
+  } catch (e) {
+    console.error("[whatsapp-baileys:lid-mapping-lookup-failed]", e);
+  }
+  console.error("[whatsapp-baileys:lid-unresolved]", "no remoteJidAlt and no PN mapping for", raw);
+  return raw;
+}
+
 /** Extract the plain text body from a Baileys message object, across the
  *  couple of shapes a real inbound text/caption can take. Returns null for
  *  message types this transport doesn't handle yet (media-only, reactions,
@@ -347,10 +377,11 @@ async function handleInboundMessagesInner(numberId: string, payload: MessagesUps
     // reply after handleInbound already sent it once internally, meaning
     // every message on a Baileys-connected number went out twice. There is
     // deliberately no reply-sending code below this call anymore.
+    const resolvedJid = await resolveInboundJid(sockForFetch, key);
     const { handleInbound } = await import("./conversation");
     await handleInbound({
       toNumber: number.phoneNumber,
-      fromNumber: phoneFromJid(key.remoteJid),
+      fromNumber: phoneFromJid(resolvedJid),
       channelType: "whatsapp",
       text,
       displayName: msg.pushName ?? undefined,
