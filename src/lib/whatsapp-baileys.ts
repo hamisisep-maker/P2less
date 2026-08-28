@@ -377,11 +377,20 @@ async function handleInboundMessagesInner(numberId: string, payload: MessagesUps
     // reply after handleInbound already sent it once internally, meaning
     // every message on a Baileys-connected number went out twice. There is
     // deliberately no reply-sending code below this call anymore.
+    // If a real phone number couldn't be resolved (still ends in "@lid"),
+    // pass the raw JID itself through as fromNumber rather than mangling it
+    // into a fake phone number — sendBaileysMessage() below recognizes a
+    // JID-shaped fromNumber (contains "@") and sends to it directly. Every
+    // deliver() call in conversation.ts reuses input.fromNumber verbatim as
+    // the reply's target address (confirmed by reading every call site),
+    // all within this same request — so this is the one place that decides
+    // what a reply can actually reach, with no DB round-trip in between.
     const resolvedJid = await resolveInboundJid(sockForFetch, key);
+    const fromNumber = resolvedJid.endsWith("@lid") ? resolvedJid : phoneFromJid(resolvedJid);
     const { handleInbound } = await import("./conversation");
     await handleInbound({
       toNumber: number.phoneNumber,
-      fromNumber: phoneFromJid(resolvedJid),
+      fromNumber,
       channelType: "whatsapp",
       text,
       displayName: msg.pushName ?? undefined,
@@ -435,7 +444,12 @@ export async function sendBaileysMessage(
   const sock = REGISTRY.sockets.get(numberId);
   if (!sock) return { delivered: false, error: "No active unofficial WhatsApp connection for this number" };
   try {
-    const jid = `${to.replace(/\D/g, "")}@s.whatsapp.net`;
+    // `to` is a full JID (e.g. "...@lid") when the inbound sender's real
+    // phone number couldn't be resolved — see resolveInboundJid()'s comment.
+    // Sending to that exact JID is what actually reaches the sender in that
+    // case; reconstructing a "@s.whatsapp.net" JID from stray digits does
+    // not. A normal phone number never contains "@", so this check is safe.
+    const jid = to.includes("@") ? to : `${to.replace(/\D/g, "")}@s.whatsapp.net`;
     // Voice reply — a real audio buffer already synthesized by the caller
     // (transport.ts's deliver()). ptt:true is what makes WhatsApp render
     // this as a voice-note bubble (waveform, hold-to-play) rather than a
