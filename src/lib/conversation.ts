@@ -1838,13 +1838,29 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     // A text-only follow-up about a document read earlier in THIS conversation
     // ("what does it say about X?") — answer from what we remembered instead of
     // making them resend the file, as long as they have credit for a quick query.
-    if (ctx.lastDocument && aiEnabled()) {
+    //
+    // Two real bugs found live 2026-08-28, testing a fresh conversation that
+    // sent one photo and then asked several completely unrelated questions
+    // ("what is p2less"): (1) this branch fired for EVERY unmatched message
+    // for the rest of the conversation, with no staleness limit, even though
+    // `ts` was already being captured for exactly this — it was just never
+    // read. (2) Worse: even when the model correctly recognized a question
+    // wasn't about the document and said so, that honest deflection was
+    // still returned as the final reply instead of falling through to the
+    // real FAQ-grounded smallTalk() path below — so an unrelated question
+    // could never actually get answered once any document had been sent.
+    // Fixed with a 10-minute staleness window, and a hard sentinel the model
+    // returns when the question isn't related, checked in code rather than
+    // trusting free-form wording — so an off-topic question now genuinely
+    // falls through instead of ending the turn with a deflection.
+    const DOCUMENT_FOLLOWUP_WINDOW_MS = 10 * 60_000;
+    if (ctx.lastDocument && Date.now() - ctx.lastDocument.ts < DOCUMENT_FOLLOWUP_WINDOW_MS && aiEnabled()) {
       const canAfford = recognizedFree || contact.credits >= 1;
       if (canAfford) {
-        const system = `You are a helpful assistant on ${assistant}'s WhatsApp. The user is asking a follow-up question about a document titled "${ctx.lastDocument.label}" that they sent earlier in this chat. Answer ONLY from the document text below — never invent details. If the question isn't actually about the document, or the answer isn't in it, say so honestly rather than guessing. Reply in the user's language, concisely, WhatsApp-style. Do not say you are an AI.`;
+        const system = `You are a helpful assistant on ${assistant}'s WhatsApp. The user is asking a follow-up question about a document titled "${ctx.lastDocument.label}" that they sent earlier in this chat. Answer ONLY from the document text below — never invent details. If the question is NOT actually about this document, reply with EXACTLY the single word NOT_RELATED and nothing else — no explanation, no apology, just that one word. Otherwise, reply in the user's language, concisely, WhatsApp-style. Do not say you are an AI.`;
         const user = `DOCUMENT TEXT ("${ctx.lastDocument.label}"):\n${ctx.lastDocument.text}\n\nThe user asked: ${JSON.stringify(text)}`;
         const out = await complete(system, user, 500, 0.3);
-        if (out) {
+        if (out && out.trim() !== "NOT_RELATED") {
           const replies: Reply[] = [{ body: out }];
           if (!recognizedFree) {
             const remaining = contact.credits - 1;
