@@ -41,15 +41,15 @@ export const LANDING_FAQS: Faq[] = [
   },
   {
     q: "Can I try it before connecting my own number?",
-    a: "Yes. You're already talking to a real, live P2Less assistant right on this page. You can also open our sandbox to message demo organizations across different industries and see the WhatsApp side of the experience too.",
+    a: "Yes — in fact, you're already talking to a real, live P2Less assistant right now, wherever you're reading this. There's also a sandbox on our website to message demo organizations across different industries and see more of the experience.",
   },
   {
     q: "How do I sign up?",
-    a: "Click the 'Start free' button at the top of this page (or the one in this chat's footer). It takes a couple of minutes, no card required, and you're straight into your own workspace.",
+    a: "Go to p2less-app-production.up.railway.app and click 'Start free'. It takes a couple of minutes, no card required, and you're straight into your own workspace.",
   },
   {
     q: "Where can I find more details, FAQs, or your pricing?",
-    a: "Right here. This page itself has the full pricing breakdown, a security section, and more FAQs further down. There's no separate site to visit; everything about P2Less is on this one page.",
+    a: "Our website, p2less-app-production.up.railway.app, has the full pricing breakdown, a security section, and more FAQs. There's no separate site beyond that — everything about P2Less is on that one page.",
   },
   {
     q: "How many customers/clients do you have?",
