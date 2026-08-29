@@ -433,6 +433,16 @@
   bubble.addEventListener("click", toggle);
   closeBtn.addEventListener("click", toggle);
 
+  // Deep-link support: a shared link with "?chat=open" in the URL (e.g.
+  // posted to a WhatsApp Status) opens straight into the chat panel — no
+  // bubble click needed, the web equivalent of tapping a wa.me link and
+  // landing straight in a conversation.
+  try {
+    if (new URLSearchParams(location.search).get("chat") === "open") toggle();
+  } catch (e) {
+    // Malformed URL or no URLSearchParams support — just falls back to the normal closed-bubble start.
+  }
+
   // Clicking the greeting card itself opens the chat, same as the bubble —
   // the whole point of the card is to be the inviting, low-friction way in.
   // The × is its own target so dismissing doesn't also open the panel.
