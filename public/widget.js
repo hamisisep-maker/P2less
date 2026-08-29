@@ -4,11 +4,14 @@
  *
  * Usage:
  *   <script src="https://<your-p2less-host>/widget.js" data-key="wk_..."
- *     data-name="Riverside Academy" data-initials="RA" data-color="#1e40af"></script>
- * The three branding attributes are optional but recommended — each org's
+ *     data-name="Riverside Academy" data-initials="RA" data-color="#1e40af"
+ *     data-logo="https://.../logo.png"></script>
+ * The branding attributes are optional but recommended — each org's
  * dashboard generates its own snippet with them pre-filled, so the bubble
  * shows THAT org's mark and color instead of a generic P2Less icon. Falls
  * back to sensible defaults if omitted (a bare `data-key` still works).
+ * data-logo, when present, renders a real logo image in the bubble instead
+ * of the two-letter data-initials monogram — takes priority over initials.
  *
  * Universal Platform roadmap Phase 8e (2026-08-20).
  */
@@ -27,6 +30,7 @@
 
   var orgName = script.getAttribute("data-name") || "";
   var orgInitials = (script.getAttribute("data-initials") || "").slice(0, 3);
+  var orgLogo = script.getAttribute("data-logo") || "";
   var orgColor = /^#[0-9a-fA-F]{3,8}$/.test(script.getAttribute("data-color") || "") ? script.getAttribute("data-color") : "";
   var brandColor = orgColor || "#0d9488";
 
@@ -53,7 +57,13 @@
 
   var style = document.createElement("style");
   style.textContent = [
-    ".p2l-bubble{position:fixed;bottom:20px;right:20px;width:56px;height:56px;border-radius:50%;background:" + brandColor + ";color:#fff;border:none;box-shadow:0 4px 16px rgba(0,0,0,.2);cursor:pointer;z-index:2147483000;font-size:22px;font-weight:600;display:flex;align-items:center;justify-content:center;letter-spacing:.02em;}",
+    ".p2l-bubble{position:fixed;bottom:20px;right:20px;width:60px;height:60px;border-radius:50%;background:" + brandColor + ";color:#fff;border:none;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer;z-index:2147483000;font-size:23px;font-weight:600;display:flex;align-items:center;justify-content:center;letter-spacing:.02em;transition:transform .15s ease;overflow:hidden;padding:0;}",
+    ".p2l-bubble:hover{transform:scale(1.06);}",
+    ".p2l-bubble img{width:100%;height:100%;object-fit:cover;border-radius:50%;}",
+    ".p2l-online-dot{position:absolute;bottom:2px;right:2px;width:15px;height:15px;border-radius:50%;background:#22c55e;border:2.5px solid #fff;}",
+    ".p2l-greeting{position:fixed;bottom:92px;right:20px;max-width:250px;background:#fff;border-radius:16px;border-bottom-right-radius:4px;box-shadow:0 10px 28px rgba(0,0,0,.2);padding:14px 30px 14px 16px;z-index:2147482999;font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:13.5px;line-height:1.45;color:#12131f;cursor:pointer;opacity:0;transform:translateY(10px) scale(.96);pointer-events:none;transition:opacity .25s ease,transform .25s ease;}",
+    ".p2l-greeting.p2l-visible{opacity:1;transform:translateY(0) scale(1);pointer-events:auto;}",
+    ".p2l-greeting-close{position:absolute;top:6px;right:8px;background:none;border:none;color:#9395a8;font-size:15px;cursor:pointer;line-height:1;padding:4px;}",
     ".p2l-panel{position:fixed;bottom:88px;right:20px;width:340px;max-width:calc(100vw - 40px);height:460px;max-height:calc(100vh - 120px);background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,.25);z-index:2147483000;display:none;flex-direction:column;overflow:hidden;font-family:-apple-system,Segoe UI,Roboto,sans-serif;}",
     ".p2l-panel.p2l-open{display:flex;}",
     ".p2l-header{background:" + brandColor + ";color:#fff;padding:12px 16px;font-size:14px;font-weight:600;display:flex;justify-content:space-between;align-items:center;}",
@@ -102,7 +112,35 @@
   var bubble = document.createElement("button");
   bubble.className = "p2l-bubble" + (reduceMotion ? "" : " p2l-pulse");
   bubble.setAttribute("aria-label", orgName ? "Open chat with " + orgName : "Open chat");
-  bubble.textContent = orgInitials || "💬"; // this org's own mark, not a generic icon — the whole point of branding
+  if (orgLogo) {
+    var bubbleImg = document.createElement("img");
+    bubbleImg.src = orgLogo;
+    bubbleImg.alt = "";
+    bubble.appendChild(bubbleImg);
+  } else {
+    bubble.textContent = orgInitials || "💬"; // this org's own mark, not a generic icon — the whole point of branding
+  }
+  var onlineDot = document.createElement("span");
+  onlineDot.className = "p2l-online-dot";
+  bubble.appendChild(onlineDot);
+
+  // Greeting callout — a real speech-bubble card next to the icon (the
+  // Intercom/Drift pattern), not just a wiggle. Far more effective at
+  // "showing it's there" than animating the icon alone, since it actually
+  // tells a first-time visitor what to expect before they click anything.
+  var greeting = document.createElement("div");
+  greeting.className = "p2l-greeting";
+  greeting.setAttribute("role", "button");
+  var greetingText = document.createElement("span");
+  greetingText.textContent = orgName
+    ? "👋 Hi! Have a question for " + orgName + "? I'm here to help."
+    : "👋 Hi there! Have a question? I'm here to help.";
+  var greetingClose = document.createElement("button");
+  greetingClose.className = "p2l-greeting-close";
+  greetingClose.setAttribute("aria-label", "Dismiss");
+  greetingClose.textContent = "×";
+  greeting.appendChild(greetingText);
+  greeting.appendChild(greetingClose);
 
   var panel = document.createElement("div");
   panel.className = "p2l-panel";
@@ -135,6 +173,7 @@
 
   document.body.appendChild(bubble);
   document.body.appendChild(panel);
+  document.body.appendChild(greeting);
 
   var messagesEl = panel.querySelector(".p2l-messages");
   var inputEl = panel.querySelector(".p2l-input");
@@ -382,26 +421,38 @@
     }
   }
 
+  function hideGreeting() { greeting.classList.remove("p2l-visible"); }
+
   var open = false;
   function toggle() {
     open = !open;
     panel.classList.toggle("p2l-open", open);
     bubble.classList.toggle("p2l-pulse", !open && !reduceMotion);
-    if (open) { inputEl.focus(); bubble.classList.remove("p2l-wiggle"); }
+    if (open) { inputEl.focus(); bubble.classList.remove("p2l-wiggle"); hideGreeting(); }
   }
   bubble.addEventListener("click", toggle);
   closeBtn.addEventListener("click", toggle);
 
+  // Clicking the greeting card itself opens the chat, same as the bubble —
+  // the whole point of the card is to be the inviting, low-friction way in.
+  // The × is its own target so dismissing doesn't also open the panel.
+  greeting.addEventListener("click", function () { if (!open) toggle(); });
+  greetingClose.addEventListener("click", function (ev) { ev.stopPropagation(); hideGreeting(); });
+
   // One-time "look at me" nudge per browser session (sessionStorage, not
   // localStorage — a fresh visit later still gets one, but it won't replay on
   // every page navigation within the same session) if the visitor hasn't
-  // opened the widget within the first few seconds on the page.
+  // opened the widget within the first few seconds on the page. A real
+  // greeting card, not just an icon wiggle — far more effective at telling a
+  // first-time visitor what this even is before they click anything.
   if (!reduceMotion && !sessionStorage.getItem("p2less_widget_greeted_session")) {
     sessionStorage.setItem("p2less_widget_greeted_session", "1");
     setTimeout(function () {
       if (!open) {
         bubble.classList.add("p2l-wiggle");
         setTimeout(function () { bubble.classList.remove("p2l-wiggle"); }, 820);
+        greeting.classList.add("p2l-visible");
+        setTimeout(hideGreeting, 14000); // don't linger forever if ignored
       }
     }, 2500);
   }

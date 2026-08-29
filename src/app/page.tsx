@@ -402,7 +402,7 @@ export default async function Landing() {
         </div>
       </footer>
 
-      <script src="/widget.js" async data-key="wk_p2less_official" data-name="P2Less Assistant" data-initials="P2L" data-color="#0d9488" />
+      <script src="/widget.js" async data-key="wk_p2less_official" data-name="P2Less Assistant" data-initials="P2L" data-color="#0d9488" data-logo="/hamzone-logo.png" />
     </div>
   );
 }
