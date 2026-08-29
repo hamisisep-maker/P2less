@@ -112,10 +112,10 @@
     '<div class="p2l-inputrow">' +
     '<div class="p2l-emoji-panel" aria-hidden="true"></div>' +
     '<button class="p2l-icon-btn p2l-emoji-btn" aria-label="Insert emoji" type="button">🙂</button>' +
+    '<input class="p2l-input" type="text" placeholder="Type a message…" />' +
     '<button class="p2l-icon-btn p2l-attach-btn" aria-label="Attach a file" type="button">📎</button>' +
     '<input class="p2l-file-input" type="file" accept="image/*,video/*,.pdf,.doc,.docx" style="display:none" />' +
     '<button class="p2l-icon-btn p2l-mic-btn" aria-label="Record a voice note" type="button">🎤</button>' +
-    '<input class="p2l-input" type="text" placeholder="Type a message…" />' +
     '<button class="p2l-send" aria-label="Send">➤</button>' +
     "</div>";
   panel.querySelector(".p2l-header span").textContent = headerLabel; // textContent, not innerHTML — orgName is untrusted page data
