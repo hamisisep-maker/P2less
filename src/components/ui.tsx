@@ -70,14 +70,12 @@ export function timeAgo(date: Date): string {
 export function Logo({ dark = false }: { dark?: boolean }) {
   return (
     <div className="flex items-center gap-2.5">
-      <span
-        className={clsx(
-          "grid h-9 w-9 place-items-center rounded-xl font-display text-sm font-bold text-white shadow-[var(--shadow-accent-glow)]",
-          "bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))]",
-        )}
-      >
-        P2L
-      </span>
+      {/* eslint-disable-next-line @next/next/no-img-element -- tiny static brand mark, not worth next/image's overhead */}
+      <img
+        src="/hamzone-logo.png"
+        alt="Hamzone Technologies"
+        className="h-9 w-9 shrink-0 rounded-xl object-cover shadow-[var(--shadow-accent-glow)]"
+      />
       <div className="leading-tight">
         <div className={clsx("font-display font-bold", dark && "text-white")}>P2Less</div>
         <div className={clsx("text-[11px]", dark ? "text-side-text" : "text-faint")}>Conversational Access</div>

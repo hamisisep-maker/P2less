@@ -39,14 +39,12 @@ export function SidebarShell({ navItems, exactRoot, footer }: { navItems: readon
       )}
     >
       <div className={clsx("flex items-center p-5", collapsed ? "lg:justify-center lg:px-0" : "justify-between")}>
-        <span
-          className={clsx(
-            "grid h-9 w-9 shrink-0 place-items-center rounded-xl font-display text-sm font-bold text-white shadow-[var(--shadow-accent-glow)]",
-            "bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))]",
-          )}
-        >
-          P2L
-        </span>
+        {/* eslint-disable-next-line @next/next/no-img-element -- tiny static brand mark, not worth next/image's overhead */}
+        <img
+          src="/hamzone-logo.png"
+          alt="Hamzone Technologies"
+          className="h-9 w-9 shrink-0 rounded-xl object-cover shadow-[var(--shadow-accent-glow)]"
+        />
         {!collapsed && (
           <div className="leading-tight">
             <div className="font-display font-bold text-white">P2Less</div>
