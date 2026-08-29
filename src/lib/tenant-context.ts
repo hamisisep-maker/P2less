@@ -137,20 +137,17 @@ export function getCurrentChannelLabel(): string {
 }
 
 /** Real bug found live 2026-08-22: the AI offered to "analyze a spreadsheet
- *  or PDF, just drop it here" on the website widget — a genuine platform
- *  capability (src/lib/tools), but the widget (like Telegram/Email today)
- *  has no attachment-download plumbing at all, so it can't actually receive
- *  a file. Messenger's webhook route gained real attachment handling
- *  (image/audio/video/document, downloaded and passed through the same
- *  attachment field as WhatsApp) after this gate was first written and is
- *  now included here too — found stale 2026-08-27 while wiring up video
- *  understanding: the pipeline already worked end-to-end on Messenger, but
- *  the AI's own self-description still incorrectly denied it. Read by
+ *  or PDF, just drop it here" on the website widget when it had no
+ *  attachment plumbing at all yet. Messenger gained real attachment
+ *  handling after this gate was first written (found stale 2026-08-27,
+ *  fixed here) and the widget gained its own — voice notes, photos,
+ *  documents, video — 2026-08-28 (see the widget channel route and
+ *  public/widget.js). Telegram/email still have none. Read by
  *  conversation.ts's toolCapabilityLines() to only surface file-based tools
  *  on a channel that can actually receive a file. Defaults to true
  *  (WhatsApp behavior) when unset, matching every caller that predates
  *  multi-channel support. */
 export function currentChannelSupportsFiles(): boolean {
   const type = storage.getStore()?.channelType;
-  return type === undefined || type === "whatsapp" || type === "messenger";
+  return type === undefined || type === "whatsapp" || type === "messenger" || type === "widget";
 }

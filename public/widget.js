@@ -63,10 +63,22 @@
     ".p2l-msg-out{align-self:flex-end;background:" + brandColor + ";color:#fff;border-bottom-right-radius:4px;}",
     ".p2l-msg-in{align-self:flex-start;background:#fff;color:#12131f;border:1px solid #e6e6f0;border-bottom-left-radius:4px;animation:p2l-msg-in .25s ease-out;}",
     ".p2l-msg img{max-width:100%;border-radius:8px;margin-top:4px;display:block;}",
-    ".p2l-inputrow{display:flex;gap:6px;padding:10px;border-top:1px solid #e6e6f0;background:#fff;}",
-    ".p2l-input{flex:1;border:1px solid #e6e6f0;border-radius:20px;padding:8px 14px;font-size:13px;outline:none;}",
+    ".p2l-inputrow{display:flex;gap:4px;padding:10px;border-top:1px solid #e6e6f0;background:#fff;align-items:flex-end;position:relative;}",
+    ".p2l-input{flex:1;border:1px solid #e6e6f0;border-radius:20px;padding:8px 14px;font-size:13px;outline:none;min-width:0;}",
     ".p2l-send{background:" + brandColor + ";color:#fff;border:none;border-radius:50%;width:34px;height:34px;cursor:pointer;font-size:14px;flex-shrink:0;}",
     ".p2l-send:disabled{opacity:.5;cursor:default;}",
+    ".p2l-icon-btn{background:none;border:none;color:#6b6b80;width:30px;height:30px;flex-shrink:0;cursor:pointer;font-size:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;}",
+    ".p2l-icon-btn:hover{background:#f0f0f6;}",
+    ".p2l-icon-btn.p2l-recording{color:#fff;background:#e11d48;animation:p2l-rec-pulse 1.2s infinite;}",
+    "@keyframes p2l-rec-pulse{0%,100%{box-shadow:0 0 0 0 rgba(225,29,72,.5);}50%{box-shadow:0 0 0 6px rgba(225,29,72,0);}}",
+    ".p2l-emoji-panel{position:absolute;bottom:52px;left:10px;width:236px;max-height:160px;overflow-y:auto;background:#fff;border:1px solid #e6e6f0;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.15);padding:8px;display:none;flex-wrap:wrap;gap:2px;z-index:1;}",
+    ".p2l-emoji-panel.p2l-open{display:flex;}",
+    ".p2l-emoji-panel button{background:none;border:none;font-size:18px;cursor:pointer;width:28px;height:28px;border-radius:6px;padding:0;}",
+    ".p2l-emoji-panel button:hover{background:#f0f0f6;}",
+    ".p2l-attach-chip{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #e6e6f0;border-radius:12px;padding:6px 10px;margin:0 10px;font-size:12px;color:#12131f;}",
+    ".p2l-attach-chip img{width:32px;height:32px;object-fit:cover;border-radius:6px;}",
+    ".p2l-attach-chip .p2l-attach-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+    ".p2l-attach-chip button{background:none;border:none;cursor:pointer;color:#9395a8;font-size:14px;}",
     ".p2l-typing{align-self:flex-start;background:#fff;border:1px solid #e6e6f0;border-radius:12px;border-bottom-left-radius:4px;padding:10px 14px;display:flex;gap:4px;}",
     ".p2l-typing span{width:6px;height:6px;border-radius:50%;background:#9395a8;animation:p2l-bounce 1.2s infinite ease-in-out;}",
     ".p2l-typing span:nth-child(2){animation-delay:.15s;}",
@@ -96,7 +108,13 @@
   panel.innerHTML =
     '<div class="p2l-header"><span></span><button class="p2l-close" aria-label="Close chat">×</button></div>' +
     '<div class="p2l-messages"></div>' +
+    '<div class="p2l-attach-preview"></div>' +
     '<div class="p2l-inputrow">' +
+    '<div class="p2l-emoji-panel" aria-hidden="true"></div>' +
+    '<button class="p2l-icon-btn p2l-emoji-btn" aria-label="Insert emoji" type="button">🙂</button>' +
+    '<button class="p2l-icon-btn p2l-attach-btn" aria-label="Attach a file" type="button">📎</button>' +
+    '<input class="p2l-file-input" type="file" accept="image/*,video/*,.pdf,.doc,.docx" style="display:none" />' +
+    '<button class="p2l-icon-btn p2l-mic-btn" aria-label="Record a voice note" type="button">🎤</button>' +
     '<input class="p2l-input" type="text" placeholder="Type a message…" />' +
     '<button class="p2l-send" aria-label="Send">➤</button>' +
     "</div>";
@@ -109,6 +127,143 @@
   var inputEl = panel.querySelector(".p2l-input");
   var sendBtn = panel.querySelector(".p2l-send");
   var closeBtn = panel.querySelector(".p2l-close");
+  var emojiBtn = panel.querySelector(".p2l-emoji-btn");
+  var emojiPanel = panel.querySelector(".p2l-emoji-panel");
+  var attachBtn = panel.querySelector(".p2l-attach-btn");
+  var fileInput = panel.querySelector(".p2l-file-input");
+  var micBtn = panel.querySelector(".p2l-mic-btn");
+  var attachPreviewEl = panel.querySelector(".p2l-attach-preview");
+
+  // Emoji picker — a fixed curated set (no external emoji-data dependency,
+  // matches the "single dependency-free script" design the rest of this
+  // widget already follows). Click an emoji to insert it at the cursor,
+  // panel stays open so several can be picked in a row (closes on send or
+  // clicking elsewhere).
+  var EMOJIS = ["😀","😂","🥰","😍","😊","🙂","😉","😢","😮","🙏","👍","👎","👏","🙌","💪","🔥","✨","🎉","❤️","💬","✅","❌","⏰","📅","📍","💡","👋","🤝","😅","🤔"];
+  EMOJIS.forEach(function (e) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.textContent = e;
+    b.addEventListener("click", function () {
+      var start = inputEl.selectionStart == null ? inputEl.value.length : inputEl.selectionStart;
+      var end = inputEl.selectionEnd == null ? inputEl.value.length : inputEl.selectionEnd;
+      inputEl.value = inputEl.value.slice(0, start) + e + inputEl.value.slice(end);
+      inputEl.focus();
+      inputEl.selectionStart = inputEl.selectionEnd = start + e.length;
+    });
+    emojiPanel.appendChild(b);
+  });
+  emojiBtn.addEventListener("click", function (ev) {
+    ev.stopPropagation();
+    emojiPanel.classList.toggle("p2l-open");
+  });
+  document.addEventListener("click", function (ev) {
+    if (!emojiPanel.contains(ev.target) && ev.target !== emojiBtn) emojiPanel.classList.remove("p2l-open");
+  });
+
+  // Pending attachment — set by either the file picker or a finished voice
+  // recording, cleared once actually sent (or removed via the chip's ✕).
+  // Base64-encoded and sent inline over the same JSON POST every other
+  // message uses — no separate multipart upload endpoint needed at the
+  // widget's real scale.
+  var pendingFile = null; // { base64, filename, mimeType }
+
+  function readFileAsBase64(blob) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        var result = String(reader.result || "");
+        var comma = result.indexOf(",");
+        resolve(comma >= 0 ? result.slice(comma + 1) : result);
+      };
+      reader.onerror = function () { reject(reader.error); };
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function renderAttachPreview() {
+    attachPreviewEl.innerHTML = "";
+    if (!pendingFile) return;
+    var chip = document.createElement("div");
+    chip.className = "p2l-attach-chip";
+    if (/^image\//i.test(pendingFile.mimeType)) {
+      var img = document.createElement("img");
+      img.src = "data:" + pendingFile.mimeType + ";base64," + pendingFile.base64;
+      chip.appendChild(img);
+    } else {
+      var icon = document.createElement("span");
+      icon.textContent = /^audio\//i.test(pendingFile.mimeType) ? "🎤" : /^video\//i.test(pendingFile.mimeType) ? "🎬" : "📎";
+      chip.appendChild(icon);
+    }
+    var name = document.createElement("span");
+    name.className = "p2l-attach-name";
+    name.textContent = pendingFile.filename;
+    chip.appendChild(name);
+    var remove = document.createElement("button");
+    remove.type = "button";
+    remove.setAttribute("aria-label", "Remove attachment");
+    remove.textContent = "✕";
+    remove.addEventListener("click", function () { pendingFile = null; renderAttachPreview(); });
+    chip.appendChild(remove);
+    attachPreviewEl.appendChild(chip);
+  }
+
+  attachBtn.addEventListener("click", function () { fileInput.click(); });
+  fileInput.addEventListener("change", function () {
+    var f = fileInput.files && fileInput.files[0];
+    fileInput.value = ""; // allow picking the same file again later
+    if (!f) return;
+    readFileAsBase64(f).then(function (base64) {
+      pendingFile = { base64: base64, filename: f.name, mimeType: f.type || "application/octet-stream" };
+      renderAttachPreview();
+      inputEl.focus();
+    });
+  });
+
+  // Voice notes — MediaRecorder straight to a Blob, no server-side
+  // transcoding needed: Gemini (the same model already transcribing
+  // WhatsApp voice notes) accepts the browser's native webm/opus output
+  // directly. First click asks for mic permission and starts recording
+  // (button turns red/pulsing); second click stops and sends immediately —
+  // no separate "attach then send" step for voice, since holding onto a
+  // half-recorded note to edit later isn't a real use case the way a
+  // photo/document attachment is.
+  var mediaRecorder = null;
+  var recordedChunks = [];
+  function startRecording() {
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+      addMessage("Voice notes aren't supported in this browser. Please type your message instead.", "in");
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      recordedChunks = [];
+      var mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
+      mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType: mimeType }) : new MediaRecorder(stream);
+      mediaRecorder.addEventListener("dataavailable", function (e) { if (e.data && e.data.size > 0) recordedChunks.push(e.data); });
+      mediaRecorder.addEventListener("stop", function () {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        var blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+        readFileAsBase64(blob).then(function (base64) {
+          pendingFile = { base64: base64, filename: "voice-note.webm", mimeType: blob.type || "audio/webm" };
+          send();
+        });
+      });
+      mediaRecorder.start();
+      micBtn.classList.add("p2l-recording");
+      micBtn.textContent = "⏹";
+    }).catch(function () {
+      addMessage("Microphone access was blocked. You can still type your message.", "in");
+    });
+  }
+  function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+    micBtn.classList.remove("p2l-recording");
+    micBtn.textContent = "🎤";
+  }
+  micBtn.addEventListener("click", function () {
+    if (mediaRecorder && mediaRecorder.state === "recording") stopRecording();
+    else startRecording();
+  });
 
   // Reveals incoming text progressively rather than popping in as one whole
   // block — reads as "being composed" the way the typing dots already imply.
@@ -220,17 +375,25 @@
   var sending = false;
   function send() {
     var text = inputEl.value.trim();
-    if (!text || sending) return;
-    addMessage(text, "out");
+    var file = pendingFile;
+    if ((!text && !file) || sending) return;
+    if (file && /^image\//i.test(file.mimeType)) addImage("data:" + file.mimeType + ";base64," + file.base64);
+    else if (file) addMessage((/^audio\//i.test(file.mimeType) ? "🎤 " : /^video\//i.test(file.mimeType) ? "🎬 " : "📎 ") + file.filename, "out");
+    if (text) addMessage(text, "out");
     inputEl.value = "";
+    pendingFile = null;
+    renderAttachPreview();
+    emojiPanel.classList.remove("p2l-open");
     sending = true;
     sendBtn.disabled = true;
     showTyping();
 
+    var payload = { widgetKey: key, sessionId: sessionId, text: text };
+    if (file) payload.file = file;
     fetch(apiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ widgetKey: key, sessionId: sessionId, text: text }),
+      body: JSON.stringify(payload),
     })
       .then(function (r) { return r.json(); })
       .then(function (data) {
