@@ -65,7 +65,12 @@ export function DemoClient({ orgs, senders }: { orgs: Org[]; senders: Sender[] }
     <div className="min-h-screen bg-[var(--color-bg)] py-6 sm:py-10">
       <div className="mx-auto max-w-5xl px-4">
         <Link href="/" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink">← Back to P2Less</Link>
-        <div className="grid h-[640px] overflow-hidden rounded-3xl border border-line shadow-[var(--shadow-card-hover)] lg:grid-cols-[260px_1fr_280px]">
+        {/* grid-rows-[minmax(0,1fr)] caps the single row at the grid's own
+            fixed height — without it, a grid row's default "auto" track
+            grows to fit its tallest item's content, so a long chat history
+            silently pushed the whole card (and page) taller instead of
+            scrolling inside the messages column. */}
+        <div className="grid h-[640px] grid-rows-[minmax(0,1fr)] overflow-hidden rounded-3xl border border-line shadow-[var(--shadow-card-hover)] lg:grid-cols-[260px_1fr_280px]">
           {/* Organization directory — a few of the numbers you can message */}
           <aside className="hidden flex-col border-r border-black/10 bg-surface lg:flex">
             <div className="flex items-center gap-2 bg-[var(--color-wa)] px-4 py-3.5 text-white">
