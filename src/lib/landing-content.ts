@@ -210,6 +210,9 @@ export const CHANNELS: Channel[] = [
   { name: "Telegram", color: "#229ED9", blurb: "Free, instant setup. No approval needed.", live: true },
   { name: "Email", color: "#4f46e5", blurb: "For the slower, more formal conversations.", live: true },
   { name: "Website widget", color: "#0d9488", blurb: "A chat bubble for your own site, like this one.", live: true },
+  { name: "Instagram", color: "#E1306C", blurb: "DMs and comment replies.", live: false },
+  { name: "SMS", color: "#475569", blurb: "Plain text messages, no app needed.", live: false },
+  { name: "TikTok", color: "#000000", blurb: "Comment and DM automation.", live: false },
   { name: "X (Twitter)", color: "#12131f", blurb: "Public reply automation.", live: false },
 ];
 

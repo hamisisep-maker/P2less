@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getSetting } from "@/lib/platform-settings";
 import { Logo } from "@/components/ui";
+import { SiteHeader } from "./site-header";
 import { AudienceOrbit } from "./audience-orbit";
 import { AudienceTabs } from "./audience-tabs";
 import { ChannelBadges } from "./channel-badges";
@@ -80,24 +81,7 @@ export default async function Landing() {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-line-soft bg-[color-mix(in_srgb,var(--color-bg)_88%,transparent)] backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Logo />
-          <nav className="hidden items-center gap-5 text-sm text-muted lg:flex">
-            <a href="#channels" className="hover:text-ink">Channels</a>
-            <a href="#automation" className="hover:text-ink">Automation</a>
-            <a href="#audience" className="hover:text-ink">Who it's for</a>
-            <a href="#security" className="hover:text-ink">Security</a>
-            <a href="#pricing" className="hover:text-ink">Pricing</a>
-            <a href="#faq" className="hover:text-ink">FAQ</a>
-          </nav>
-          <div className="flex items-center gap-2 text-sm">
-            <Link href="/login" className="rounded-lg px-3 py-1.5 text-muted hover:text-ink">Dashboard</Link>
-            <Link href="/demo" className="rounded-lg border border-line px-3 py-1.5 font-medium hover:bg-surface-2">Open the demo</Link>
-            <Link href="/onboard" className="rounded-lg bg-[linear-gradient(135deg,var(--color-accent),var(--color-accent-ink))] px-3.5 py-1.5 font-medium text-white shadow-[var(--shadow-accent-glow)] hover:opacity-90">Start free</Link>
-          </div>
-        </div>
-      </header>
+      <SiteHeader />
 
       <main className="mx-auto max-w-6xl px-6">
         {/* HERO */}
