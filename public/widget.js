@@ -65,7 +65,7 @@
     ".p2l-msg img{max-width:100%;border-radius:8px;margin-top:4px;display:block;}",
     ".p2l-inputrow{display:flex;gap:4px;padding:10px;border-top:1px solid #e6e6f0;background:#fff;align-items:flex-end;position:relative;}",
     ".p2l-input{flex:1;border:1px solid #e6e6f0;border-radius:20px;padding:8px 14px;font-size:13px;outline:none;min-width:0;}",
-    ".p2l-send{background:" + brandColor + ";color:#fff;border:none;border-radius:50%;width:34px;height:34px;cursor:pointer;font-size:14px;flex-shrink:0;}",
+    ".p2l-send{background:" + brandColor + ";color:#fff;border:none;border-radius:50%;width:34px;height:34px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;}",
     ".p2l-send:disabled{opacity:.5;cursor:default;}",
     ".p2l-icon-btn{background:none;border:none;color:#6b6b80;width:30px;height:30px;flex-shrink:0;cursor:pointer;font-size:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;}",
     ".p2l-icon-btn:hover{background:#f0f0f6;}",
@@ -105,18 +105,29 @@
   var panel = document.createElement("div");
   panel.className = "p2l-panel";
   var headerLabel = orgName ? "Chat with " + orgName : "Chat with us";
+  // Real line-icon SVGs (Feather-style: thin stroke, currentColor so they
+  // pick up each button's own CSS color/hover state) instead of emoji
+  // characters — an emoji glyph renders differently per OS/browser and
+  // doesn't resemble WhatsApp's actual icon set at all. stroke-width kept at
+  // 2 to read clearly at the small 16-18px size these buttons use.
+  var ICON_SMILE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>';
+  var ICON_CLIP = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a5 5 0 01-7.07-7.07l9.19-9.19a3 3 0 014.24 4.24l-9.19 9.19a1 1 0 01-1.41-1.41l8.48-8.48"/></svg>';
+  var ICON_MIC = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
+  var ICON_STOP = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>';
+  var ICON_SEND = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>';
+
   panel.innerHTML =
     '<div class="p2l-header"><span></span><button class="p2l-close" aria-label="Close chat">×</button></div>' +
     '<div class="p2l-messages"></div>' +
     '<div class="p2l-attach-preview"></div>' +
     '<div class="p2l-inputrow">' +
     '<div class="p2l-emoji-panel" aria-hidden="true"></div>' +
-    '<button class="p2l-icon-btn p2l-emoji-btn" aria-label="Insert emoji" type="button">🙂</button>' +
+    '<button class="p2l-icon-btn p2l-emoji-btn" aria-label="Insert emoji" type="button">' + ICON_SMILE + '</button>' +
     '<input class="p2l-input" type="text" placeholder="Type a message…" />' +
-    '<button class="p2l-icon-btn p2l-attach-btn" aria-label="Attach a file" type="button">📎</button>' +
+    '<button class="p2l-icon-btn p2l-attach-btn" aria-label="Attach a file" type="button">' + ICON_CLIP + '</button>' +
     '<input class="p2l-file-input" type="file" accept="image/*,video/*,.pdf,.doc,.docx" style="display:none" />' +
-    '<button class="p2l-icon-btn p2l-mic-btn" aria-label="Record a voice note" type="button">🎤</button>' +
-    '<button class="p2l-send" aria-label="Send">➤</button>' +
+    '<button class="p2l-icon-btn p2l-mic-btn" aria-label="Record a voice note" type="button">' + ICON_MIC + '</button>' +
+    '<button class="p2l-send" aria-label="Send">' + ICON_SEND + '</button>' +
     "</div>";
   panel.querySelector(".p2l-header span").textContent = headerLabel; // textContent, not innerHTML — orgName is untrusted page data
 
@@ -250,7 +261,7 @@
       });
       mediaRecorder.start();
       micBtn.classList.add("p2l-recording");
-      micBtn.textContent = "⏹";
+      micBtn.innerHTML = ICON_STOP;
     }).catch(function () {
       addMessage("Microphone access was blocked. You can still type your message.", "in");
     });
@@ -258,7 +269,7 @@
   function stopRecording() {
     if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
     micBtn.classList.remove("p2l-recording");
-    micBtn.textContent = "🎤";
+    micBtn.innerHTML = ICON_MIC;
   }
   micBtn.addEventListener("click", function () {
     if (mediaRecorder && mediaRecorder.state === "recording") stopRecording();
