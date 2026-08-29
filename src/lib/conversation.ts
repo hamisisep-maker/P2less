@@ -64,7 +64,7 @@ export type InboundInput = {
   inputWasVoice?: boolean;
 };
 
-export type Reply = { body: string; kind?: "text" | "otp_hint" | "document" | "image" | "system"; meta?: Record<string, unknown>; document?: { url: string; filename: string }; image?: { url: string } };
+export type Reply = { body: string; kind?: "text" | "otp_hint" | "document" | "image" | "system"; meta?: Record<string, unknown>; document?: { url: string; filename: string }; image?: { url: string }; audio?: { base64: string; mimeType: string } };
 export type HandleResult = {
   ok: boolean;
   replies: Reply[];
@@ -464,6 +464,27 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     const finalReplies = trainingWarnNearLimit
       ? [...replies, { body: "You've reached your allocated questions for this P2Less training session. If you found anything incorrect, confusing, unexpected, or broken, please report it now — your team lead will follow up. Thank you for participating!" }]
       : replies;
+
+    // Voice replies, widget channel — 2026-08-28. WhatsApp already gets a
+    // real voice-note reply via deliver()'s own Opus/OGG synthesis (see the
+    // "whatsapp" case below, gated by the SAME inputWasVoice condition);
+    // the widget is a JSON API response straight back to the browser, not
+    // a push transport deliver() sends through, so there's nothing for
+    // deliver() to attach audio to. Synthesized here instead, directly onto
+    // the reply object this function actually returns to the caller — a
+    // plain WAV (no ffmpeg/Opus container needed; every browser <audio>
+    // element plays WAV natively) attached as base64. Only the first
+    // plain text-only reply gets a voice version, mirroring voice input
+    // with voice output the same way WhatsApp already does.
+    if (input.channelType === "widget" && input.inputWasVoice) {
+      const first = finalReplies.find((r) => !r.kind && !r.document && !r.image);
+      if (first) {
+        const { synthesizeVoiceReplyWav } = await import("./voice-reply");
+        const wav = await synthesizeVoiceReplyWav(first.body).catch(() => null);
+        if (wav) first.audio = { base64: wav.toString("base64"), mimeType: "audio/wav" };
+      }
+    }
+
     for (const r of finalReplies) {
       // otp_hint / system notes are demo aids and are not re-metered as separate sends
       if (r.kind === "otp_hint" || r.kind === "system") continue;

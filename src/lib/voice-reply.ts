@@ -76,3 +76,16 @@ export async function synthesizeVoiceReply(text: string): Promise<Buffer | null>
   const wav = pcmToWav(pcm);
   return wavToOpusOgg(wav);
 }
+
+/** Same first two steps as synthesizeVoiceReply() (text → Gemini TTS → WAV),
+ *  stopping before the Opus/OGG transcode — the widget channel returns a
+ *  reply straight to the browser as JSON rather than pushing through a
+ *  transport that needs Opus specifically, and a plain WAV plays natively
+ *  in every browser's <audio> element with no ffmpeg step at all. Added
+ *  2026-08-28 so the widget can mirror voice input with a real voice
+ *  reply, same as WhatsApp already does. */
+export async function synthesizeVoiceReplyWav(text: string): Promise<Buffer | null> {
+  const pcm = await synthesizeSpeech(text);
+  if (!pcm) return null;
+  return pcmToWav(pcm);
+}

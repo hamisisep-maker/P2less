@@ -63,6 +63,8 @@
     ".p2l-msg-out{align-self:flex-end;background:" + brandColor + ";color:#fff;border-bottom-right-radius:4px;}",
     ".p2l-msg-in{align-self:flex-start;background:#fff;color:#12131f;border:1px solid #e6e6f0;border-bottom-left-radius:4px;animation:p2l-msg-in .25s ease-out;}",
     ".p2l-msg img{max-width:100%;border-radius:8px;margin-top:4px;display:block;}",
+    ".p2l-msg-audio{padding:6px;max-width:90%;}",
+    ".p2l-msg-audio audio{width:230px;max-width:100%;height:34px;display:block;}",
     ".p2l-inputrow{display:flex;gap:4px;padding:10px;border-top:1px solid #e6e6f0;background:#fff;align-items:flex-end;position:relative;}",
     ".p2l-input{flex:1;border:1px solid #e6e6f0;border-radius:20px;padding:8px 14px;font-size:13px;outline:none;min-width:0;}",
     ".p2l-send{background:" + brandColor + ";color:#fff;border:none;border-radius:50%;width:34px;height:34px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;}",
@@ -318,6 +320,27 @@
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
+  // A real voice REPLY — mirrors the input.inputWasVoice behavior WhatsApp
+  // already has: send a voice note in, get a voice note back. Native
+  // <audio controls> rather than a hand-built waveform/play-button — every
+  // browser renders it as a real, working, scrubbable audio player with no
+  // extra code, and it's instantly recognizable as "this is playable."
+  function addAudioReply(base64, mimeType) {
+    var audio = document.createElement("audio");
+    audio.controls = true;
+    audio.src = "data:" + mimeType + ";base64," + base64;
+    var wrap = document.createElement("div");
+    wrap.className = "p2l-msg p2l-msg-in p2l-msg-audio";
+    wrap.appendChild(audio);
+    messagesEl.appendChild(wrap);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    audio.play().catch(function () {
+      // Autoplay blocked (no prior user gesture in this exact call stack,
+      // or the browser's own autoplay policy) — the visible controls are
+      // enough to still play it manually, never worth surfacing an error for.
+    });
+  }
+
   var typingEl = null;
   function showTyping() {
     if (typingEl) return;
@@ -416,7 +439,8 @@
         var replies = data.replies || [];
         if (replies.length > 0) playNotifySound();
         replies.forEach(function (reply) {
-          if (reply.body) addMessage(reply.body, "in");
+          if (reply.audio && reply.audio.base64) addAudioReply(reply.audio.base64, reply.audio.mimeType || "audio/wav");
+          else if (reply.body) addMessage(reply.body, "in");
           if (reply.image && reply.image.url) addImage(reply.image.url);
         });
       })
