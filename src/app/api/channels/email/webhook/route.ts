@@ -49,7 +49,7 @@ export async function POST(req: Request) {
   }
 
   if (payload.type === "email.received" && !eventRecord.duplicate) {
-    void processEmail(payload).catch(() => {});
+    void processEmail(payload).catch((err) => console.error("[email-webhook] processEmail failed:", err));
   }
   return Response.json({ received: true });
 }
@@ -58,23 +58,37 @@ async function processEmail(payload: ResendWebhookPayload): Promise<void> {
   const emailId = payload.data?.email_id;
   const recipients = payload.data?.to ?? [];
   const from = payload.data?.from;
-  if (!emailId || !from || recipients.length === 0) return;
+  if (!emailId || !from || recipients.length === 0) {
+    console.error("[email-webhook] missing emailId/from/recipients", { emailId, from, recipients });
+    return;
+  }
 
   // Deliberately cross-tenant — resolves WHICH tenant this recipient address
   // belongs to. Same category of gap as every other channel webhook's own
   // lookup, found in the same 2026-08-23 fail-closed audit.
   const channel = await runCrossTenant(() => db.channel.findFirst({ where: { type: "email", address: { in: recipients }, status: "active" } }));
-  if (!channel) return; // sent to an address not connected to any tenant
+  if (!channel) {
+    console.error("[email-webhook] no active email channel for recipients", recipients);
+    return; // sent to an address not connected to any tenant
+  }
 
   const full = await fetchReceivedEmail(emailId);
-  if (!full) return;
+  if (!full) {
+    console.error("[email-webhook] fetchReceivedEmail returned null for", emailId);
+    return;
+  }
   const text = extractPlainText(full);
-  if (!text) return; // nothing left after stripping the quoted thread
+  if (!text) {
+    console.error("[email-webhook] extractPlainText returned empty for", emailId);
+    return; // nothing left after stripping the quoted thread
+  }
 
+  console.error("[email-webhook] calling handleInbound", { tenantId: channel.tenantId, from, textLength: text.length });
   await handleInbound({
     tenantId: channel.tenantId,
     fromNumber: from, // the sender's email address doubles as the "sender identity" InboundInput expects
     channelType: "email",
     text,
   });
+  console.error("[email-webhook] handleInbound completed for", emailId);
 }
