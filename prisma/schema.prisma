@@ -520,7 +520,7 @@ model Tenant {
   exploreCompletedAt DateTime?
   status    String   @default("active") // active | suspended | trial | cancelled
   // White-label branding. Free/basic tenants fall back to P2Less defaults.
-  branding  Json? // { assistantName, logoText, primaryColor, welcome, poweredBy, pdfFooter }
+  branding  Json? // { assistantName, logoText, primaryColor, welcome, poweredBy, pdfFooter, logoUrl, phone, website }
   // Org-approved FAQs the assistant may answer verbatim (e.g. school hours, term
   // dates). Array of { q, a }. The org controls these — the AI never invents them.
   faqs      Json? // [{ q: "What are your hours?", a: "Mon–Fri, 7:30am–4:30pm." }]

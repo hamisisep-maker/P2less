@@ -1335,6 +1335,9 @@ export async function confirmPasswordResetAction(_prev: unknown, formData: FormD
 type TenantSettingsInput = {
   name: string; industry: string;
   assistantName?: string; logoText?: string; primaryColor?: string; welcome?: string; poweredBy?: string; pdfFooter?: string;
+  // Email-reply branding, 2026-09-02 — shown in the branded HTML wrapper
+  // every AI email reply now goes out in (see email-channel.ts).
+  logoUrl?: string; phone?: string; website?: string;
 };
 
 export type InviteUserResult = { ok: true; email: string; password: string; emailSent: boolean } | { error: string };
@@ -1480,11 +1483,15 @@ export async function updateTenantSettingsAction(_prev: unknown, formData: FormD
     if (!industry) return { error: "Industry is required." };
 
     const branding: TenantSettingsInput = { name, industry };
-    for (const key of ["assistantName", "logoText", "primaryColor", "welcome", "poweredBy", "pdfFooter"] as const) {
+    for (const key of ["assistantName", "logoText", "primaryColor", "welcome", "poweredBy", "pdfFooter", "logoUrl", "phone", "website"] as const) {
       const v = String(formData.get(key) ?? "").trim();
       if (v) branding[key] = v;
     }
-    const newBranding = { assistantName: branding.assistantName, logoText: branding.logoText, primaryColor: branding.primaryColor, welcome: branding.welcome, poweredBy: branding.poweredBy, pdfFooter: branding.pdfFooter };
+    const newBranding = {
+      assistantName: branding.assistantName, logoText: branding.logoText, primaryColor: branding.primaryColor,
+      welcome: branding.welcome, poweredBy: branding.poweredBy, pdfFooter: branding.pdfFooter,
+      logoUrl: branding.logoUrl, phone: branding.phone, website: branding.website,
+    };
 
     // Real gap found 2026-08-23 (nav.ts gates Commerce/Integrations/Developer/
     // Widget nav groups on these, and a tenant that under-selected — or, like

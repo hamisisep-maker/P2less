@@ -9,6 +9,7 @@ import { USE_CASE_OPTIONS, CHANNEL_OPTIONS } from "@/lib/tenant-options";
 type Initial = {
   name: string; industry: string;
   assistantName: string; logoText: string; primaryColor: string; welcome: string; poweredBy: string; pdfFooter: string;
+  logoUrl: string; phone: string; website: string;
   useCases: string[]; channelsNeeded: string[];
 };
 type State = { ok?: boolean; unchanged?: boolean; error?: string } | null;
@@ -71,6 +72,25 @@ export function SettingsForm({ initial, canManage }: { initial: Initial; canMana
           <label className="block sm:col-span-2">
             <span className="text-xs font-medium text-muted">PDF document footer</span>
             <input name="pdfFooter" defaultValue={initial.pdfFooter} disabled={!canManage} placeholder="e.g. official document, contact us at..." className="mt-1 w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent disabled:opacity-60" />
+          </label>
+        </div>
+      </Card>
+
+      <Card className="mb-4 p-5">
+        <h2 className="mb-1 font-display font-semibold">Email reply branding</h2>
+        <p className="mb-3 text-xs text-muted">Every AI reply sent over the Email channel goes out with your logo at the top and this contact info in the footer, so customers see your organization, not P2Less. Leave a field blank to skip that part of the email.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block sm:col-span-2">
+            <span className="text-xs font-medium text-muted">Logo image URL</span>
+            <input name="logoUrl" type="url" defaultValue={initial.logoUrl} disabled={!canManage} placeholder="https://yoursite.com/logo.png" className="mt-1 w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent disabled:opacity-60" />
+          </label>
+          <label className="block">
+            <span className="text-xs font-medium text-muted">Phone number</span>
+            <input name="phone" type="tel" defaultValue={initial.phone} disabled={!canManage} placeholder="+254 700 000000" className="mt-1 w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent disabled:opacity-60" />
+          </label>
+          <label className="block">
+            <span className="text-xs font-medium text-muted">Website</span>
+            <input name="website" type="url" defaultValue={initial.website} disabled={!canManage} placeholder="https://yoursite.com" className="mt-1 w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent disabled:opacity-60" />
           </label>
         </div>
       </Card>

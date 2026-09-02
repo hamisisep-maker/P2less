@@ -16,15 +16,15 @@ export function isEmailConfigured(): boolean {
 /** Real Resend API call — no mock fallback, since a notification that's never
  *  actually sendable should stay honestly "no_provider_configured" (see
  *  notifications.ts) rather than pretend to succeed. */
-export async function sendEmail(opts: { to: string; subject: string; text: string }): Promise<ChannelSendResult> {
+export async function sendEmail(opts: { to: string; subject: string; text: string; html?: string; from?: string }): Promise<ChannelSendResult> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return { ok: false, error: "RESEND_API_KEY not configured" };
-  const from = process.env.RESEND_FROM_EMAIL || "P2Less <onboarding@resend.dev>";
+  const from = opts.from || process.env.RESEND_FROM_EMAIL || "P2Less <onboarding@resend.dev>";
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to: [opts.to], subject: opts.subject, text: opts.text }),
+      body: JSON.stringify({ from, to: [opts.to], subject: opts.subject, text: opts.text, ...(opts.html ? { html: opts.html } : {}) }),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");

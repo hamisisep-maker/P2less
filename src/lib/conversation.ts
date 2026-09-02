@@ -214,11 +214,11 @@ const SERVICE_UNAVAILABLE_MESSAGE = "We're unable to respond right now — pleas
 
 async function sendServiceUnavailable(opts: {
   tenantId: string; channelType: string; to: string;
-  fromNumberId?: string | null; fromPageId?: string | null; fromTelegramBotId?: string | null;
+  fromNumberId?: string | null; fromPageId?: string | null; fromTelegramBotId?: string | null; fromEmailAddress?: string | null;
 }): Promise<void> {
   await deliver({
     tenantId: opts.tenantId, channelType: opts.channelType, to: opts.to, body: SERVICE_UNAVAILABLE_MESSAGE,
-    fromNumberId: opts.fromNumberId, fromPageId: opts.fromPageId, fromTelegramBotId: opts.fromTelegramBotId,
+    fromNumberId: opts.fromNumberId, fromPageId: opts.fromPageId, fromTelegramBotId: opts.fromTelegramBotId, fromEmailAddress: opts.fromEmailAddress,
   }).catch(() => {}); // best-effort — a failure here must never throw past the honest {ok:false} return below
 }
 
@@ -244,6 +244,12 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   let fromPageId: string | null = null;
   // Same role again, for Telegram — the org's connected bot's own id.
   let fromTelegramBotId: string | null = null;
+  // Same role again, for Email — the tenant's own receiving address, so a
+  // reply comes FROM the address the user can actually reply back to
+  // (2026-09-02 fix: replies were going out from a hardcoded global fallback
+  // address, so a real user's "Reply" in their email client never reached
+  // this tenant's channel at all).
+  let fromEmailAddress: string | null = null;
 
   if (input.tenantId) {
     const t = await db.tenant.findUnique({ where: { id: input.tenantId }, include: { subscription: true } });
@@ -262,12 +268,16 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       const channel = await runCrossTenant(() => db.channel.findFirst({ where: { tenantId: t.id, type: "telegram", status: "active" } }));
       fromTelegramBotId = channel?.address ?? null;
     }
+    if (input.channelType === "email") {
+      const channel = await runCrossTenant(() => db.channel.findFirst({ where: { tenantId: t.id, type: "email", status: "active" } }));
+      fromEmailAddress = channel?.address ?? null;
+    }
     if (t.status === "suspended" || t.status === "cancelled") {
       // Real bug found + fixed 2026-08-25: this used to just return this
       // reply without ever actually sending it — see sendServiceUnavailable's
       // comment. webchat/widget still get it via the return value too
       // (deliver() returns synchronously for those channel types).
-      await sendServiceUnavailable({ tenantId: t.id, channelType: input.channelType, to: input.fromNumber, fromPageId, fromTelegramBotId });
+      await sendServiceUnavailable({ tenantId: t.id, channelType: input.channelType, to: input.fromNumber, fromPageId, fromTelegramBotId, fromEmailAddress });
       return { ok: false, replies: [{ body: SERVICE_UNAVAILABLE_MESSAGE }] };
     }
     tenant = t;
@@ -368,7 +378,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // it's already been paid for. No-op for Enterprise/trial subscriptions
   // (see prepaid-billing.ts's isGateExempt). ─────────────────────────────
   if (!(await hasMessageBudget(tenant.id, number?.transport))) {
-    await sendServiceUnavailable({ tenantId: tenant.id, channelType: input.channelType, to: input.fromNumber, fromNumberId: number?.phoneNumberId, fromPageId, fromTelegramBotId });
+    await sendServiceUnavailable({ tenantId: tenant.id, channelType: input.channelType, to: input.fromNumber, fromNumberId: number?.phoneNumberId, fromPageId, fromTelegramBotId, fromEmailAddress });
     return { ok: false, replies: [{ body: SERVICE_UNAVAILABLE_MESSAGE }] };
   }
 
@@ -418,7 +428,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   void dispatchWebhook(tenant.id, "message.received", { conversationId: conversation.id, from: input.fromNumber, to: input.toNumber, text: input.text }).catch(() => {});
   if (!limit.ok) {
     const reply: Reply = { body: "This service has reached its monthly message limit. Please contact the organization." };
-    await deliver({ tenantId: tenant.id, conversationId: conversation.id, channelType: input.channelType, to: input.fromNumber, body: reply.body, fromNumberId: number?.phoneNumberId, fromPageId, fromTelegramBotId });
+    await deliver({ tenantId: tenant.id, conversationId: conversation.id, channelType: input.channelType, to: input.fromNumber, body: reply.body, fromNumberId: number?.phoneNumberId, fromPageId, fromTelegramBotId, fromEmailAddress });
     return { ok: true, replies: [reply], conversationId: conversation.id, from: fromIdentity };
   }
 
@@ -488,7 +498,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
     for (const r of finalReplies) {
       // otp_hint / system notes are demo aids and are not re-metered as separate sends
       if (r.kind === "otp_hint" || r.kind === "system") continue;
-      await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body: r.body, meta: r.meta, fromNumberId: number?.phoneNumberId, fromPageId, fromTelegramBotId, document: r.document, image: r.image, replyAsVoice: input.inputWasVoice && !r.document && !r.image });
+      await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body: r.body, meta: r.meta, fromNumberId: number?.phoneNumberId, fromPageId, fromTelegramBotId, fromEmailAddress, document: r.document, image: r.image, replyAsVoice: input.inputWasVoice && !r.document && !r.image });
     }
     return { ok: true, replies: finalReplies, conversationId: conversation!.id, from: fromIdentity } satisfies HandleResult;
   };
@@ -613,7 +623,7 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
   // followed by typing dots. Does NOT touch conversation status/context; the
   // final emit() at the end of this turn still owns that.
   const announceNow = async (body: string) => {
-    await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body, fromNumberId: number?.phoneNumberId, fromPageId, fromTelegramBotId });
+    await deliver({ tenantId: tenant.id, conversationId: conversation!.id, channelType: input.channelType, to: input.fromNumber, body, fromNumberId: number?.phoneNumberId, fromPageId, fromTelegramBotId, fromEmailAddress });
   };
 
   // The REAL amount to charge — product total plus a matched delivery fee, if

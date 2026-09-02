@@ -4,7 +4,7 @@ import { PERMISSIONS } from "@/lib/permissions";
 import { Card, PageHeader } from "@/components/ui";
 import { SettingsForm } from "./settings-form";
 
-type Branding = { assistantName?: string; logoText?: string; primaryColor?: string; welcome?: string; poweredBy?: string; pdfFooter?: string };
+type Branding = { assistantName?: string; logoText?: string; primaryColor?: string; welcome?: string; poweredBy?: string; pdfFooter?: string; logoUrl?: string; phone?: string; website?: string };
 
 // Real gap found 2026-08-23: Tenant.name/industry/branding are live-consumed
 // (conversation greetings, generated PDFs, the widget embed snippet) but had
@@ -36,6 +36,7 @@ export default async function DashboardSettingsPage() {
             name: tenant?.name ?? "", industry: tenant?.industry ?? "business",
             assistantName: branding.assistantName ?? "", logoText: branding.logoText ?? "", primaryColor: branding.primaryColor ?? "",
             welcome: branding.welcome ?? "", poweredBy: branding.poweredBy ?? "", pdfFooter: branding.pdfFooter ?? "",
+            logoUrl: branding.logoUrl ?? "", phone: branding.phone ?? "", website: branding.website ?? "",
             useCases: (tenant?.useCases as string[] | null) ?? [], channelsNeeded: (tenant?.channelsNeeded as string[] | null) ?? [],
           }}
           canManage={canManage}

@@ -123,7 +123,63 @@ export function extractPlainText(email: ReceivedEmail): string {
   return stripQuotedReply(raw.trim());
 }
 
-export async function sendEmailReply(to: string, subject: string, body: string): Promise<{ ok: boolean; error?: string }> {
-  const result = await sendEmail({ to, subject: subject.startsWith("Re:") ? subject : `Re: ${subject}`, text: body });
+type TenantEmailBranding = {
+  assistantName?: string; logoText?: string; primaryColor?: string;
+  logoUrl?: string; phone?: string; website?: string;
+};
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Branded HTML wrapper around a plain-text reply body — a white card
+ *  (logo, message, then an org contact footer) centered on a light gray
+ *  page background, matching the same boxed layout already used for this
+ *  codebase's other transactional emails. Table-based markup deliberately,
+ *  not flex/grid — the only layout approach that renders consistently
+ *  across Gmail/Outlook/Apple Mail. All content pulled from the tenant's
+ *  own Branding settings; any field left unset is simply omitted, never a
+ *  placeholder. */
+function renderBrandedEmailHtml(orgName: string, branding: TenantEmailBranding, bodyText: string): string {
+  const accent = branding.primaryColor || "#0F6B5C";
+  const logoHtml = branding.logoUrl
+    ? `<img src="${escapeHtml(branding.logoUrl)}" alt="${escapeHtml(orgName)}" style="max-height:56px;max-width:220px;display:block;margin:0 auto;" />`
+    : `<div style="font:600 20px sans-serif;color:${accent};text-align:center;">${escapeHtml(branding.logoText || orgName)}</div>`;
+
+  const bodyHtml = escapeHtml(bodyText).split(/\r?\n/).map((line) => `<p style="margin:0 0 12px;">${line || "&nbsp;"}</p>`).join("");
+
+  const contactLines = [
+    branding.phone ? `<a href="tel:${escapeHtml(branding.phone)}" style="color:${accent};text-decoration:none;">${escapeHtml(branding.phone)}</a>` : "",
+    branding.website ? `<a href="${escapeHtml(branding.website)}" style="color:${accent};text-decoration:none;">${escapeHtml(branding.website)}</a>` : "",
+  ].filter(Boolean).join(" &nbsp;|&nbsp; ");
+
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F1F0EB;padding:32px 16px;font-family:sans-serif;">
+  <tr><td align="center">
+    <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#FFFFFF;border-radius:16px;border:1px solid #E5E5E5;">
+      <tr><td style="padding:40px 32px 32px;">
+        ${logoHtml}
+      </td></tr>
+      <tr><td style="padding:0 32px 24px;color:#1B1F1C;font-size:15px;line-height:1.5;">
+        ${bodyHtml}
+      </td></tr>
+      ${contactLines ? `<tr><td style="padding:20px 32px 32px;border-top:1px solid #E5E5E5;text-align:center;font-size:13px;">${contactLines}</td></tr>` : ""}
+    </table>
+  </td></tr>
+</table>`;
+}
+
+export async function sendEmailReply(
+  to: string,
+  subject: string,
+  body: string,
+  opts: { tenantId: string; fromEmailAddress?: string | null },
+): Promise<{ ok: boolean; error?: string }> {
+  const tenant = await db.tenant.findUnique({ where: { id: opts.tenantId }, select: { name: true, branding: true } });
+  const branding = (tenant?.branding as TenantEmailBranding | null) ?? {};
+  const orgName = branding.assistantName || tenant?.name || "P2Less";
+  const from = opts.fromEmailAddress ? `${orgName} <${opts.fromEmailAddress}>` : undefined;
+  const html = renderBrandedEmailHtml(orgName, branding, body);
+
+  const result = await sendEmail({ to, subject: subject.startsWith("Re:") ? subject : `Re: ${subject}`, text: body, html, from });
   return result.ok ? { ok: true } : { ok: false, error: result.error };
 }

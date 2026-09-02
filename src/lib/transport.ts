@@ -39,6 +39,11 @@ export type OutboundMessage = {
   // Same routing role again, for Telegram — the org's connected bot's own
   // numeric Telegram id (Channel.address), used to look up the bot token.
   fromTelegramBotId?: string | null;
+  // Same routing role again, for Email — the tenant's own receiving address
+  // (Channel.address), sent as the reply's "from" so a real "Reply" in the
+  // user's email client comes back to this tenant's channel instead of a
+  // hardcoded global default (2026-09-02 fix — see conversation.ts).
+  fromEmailAddress?: string | null;
   // When set, deliver this as a document (PDF) attachment, not just text.
   document?: { url: string; filename: string };
   // When set, deliver this as an image attachment (e.g. a product photo).
@@ -345,7 +350,7 @@ export async function deliver(msg: OutboundMessage): Promise<{ delivered: boolea
       // shared InboundInput type, which every other channel also uses and
       // has no concept of "subject". A fixed reply subject rather than
       // touching that shared type for the lowest-priority channel.
-      const result = await sendEmailReply(msg.to, "Reply from your assistant", msg.body);
+      const result = await sendEmailReply(msg.to, "Reply from your assistant", msg.body, { tenantId: msg.tenantId, fromEmailAddress: msg.fromEmailAddress });
       if (!result.ok) {
         console.error(`[email:send-failed] ${result.error}`);
         return { delivered: false, transport: "email", error: result.error };
