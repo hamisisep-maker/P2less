@@ -50,6 +50,22 @@ match, not the other way round.
    signingSecret })`, and prints the pair once. Hand the pair to
    `hamzone-ai-training` out of band — it stores them in the relevant
    `AiSystem.adapterConfig`, encrypted the same way on that side.
+   `scripts/training-test-fixtures.ts` (below) does exactly this for test
+   credentials — same shape, disposable, not for a real production pair.
+
+## `scripts/training-test-fixtures.ts`
+
+A small CLI (`create-credential`, `revoke-credential`, `get-tenant-by-slug`,
+`get-balance`, `set-balance`, `count-tickets`, `cleanup-tickets`) that
+`hamzone-ai-training`'s automated cross-integration test
+(`npm run test:cross-integration` over there) shells out to for setup/
+teardown it can't do through the HTTP routes themselves — issuing a
+disposable test credential, temporarily zeroing/restoring the test
+tenant's balance to exercise the billing gate, verifying no duplicate
+ticket was created. Not used by anything in this repo directly; exists
+because the other repo needs it. Every command prints one line of JSON —
+keep it that way if extending it, since that's the contract the caller
+parses.
 
 ## Quality Centre category mapping
 
@@ -61,12 +77,29 @@ this repo's fixed `QUALITY_CATEGORIES` taxonomy
 point — any admin can reclassify a `training_platform` ticket from its own
 page exactly like any other ticket.
 
-## Verified 2026-09-02
+## Verified 2026-09-02, now repeatably (not just a one-off manual pass)
 
-Both routes exercised against a real running instance of this app (not
-mocked) from a real signed request: successful evaluate + findings calls,
-rejected bad signature, rejected >5-minute-old timestamp, rejected invalid
-payloads, and a duplicate `X-Idempotency-Key` correctly returning the same
-`SupportTicket` id instead of creating a second one. Not yet exercised: a
-staging/production deployment, or connection to a real training campaign
-(deferred behind a controlled pilot per the training platform's ADR 0001).
+First verified manually against a real running instance of this app:
+successful evaluate + findings calls, rejected bad signature, rejected
+>5-minute-old timestamp, rejected invalid payloads, a duplicate
+`X-Idempotency-Key` correctly returning the same `SupportTicket` id instead
+of creating a second one — and one real finding from that pass, not a code
+bug: the designated tenant needs a funded balance or the real billing gate
+blocks `evaluate` exactly like it would for a real out-of-balance customer.
+
+That manual pass is now automated and repeatable: `hamzone-ai-training`'s
+`npm run test:cross-integration` starts (or reuses) a real instance of this
+app via `npm run dev` and runs the full scenario list — every auth case,
+the real billing gate, real idempotent duplicate handling, and the real
+per-credential rate limiter (a burst of requests reliably trips it) —
+against real signed HTTP requests, self-cleaning afterward (revokes its
+test credential, restores the tenant's balance, removes its test tickets).
+15/15 passing as of this note. Run it again after any change to
+`src/app/api/training/*`, `src/lib/training-auth.ts`, or
+`src/lib/quality-taxonomy.ts`'s `TICKET_SOURCES`/`QUALITY_CATEGORIES`.
+
+Not yet exercised: a staging/production deployment, or connection to a
+real training campaign (deferred behind a controlled pilot per the
+training platform's ADR 0001) — and who funds the designated tenant's
+P2Less AI usage during that pilot is decided in that repo's
+`docs/adr/0002-training-evaluation-billing.md`.
