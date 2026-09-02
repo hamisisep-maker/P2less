@@ -61,6 +61,26 @@ async function main() {
       console.log(JSON.stringify({ revoked: id }));
       break;
     }
+    // Sets/clears revokedAt — the EXACT field and semantics the real
+    // /admin/integrations kill-switch button touches
+    // (src/lib/training-integration-actions.ts). Distinct from
+    // revoke-credential above, which hard-deletes and is only for test
+    // cleanup — these two exist to test the real disable/re-enable
+    // behavior without destroying the row.
+    case "disable-credential": {
+      const id = args[0];
+      if (!id) throw new Error("usage: disable-credential <id>");
+      await db.trainingIntegrationCredential.update({ where: { id }, data: { revokedAt: new Date() } });
+      console.log(JSON.stringify({ ok: true }));
+      break;
+    }
+    case "enable-credential": {
+      const id = args[0];
+      if (!id) throw new Error("usage: enable-credential <id>");
+      await db.trainingIntegrationCredential.update({ where: { id }, data: { revokedAt: null } });
+      console.log(JSON.stringify({ ok: true }));
+      break;
+    }
     case "get-tenant-by-slug": {
       const slug = args[0];
       if (!slug) throw new Error("usage: get-tenant-by-slug <slug>");
@@ -105,7 +125,7 @@ async function main() {
       break;
     }
     default:
-      throw new Error(`Unknown command '${command}'. Expected one of: create-credential, revoke-credential, get-tenant-by-slug, get-balance, set-balance, count-tickets, cleanup-tickets.`);
+      throw new Error(`Unknown command '${command}'. Expected one of: create-credential, revoke-credential, disable-credential, enable-credential, get-tenant-by-slug, get-balance, set-balance, count-tickets, cleanup-tickets.`);
   }
 }
 

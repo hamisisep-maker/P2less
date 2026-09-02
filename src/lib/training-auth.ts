@@ -64,6 +64,12 @@ export async function authenticateTrainingRequest(
 
   const record = await db.trainingIntegrationCredential.findUnique({ where: { keyHash: sha256(apiKey) } });
   if (!record || record.revokedAt) {
+    // The RESPONSE stays deliberately generic (don't let a caller
+    // distinguish "revoked" from "never existed" — that's an enumeration
+    // leak) but the SERVER LOG is specific, since an operator watching
+    // logs after disabling a credential (the kill switch, /admin/
+    // integrations) needs to see it actually taking effect immediately.
+    console.error(record?.revokedAt ? `[training-auth] rejected: credential '${record.name}' is disabled.` : "[training-auth] rejected: unknown API key.");
     return trainingError("unauthorized", "Unknown or revoked API key.", 401);
   }
   if (!(record.scopes as string[]).includes(requiredScope)) {

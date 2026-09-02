@@ -23,6 +23,18 @@ match, not the other way round.
   `withApiKey` (tenant-scoped developer API) — this is one
   platform-level service credential (`TrainingIntegrationCredential`),
   not tied to any tenant.
+- **`/admin/integrations`, "Training platform access" card** — the
+  operational kill switch (added 2026-09-02, for the training platform's
+  own Phase 5 pre-launch controls): lists every
+  `TrainingIntegrationCredential` and lets an admin with
+  `integrations.manage_credentials` disable or re-enable one, each
+  requiring a reason, each landing in `PlatformAuditLog`
+  (`logPrivilegedAction`). Disabling sets `revokedAt` — the exact field
+  `training-auth.ts` already checks on every request — so it takes effect
+  on the very next call, no redeploy or secret rotation. This is the real
+  "something is wrong on the training platform's side, stop touching
+  P2Less" button; `src/lib/training-integration-actions.ts` is the
+  implementation.
 
 ## Configuration required for these routes to work
 
@@ -55,17 +67,23 @@ match, not the other way round.
 
 ## `scripts/training-test-fixtures.ts`
 
-A small CLI (`create-credential`, `revoke-credential`, `get-tenant-by-slug`,
+A small CLI (`create-credential`, `revoke-credential`,
+`disable-credential`, `enable-credential`, `get-tenant-by-slug`,
 `get-balance`, `set-balance`, `count-tickets`, `cleanup-tickets`) that
 `hamzone-ai-training`'s automated cross-integration test
 (`npm run test:cross-integration` over there) shells out to for setup/
 teardown it can't do through the HTTP routes themselves — issuing a
 disposable test credential, temporarily zeroing/restoring the test
 tenant's balance to exercise the billing gate, verifying no duplicate
-ticket was created. Not used by anything in this repo directly; exists
-because the other repo needs it. Every command prints one line of JSON —
-keep it that way if extending it, since that's the contract the caller
-parses.
+ticket was created, and (added 2026-09-02) disabling/re-enabling a
+credential to prove the real `/admin/integrations` kill switch through an
+actual live task, not just a DB read. `disable-credential`/
+`enable-credential` touch the exact same `revokedAt` field the real admin
+UI action does — `revoke-credential` is a separate, permanent hard-delete
+used only for test cleanup, never for testing the kill switch itself.
+Not used by anything in this repo directly; exists because the other repo
+needs it. Every command prints one line of JSON — keep it that way if
+extending it, since that's the contract the caller parses.
 
 ## Quality Centre category mapping
 
@@ -90,12 +108,16 @@ blocks `evaluate` exactly like it would for a real out-of-balance customer.
 That manual pass is now automated and repeatable: `hamzone-ai-training`'s
 `npm run test:cross-integration` starts (or reuses) a real instance of this
 app via `npm run dev` and runs the full scenario list — every auth case,
-the real billing gate, real idempotent duplicate handling, and the real
-per-credential rate limiter (a burst of requests reliably trips it) —
-against real signed HTTP requests, self-cleaning afterward (revokes its
-test credential, restores the tenant's balance, removes its test tickets).
-15/15 passing as of this note. Run it again after any change to
-`src/app/api/training/*`, `src/lib/training-auth.ts`, or
+the real billing gate, real idempotent duplicate handling, the real
+per-credential rate limiter (a burst of requests reliably trips it), and
+(added 2026-09-02, for that repo's Phase 5A pre-launch controls) the real
+`/admin/integrations` kill switch exercised through an actual live task:
+disabling a credential blocks a real `runEvaluation()` call immediately,
+re-enabling it restores service, no redeploy — against real signed HTTP
+requests, self-cleaning afterward (revokes its test credential, restores
+the tenant's balance, removes its test tickets). 16/16 passing as of this
+note. Run it again after any change to `src/app/api/training/*`,
+`src/lib/training-auth.ts`, `src/lib/training-integration-actions.ts`, or
 `src/lib/quality-taxonomy.ts`'s `TICKET_SOURCES`/`QUALITY_CATEGORIES`.
 
 Not yet exercised: a staging/production deployment, or connection to a

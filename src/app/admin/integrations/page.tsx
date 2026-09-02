@@ -3,6 +3,7 @@ import { withAdminPermission } from "@/lib/admin-authz";
 import { Card, PageHeader } from "@/components/ui";
 import { IntegrationRow } from "./integration-row";
 import { DependencyMap } from "./dependency-map";
+import { TrainingCredentialRow } from "./training-credential-row";
 
 const CATEGORY_LABELS: Record<string, string> = {
   messaging: "Messaging",
@@ -38,6 +39,7 @@ function credentialStatus(key: string): "configured" | "not_configured" | "n/a" 
 export default async function AdminIntegrationsPage() {
   return withAdminPermission("integrations.view", async () => {
     const integrations = await db.integration.findMany({ orderBy: { name: "asc" } });
+    const trainingCredentials = await db.trainingIntegrationCredential.findMany({ orderBy: { createdAt: "desc" } });
 
     const byCategory = new Map<string, typeof integrations>();
     for (const i of integrations) {
@@ -61,6 +63,36 @@ export default async function AdminIntegrationsPage() {
             aiOk={integrations.some((i) => i.key.startsWith("ai_") && i.lastCheckOk === true)}
             dbOk={integrations.find((i) => i.key === "database")?.lastCheckOk ?? null}
           />
+        </Card>
+
+        <Card className="mt-4 p-5">
+          <h2 className="mb-1 font-display font-semibold">Training platform access</h2>
+          <p className="mb-3 text-xs text-muted">
+            Who can call <code>/api/training/evaluate</code> and{" "}
+            <code>/api/training/findings</code> — the Hamzone AI Training &amp;
+            Evaluation platform&apos;s integration
+            (docs/integrations/HAMZONE-AI-TRAINING-2026-09-02.md). Disabling a
+            credential here blocks every request using it immediately, no
+            redeploy or secret rotation needed — the emergency stop for a
+            credential compromise, unexpected AI cost, or a malfunctioning
+            campaign on that platform&apos;s side.
+          </p>
+          <div className="space-y-2">
+            {trainingCredentials.length === 0 && <p className="text-sm text-muted">No training-platform credentials issued yet.</p>}
+            {trainingCredentials.map((c) => (
+              <TrainingCredentialRow
+                key={c.id}
+                data={{
+                  id: c.id,
+                  name: c.name,
+                  scopes: c.scopes as string[],
+                  revokedAt: c.revokedAt?.toISOString() ?? null,
+                  lastUsedAt: c.lastUsedAt?.toISOString() ?? null,
+                  createdAt: c.createdAt.toISOString(),
+                }}
+              />
+            ))}
+          </div>
         </Card>
 
         <div className="mt-4 space-y-4">
