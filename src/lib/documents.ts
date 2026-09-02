@@ -72,6 +72,14 @@ export async function storeProductImage(opts: { tenantId: string; filename: stri
   return storeLongLived({ ...opts, kind: "product_image" });
 }
 
+// Uploaded org logo, 2026-09-02 — same permanent-storage/serving path as a
+// product photo (src/app/d/[token]/route.ts already detects the image
+// extension and serves the right Content-Type), reused rather than
+// duplicated, just its own `kind` tag for a clean audit/debug trail.
+export async function storeOrgLogo(opts: { tenantId: string; filename: string; base64: string }): Promise<GeneratedDoc> {
+  return storeLongLived({ ...opts, kind: "org_logo" });
+}
+
 /** A synthesized voice-note reply — the official (Meta) WhatsApp transport
  *  sends audio by link (same as document.ts's own PDF delivery, see store()
  *  above), never by uploading raw bytes, so a voice reply needs this same

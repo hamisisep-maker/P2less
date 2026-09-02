@@ -149,9 +149,9 @@ function renderBrandedEmailHtml(orgName: string, branding: TenantEmailBranding, 
   const bodyHtml = escapeHtml(bodyText).split(/\r?\n/).map((line) => `<p style="margin:0 0 12px;">${line || "&nbsp;"}</p>`).join("");
 
   const contactLines = [
-    branding.phone ? `<a href="tel:${escapeHtml(branding.phone)}" style="color:${accent};text-decoration:none;">${escapeHtml(branding.phone)}</a>` : "",
-    branding.website ? `<a href="${escapeHtml(branding.website)}" style="color:${accent};text-decoration:none;">${escapeHtml(branding.website)}</a>` : "",
-  ].filter(Boolean).join(" &nbsp;|&nbsp; ");
+    branding.phone ? `<span style="color:#4A4F49;">Call us:</span> <a href="tel:${escapeHtml(branding.phone)}" style="color:${accent};text-decoration:none;">${escapeHtml(branding.phone)}</a>` : "",
+    branding.website ? `<span style="color:#4A4F49;">Visit us:</span> <a href="${escapeHtml(branding.website)}" style="color:${accent};text-decoration:none;">${escapeHtml(branding.website)}</a>` : "",
+  ].filter(Boolean).join(" &nbsp;&nbsp;|&nbsp;&nbsp; ");
 
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F1F0EB;padding:32px 16px;font-family:sans-serif;">
   <tr><td align="center">

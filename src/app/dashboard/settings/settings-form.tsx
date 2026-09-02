@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui";
 import { updateTenantSettingsAction } from "@/lib/actions";
@@ -18,6 +18,11 @@ const INDUSTRIES = ["school", "hospital", "sacco", "business", "ngo", "governmen
 
 export function SettingsForm({ initial, canManage }: { initial: Initial; canManage: boolean }) {
   const [state, action, pending] = useActionState<State, FormData>(updateTenantSettingsAction, null);
+
+  // Live logo preview — reflects whichever of "upload a file" or "paste a
+  // URL" was touched most recently, so someone can confirm it's actually
+  // the image they meant before saving, not just guessing from a filename.
+  const [logoPreview, setLogoPreview] = useState<string>(initial.logoUrl);
 
   useEffect(() => {
     if (!state?.ok) return;
@@ -80,10 +85,40 @@ export function SettingsForm({ initial, canManage }: { initial: Initial; canMana
         <h2 className="mb-1 font-display font-semibold">Email reply branding</h2>
         <p className="mb-3 text-xs text-muted">Every AI reply sent over the Email channel goes out with your logo at the top and this contact info in the footer, so customers see your organization, not P2Less. Leave a field blank to skip that part of the email.</p>
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block sm:col-span-2">
-            <span className="text-xs font-medium text-muted">Logo image URL</span>
-            <input name="logoUrl" type="url" defaultValue={initial.logoUrl} disabled={!canManage} placeholder="https://yoursite.com/logo.png" className="mt-1 w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent disabled:opacity-60" />
-          </label>
+          <div className="block sm:col-span-2">
+            <span className="text-xs font-medium text-muted">Logo</span>
+            <div className="mt-1 flex items-start gap-4">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-surface-2">
+                {logoPreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- live client-side preview of an uploaded file or arbitrary external URL, not a static asset next/image can optimize
+                  <img
+                    src={logoPreview}
+                    alt="Logo preview"
+                    className="h-full w-full object-contain"
+                    onError={() => setLogoPreview("")}
+                  />
+                ) : (
+                  <span className="text-[10px] text-faint">No logo</span>
+                )}
+              </div>
+              <div className="flex-1 space-y-2">
+                <input
+                  name="logoFile" type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={!canManage}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) setLogoPreview(URL.createObjectURL(f)); }}
+                  className="w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-surface-2 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-line disabled:opacity-60"
+                />
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-faint">or a URL:</span>
+                  <input
+                    name="logoUrl" type="url" defaultValue={initial.logoUrl} disabled={!canManage} placeholder="https://yoursite.com/logo.png"
+                    onChange={(e) => setLogoPreview(e.target.value.trim())}
+                    className="flex-1 rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent disabled:opacity-60"
+                  />
+                </div>
+                <p className="text-xs text-faint">Uploading a file replaces any URL entered here. Preview updates as you type/choose, so you can confirm it&apos;s the right image before saving.</p>
+              </div>
+            </div>
+          </div>
           <label className="block">
             <span className="text-xs font-medium text-muted">Phone number</span>
             <input name="phone" type="tel" defaultValue={initial.phone} disabled={!canManage} placeholder="+254 700 000000" className="mt-1 w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent disabled:opacity-60" />
@@ -97,7 +132,7 @@ export function SettingsForm({ initial, canManage }: { initial: Initial; canMana
 
       <Card className="mb-4 p-5">
         <h2 className="mb-1 font-display font-semibold">What you use P2Less for</h2>
-        <p className="mb-3 text-xs text-muted">Controls which sections show in your sidebar — check anything relevant so that section becomes visible. Unchecking never deletes existing data, it only hides a section you're not using yet.</p>
+        <p className="mb-3 text-xs text-muted">Controls which sections show in your sidebar — check anything relevant so that section becomes visible. Unchecking never deletes existing data, it only hides a section you&apos;re not using yet.</p>
         <div className="mt-1 space-y-1.5">
           {USE_CASE_OPTIONS.map((opt) => (
             <label key={opt.value} className="flex items-center gap-2 text-sm">

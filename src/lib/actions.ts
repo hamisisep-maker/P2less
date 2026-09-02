@@ -12,7 +12,7 @@ import { rateLimit } from "./rate-limit";
 import { WEBHOOK_EVENTS } from "./webhooks";
 import { PERMISSIONS, DEFAULT_USER_ROLES, DEFAULT_CONTACT_ROLES } from "./permissions";
 import { stkPush, isConfigured, classifyMpesaFailure } from "./mpesa";
-import { storeProductImage } from "./documents";
+import { storeProductImage, storeOrgLogo } from "./documents";
 import { normalizePhone } from "./conversation";
 import { handleSubscriptionPaymentConfirmed } from "./billing-lifecycle";
 import { assertChannelEnabled } from "./payment-channels";
@@ -1487,6 +1487,22 @@ export async function updateTenantSettingsAction(_prev: unknown, formData: FormD
       const v = String(formData.get(key) ?? "").trim();
       if (v) branding[key] = v;
     }
+
+    // Logo: either an uploaded file OR a pasted URL, tenant's choice — an
+    // uploaded file wins if both are somehow present, since actually
+    // choosing "upload" is a more deliberate action than a leftover URL
+    // value sitting in the other field. Same validation as product photos
+    // (saveProductAction above) — reused, not reinvented.
+    const logoFile = formData.get("logoFile");
+    if (logoFile instanceof File && logoFile.size > 0) {
+      if (logoFile.size > MAX_IMAGE_BYTES) return { error: "Logo image is too large (max 5MB)." };
+      const ext = IMAGE_MIME_EXT[logoFile.type];
+      if (!ext) return { error: "Logo must be JPEG, PNG, WEBP or GIF." };
+      const buf = Buffer.from(await logoFile.arrayBuffer());
+      const stored = await storeOrgLogo({ tenantId: user.tenantId!, filename: `logo-${randomToken(4)}.${ext}`, base64: buf.toString("base64") });
+      branding.logoUrl = stored.url;
+    }
+
     const newBranding = {
       assistantName: branding.assistantName, logoText: branding.logoText, primaryColor: branding.primaryColor,
       welcome: branding.welcome, poweredBy: branding.poweredBy, pdfFooter: branding.pdfFooter,
