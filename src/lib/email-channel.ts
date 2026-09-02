@@ -146,7 +146,16 @@ function renderBrandedEmailHtml(orgName: string, branding: TenantEmailBranding, 
     ? `<img src="${escapeHtml(branding.logoUrl)}" alt="${escapeHtml(orgName)}" style="max-height:56px;max-width:220px;display:block;margin:0 auto;" />`
     : `<div style="font:600 20px sans-serif;color:${accent};text-align:center;">${escapeHtml(branding.logoText || orgName)}</div>`;
 
-  const bodyHtml = escapeHtml(bodyText).split(/\r?\n/).map((line) => `<p style="margin:0 0 12px;">${line || "&nbsp;"}</p>`).join("");
+  // Paragraphs are separated by a BLANK line (one or more), not every single
+  // newline — the AI's own replies commonly include blank lines between
+  // paragraphs, and rendering each blank line as its own empty <p> stacked
+  // margins on top of each other into the oversized gaps seen live. A lone
+  // newline inside one paragraph (no blank line) becomes a <br>, not a new
+  // paragraph, so a short list written one item per line doesn't get
+  // needlessly separated either.
+  const bodyHtml = bodyText.trim().split(/\r?\n\s*\r?\n+/).filter(Boolean)
+    .map((para) => `<p style="margin:0 0 16px;">${escapeHtml(para).replace(/\r?\n/g, "<br>")}</p>`)
+    .join("");
 
   const contactLines = [
     branding.phone ? `<span style="color:#4A4F49;">Call us:</span> <a href="tel:${escapeHtml(branding.phone)}" style="color:${accent};text-decoration:none;">${escapeHtml(branding.phone)}</a>` : "",

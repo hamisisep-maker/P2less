@@ -1142,7 +1142,15 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       const actionsNow = await loadActions(tenant.id);
       const st = aiEnabled() ? await smallTalk(assistant, text, [...actionsNow.map((a) => a.name), ...toolCapabilityLines()], history, knownFacts, orgFaqs) : null;
       const remind = `\n\nWhenever you're ready, reply with your ${ob0.idLabel} to connect your account for personalized help.`;
-      return emit([{ body: (st ?? "Happy to help — what would you like to know?") + remind }], "awaiting_identify", {});
+      // Real duplicate-text bug found live 2026-09-02: the AI's own reply
+      // (st) often already closes with an identical or near-identical
+      // "reply with your ID" prompt of its own — plausibly echoing this
+      // exact hardcoded sentence back from a PRIOR turn still visible in its
+      // own conversation history — and unconditionally appending `remind`
+      // on top produced the same closing line twice, verbatim, in one
+      // message. Skip the hardcoded append when the AI already asked.
+      const alreadyAsked = !!st && /reply with your/i.test(st);
+      return emit([{ body: (st ?? "Happy to help — what would you like to know?") + (alreadyAsked ? "" : remind) }], "awaiting_identify", {});
     }
     const ob = onboardingFor(tenant.industry);
     const identify = await db.connectorAction.findFirst({ where: { key: "IDENTIFY", connector: { tenantId: tenant.id, status: "active" } } });
