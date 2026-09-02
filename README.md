@@ -14,27 +14,57 @@ Everything that matters is on GitHub and Railway, not on any one machine — a f
 
 > **Standing rule going forward**: every commit gets pushed immediately, and `docs/PROJECT-STATUS-2026-08-24.md` is kept current every round specifically so this recovery path always works, not just as of whenever it was last convenient.
 
-## This is one of two Hamzone Technologies repositories
+## P2Less is one of two related but independently deployed Hamzone Technologies projects
 
 P2Less is Hamzone Technologies' own AI product. There's a second, **entirely
 separate** repository — [`hamzone-ai-training`](https://github.com/hamisisep-maker/hamzone-ai-training)
-— an AI Training & Evaluation platform (paid workers/reviewers who test and
-harden AI systems). P2Less is that platform's **first client**, not the same
-codebase: different repo, different database, different auth, different
-users (gig workers, not P2Less tenants).
+— Hamzone's AI Training & Evaluation platform (paid workers/reviewers who
+test and harden AI systems, P2Less among them). The relationship:
 
-The **only** connection between the two is a small integration contract that
-lives on **this** side (P2Less), for `hamzone-ai-training` to call into:
+```
+P2Less
+  └── AI product
+       │
+       ├── POST /api/training/evaluate
+       │
+       └── POST /api/training/findings
+                         ↑
+                         │
+              hamzone-ai-training
+```
+
+Concretely:
+
+- **P2Less owns its own database.** The training platform has a completely
+  separate one.
+- **They do not share Prisma models or database tables.** Nothing in
+  `hamzone-ai-training` ever queries this database directly, and nothing
+  here ever queries theirs.
+- **Integration happens only through authenticated APIs** — the two routes
+  below, nothing else.
+- **P2Less is the training platform's first client**, not a special case
+  baked into its design — see that repo's own README for why that
+  distinction matters to them.
+- **P2Less-specific implementation details stay behind the API boundary.**
+  `handleInbound()`, this repo's Prisma models, internal services — none of
+  it is ever exposed to or assumed by the training platform. If those
+  internals change, only the two routes below need to keep honoring their
+  existing contract.
+
+The two routes that make up that boundary, both living on **this** side:
 
 - `POST /api/training/evaluate` — accepts a test input, runs it through the
   real inbound pipeline, returns the response. **Not built yet.**
 - `POST /api/training/findings` — accepts one validated finding from a
   completed review, files it into `/admin/quality`. **Not built yet.**
 
-Full architecture reasoning (why separate, the data model, the workflow)
-lives in `hamzone-ai-training`'s own README — read that first if you're
-working on either of these two integration routes, since the contract they
-need to satisfy is defined there, not here.
+Full reasoning lives in two places on the `hamzone-ai-training` side:
+[`docs/ARCHITECTURE.md`](https://github.com/hamisisep-maker/hamzone-ai-training/blob/main/docs/ARCHITECTURE.md)
+(why two repos, why two databases, what belongs where) and
+[`docs/integrations/P2LESS.md`](https://github.com/hamisisep-maker/hamzone-ai-training/blob/main/docs/integrations/P2LESS.md)
+(the exact contract these two routes must satisfy). Read those before
+touching either route — the contract they need to honor is defined there,
+not here.
 
 ---
 
