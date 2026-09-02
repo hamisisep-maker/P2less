@@ -35,6 +35,17 @@ match, not the other way round.
   "something is wrong on the training platform's side, stop touching
   P2Less" button; `src/lib/training-integration-actions.ts` is the
   implementation.
+  **Naming note, raised in review and deliberately left as-is for now**:
+  `revokedAt` reads as permanent, but this button is fully reversible
+  (disable ↔ re-enable) — a real mismatch between the field's name and
+  today's single-credential-pilot use of it. A genuine, non-reversible
+  `REVOKED` state (for an actual compromised-credential incident, as
+  opposed to a routine pause) is worth a real `status: ACTIVE | DISABLED
+  | REVOKED` the day there's more than one credential in play at once;
+  not built now because a one-credential pilot has no scenario where the
+  two cases need to behave differently. See
+  `hamzone-ai-training/docs/PHASE5-CAMPAIGN-PLAN-2026-09-02.md` §1.2 for
+  the full reasoning.
 
 ## Configuration required for these routes to work
 
