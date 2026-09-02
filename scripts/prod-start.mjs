@@ -38,15 +38,7 @@ try {
   console.log("[prod-start] ffmpeg NOT found on PATH.");
 }
 
-// TEMPORARY for exactly one deploy, 2026-09-02 — see this file's own header
-// comment for the procedure this follows. New constraint:
-// SupportTicket.trainingIdempotencyKey (nullable, unique). Safe by
-// construction, not just by inspection: the column is brand new, so every
-// existing row is NULL for it, and SQL unique constraints never treat
-// multiple NULLs as a conflict — there is no way for a real duplicate to
-// exist yet. Revert this flag in the very next commit once the boot log
-// confirms a clean sync.
-run("npx prisma db push --skip-generate --accept-data-loss");
+run("npx prisma db push --skip-generate");
 
 const db = new PrismaClient();
 const tenantCount = await db.tenant.count();
