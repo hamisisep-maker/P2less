@@ -1143,13 +1143,16 @@ export async function handleInbound(input: InboundInput): Promise<HandleResult> 
       const st = aiEnabled() ? await smallTalk(assistant, text, [...actionsNow.map((a) => a.name), ...toolCapabilityLines()], history, knownFacts, orgFaqs) : null;
       const remind = `\n\nWhenever you're ready, reply with your ${ob0.idLabel} to connect your account for personalized help.`;
       // Real duplicate-text bug found live 2026-09-02: the AI's own reply
-      // (st) often already closes with an identical or near-identical
-      // "reply with your ID" prompt of its own — plausibly echoing this
-      // exact hardcoded sentence back from a PRIOR turn still visible in its
-      // own conversation history — and unconditionally appending `remind`
-      // on top produced the same closing line twice, verbatim, in one
-      // message. Skip the hardcoded append when the AI already asked.
-      const alreadyAsked = !!st && /reply with your/i.test(st);
+      // (st) often already closes with its own version of "give me your ID"
+      // — plausibly echoing this exact hardcoded sentence back from a PRIOR
+      // turn still visible in its own conversation history — and
+      // unconditionally appending `remind` on top produced two closing
+      // lines in one message, sometimes verbatim, sometimes just reworded
+      // (e.g. "just drop your Employee ID here to connect!"). A fixed-phrase
+      // check ("reply with your") missed that reworded case live — checking
+      // for the actual field name (idLabel, e.g. "Employee ID") instead
+      // catches it regardless of how the AI phrases the ask.
+      const alreadyAsked = !!st && st.toLowerCase().includes(ob0.idLabel.toLowerCase());
       return emit([{ body: (st ?? "Happy to help — what would you like to know?") + (alreadyAsked ? "" : remind) }], "awaiting_identify", {});
     }
     const ob = onboardingFor(tenant.industry);
