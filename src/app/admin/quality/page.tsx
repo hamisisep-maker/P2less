@@ -10,7 +10,7 @@ const STATUS_TONE: Record<string, "rose" | "amber" | "indigo" | "green" | "neutr
   open: "rose", assigned: "amber", in_progress: "indigo", waiting_on_customer: "amber",
   resolved: "green", closed: "green", reopened: "rose",
 };
-const SOURCE_TONE: Record<string, "neutral" | "indigo" | "green"> = { internal: "neutral", tenant: "indigo", public_report: "green" };
+const SOURCE_TONE: Record<string, "neutral" | "indigo" | "green" | "rose"> = { internal: "neutral", tenant: "indigo", public_report: "green", training_platform: "rose" };
 function actionTone(value: string): "rose" | "green" | "indigo" {
   return value === "code_change" ? "rose" : value === "no_action" ? "green" : "indigo";
 }

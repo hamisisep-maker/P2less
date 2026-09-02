@@ -1766,6 +1766,15 @@ model SupportTicket {
   // reports" is a flat findMany, not a recursive walk.
   triggerText    String?
   duplicateOfId  String?
+  // Set only on source = "training_platform" tickets (POST
+  // /api/training/findings). Soft references, same convention as
+  // relatedPaymentId/relatedIncidentId above — the training platform's own
+  // Finding.id, for cross-referencing its audit trail, and the
+  // X-Idempotency-Key the request carried, so a retried delivery of the
+  // SAME finding is recognized and answered with this ticket's id again
+  // instead of creating a second ticket.
+  trainingFindingId      String?
+  trainingIdempotencyKey String? @unique
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -1865,6 +1874,29 @@ model ApiKey {
   createdAt  DateTime @default(now())
 
   @@index([tenantId])
+}
+
+// Cross-repo service credential for the Hamzone AI Training & Evaluation
+// platform (separate repo, separate database — see
+// docs/integrations/HAMZONE-AI-TRAINING-2026-09-02.md here, and that
+// repo's own docs/integrations/P2LESS.md for the full frozen contract).
+// NOT tenant-scoped, unlike ApiKey above — the training platform isn't any
+// one tenant's customer, it
+// calls POST /api/training/evaluate and POST /api/training/findings as a
+// platform-level integration. keyHash follows the exact same
+// hash-and-lookup convention as ApiKey.keyHash (sha256, never store the raw
+// key); encryptedSigningSecret uses this repo's own encryptJSON (AES-256-
+// GCM, src/lib/crypto.ts) — a second, separate secret from the key itself,
+// used only to verify the HMAC request signature, never transmitted.
+model TrainingIntegrationCredential {
+  id                     String    @id @default(cuid())
+  name                   String // human label, e.g. "hamzone-ai-training (production)"
+  keyHash                String    @unique
+  encryptedSigningSecret String
+  scopes                 Json // string[]: "training.evaluate" | "training.findings"
+  lastUsedAt             DateTime?
+  revokedAt              DateTime?
+  createdAt              DateTime  @default(now())
 }
 
 model Webhook {

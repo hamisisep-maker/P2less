@@ -21,6 +21,7 @@ export const TICKET_SOURCES = [
   { value: "internal", label: "Internal — P2Less's own team found it" },
   { value: "tenant", label: "Tenant — a tenant's own staff or contact reported it" },
   { value: "public_report", label: "Public — reported through the public feedback programme" },
+  { value: "training_platform", label: "Training Platform — validated by Hamzone's AI Training & Evaluation platform" },
 ] as const;
 
 /** The corrective-action decision — deliberately a SEPARATE choice from
