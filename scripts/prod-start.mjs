@@ -14,6 +14,16 @@
 //      the boot log shows a clean sync, and revert it in the very next commit.
 //      Never leave the flag in permanently -- that would silently wave
 //      through a future change that's genuinely destructive.
+//      Second occurrence, 2026-09-02 (same root cause, a different new
+//      unique constraint) -- worth carrying forward as a real signal, not
+//      just repeating the same recovery a third time when it happens
+//      again: schema mutation at every boot is inherently this fragile.
+//      Before the project grows much further, replace this with a real
+//      migration workflow (`prisma migrate deploy` against versioned
+//      migration files, applied as an explicit release step, not
+//      re-diffed live on every container start) -- not a Phase 5 blocker,
+//      not urgent today, but the next time this bites, that's the actual
+//      fix, not another temporary flag.
 //   2. Seed demo data ONLY if the database is empty (first deploy) — never on a
 //      redeploy, so live data is never touched or duplicated.
 //   3. Start Next.js in the foreground, forwarding signals for clean shutdowns.
