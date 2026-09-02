@@ -85,13 +85,20 @@ type ReceivedEmail = { text: string | null; html: string | null; from: string; s
  *  real body needs this separate authenticated fetch. */
 export async function fetchReceivedEmail(emailId: string): Promise<ReceivedEmail | null> {
   const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) {
+    console.error("[fetchReceivedEmail] RESEND_API_KEY missing");
+    return null;
+  }
   try {
     const res = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, { headers: { Authorization: `Bearer ${apiKey}` } });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error("[fetchReceivedEmail] non-ok response", res.status, await res.text());
+      return null;
+    }
     const body = await res.json();
     return { text: body.text ?? null, html: body.html ?? null, from: body.from, subject: body.subject ?? null };
-  } catch {
+  } catch (err) {
+    console.error("[fetchReceivedEmail] threw", err);
     return null;
   }
 }
