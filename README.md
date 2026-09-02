@@ -14,6 +14,28 @@ Everything that matters is on GitHub and Railway, not on any one machine — a f
 
 > **Standing rule going forward**: every commit gets pushed immediately, and `docs/PROJECT-STATUS-2026-08-24.md` is kept current every round specifically so this recovery path always works, not just as of whenever it was last convenient.
 
+## This is one of two Hamzone Technologies repositories
+
+P2Less is Hamzone Technologies' own AI product. There's a second, **entirely
+separate** repository — [`hamzone-ai-training`](https://github.com/hamisisep-maker/hamzone-ai-training)
+— an AI Training & Evaluation platform (paid workers/reviewers who test and
+harden AI systems). P2Less is that platform's **first client**, not the same
+codebase: different repo, different database, different auth, different
+users (gig workers, not P2Less tenants).
+
+The **only** connection between the two is a small integration contract that
+lives on **this** side (P2Less), for `hamzone-ai-training` to call into:
+
+- `POST /api/training/evaluate` — accepts a test input, runs it through the
+  real inbound pipeline, returns the response. **Not built yet.**
+- `POST /api/training/findings` — accepts one validated finding from a
+  completed review, files it into `/admin/quality`. **Not built yet.**
+
+Full architecture reasoning (why separate, the data model, the workflow)
+lives in `hamzone-ai-training`'s own README — read that first if you're
+working on either of these two integration routes, since the contract they
+need to satisfy is defined there, not here.
+
 ---
 
 > **Stop logging into systems. Start talking to them.**

@@ -6,7 +6,7 @@
 
 **Evidence audit, 2026-08-24**: every item below was re-verified against real, current evidence today — the user's own live, logged-in Meta Business Manager session (via a connected browser), the Railway CLI (`railway variables`), and this app's own database — not re-stated from memory. Each item now carries an **Evidence** line citing exactly what was checked. Three real findings came out of this pass: a new, time-sensitive risk (below), one item corrected as already shipped, and one item's stated problem corrected to match what's actually true today.
 
-> ✅ **Resolved (pending Meta's review) — 2026-08-24.** The urgent Access/Tech-Provider warning below is addressed: item #1's Business Verification was fully completed and submitted the same day (walked through live, step by step, with the user). Meta's own confirmation: *"In review... about 2 business days."* Leaving the original finding below for the record.
+> ⚠️ **Update 2026-09-02: rejected, not just delayed.** Re-checked live in Meta Business Suite — status changed from "In review" to **"Needs more information."** Meta's stated reason: *"The document submitted to verify the business address ... isn't an accepted type."* Needs a real document showing both the legal name `HAMZONE TECHNOLOGIES LIMITED` and the exact business address (Certificate/Articles of Incorporation, Business License/Permit, Bank Statement/Summary/Letter, or a Utility Bill) re-submitted through Meta's own verification form. Blocked on you having one of these documents — not an engineering task. Original 2026-08-24 submission record kept below for history.
 >
 > **Original finding**: Meta Business Suite → Business info → Access verification status showed **"Not verified — Your business was not verified as a Tech Provider and API calls to certain permissions and features in advanced access will begin to be blocked."** — a live warning threatening the already-working WhatsApp/Messenger integration, not just paused future work.
 
@@ -88,9 +88,10 @@
 
 ## Email (Resend)
 
-### 10. Resend Inbound dashboard setup
-- **Status**: not started (confirmed directly against both local `.env` and Railway production variables 2026-08-24 — `RESEND_INBOUND_DOMAIN`/`RESEND_WEBHOOK_SECRET` are unset in both).
-- **Evidence (re-checked 2026-08-24)**: `railway variables` shows neither key present; local `.env` shows neither key present. Unchanged since first confirmed.
+### 10. Resend Inbound dashboard setup — ✅ DONE 2026-09-02
+- **Status**: live and verified end to end. `RESEND_INBOUND_DOMAIN=in.hamzonetechnologies.com`, `RESEND_WEBHOOK_SECRET` both set in Railway production. Real DNS (MX + DKIM TXT + 2× CNAME) added, domain verified in Resend, webhook created and confirmed delivering. A real test email sent to `hamzone@in.hamzonetechnologies.com` correctly triggered a real grounded reply — not just a webhook 200, an actual round trip.
+- **Two real bugs found and fixed while proving this end to end** (see `docs/PROJECT-STATUS-2026-08-24.md`'s 2026-09-02 entry for full detail): `RESEND_API_KEY` was a send-only restricted key silently failing the body-fetch call this channel needs; the webhook's async processing path had zero error logging, which is why the first bug took real diagnostic-logging work to even see.
+- **Evidence superseded below (2026-08-24, kept for history)**: `railway variables` showed neither key present; local `.env` showed neither key present.
 - **Next action** (walked through in chat 2026-08-24, reproduced here for permanence):
   1. Pick a receiving domain: **fast path** — use Resend's auto-provisioned `.resend.app` domain (zero DNS work, ready instantly); **or** a custom domain/subdomain (needs MX records — use a *subdomain* if your root domain already has real MX records for existing email, to avoid conflicts). Found at [resend.com/emails](https://resend.com/emails) → **Receiving** tab → **⋯** menu → **Receiving address**.
   2. Create the webhook: [resend.com/webhooks](https://resend.com/webhooks) → **Add Webhook** → endpoint `https://p2less-app-production.up.railway.app/api/channels/email/webhook` → event **`email.received`** only → **Add**.
@@ -169,14 +170,14 @@
 | # | Item | Effort | Blocked on |
 |---|---|---|---|
 | 9 | Telegram real bot token | **Minutes** — free, instant, self-service | Nothing |
-| 10 | Resend Inbound setup | **~15 min** — self-service dashboard | Nothing |
+| ✅ 10 | Resend Inbound setup — **done 2026-09-02, live-verified end to end** | Done | Nothing |
 | 6 | Messenger Tester invite | **Minutes**, once you tell me which FB account | Which Facebook account to invite |
 | 13, 14 | Cerebras/Anthropic billing | **Minutes** — add a card | Nothing — confirmed still failing on every call today |
 | 15 | OpenAI/xAI not configured | **Minutes** — first-time setup, not a fix | Nothing — corrected: no mismatch to diagnose, just unset |
 | 8 | Phase 8c — add the missing Pages use case + request permissions | **~15-30 min**, real setup | Nothing — corrected: was never requested, not just unverified |
 | 11 | Real SMS provider account | **~1 day** — provider signup + verification | Choosing/signing up with a provider |
 | 2, 4 | WhatsApp spare number / Coexistence | **Depends on number availability** | You having a spare number |
-| ✅ 1 | WhatsApp Business Verification — **submitted 2026-08-24, "In review"** (resolves the Access/Tech-Provider warning too) | **Done on your side — waiting on Meta, ~2 business days per their own estimate** | Nothing — just waiting |
+| ⚠️ 1 | WhatsApp Business Verification — **rejected 2026-09-02, "Needs more information"** (wrong document type for the business address) | Blocked on a real document (see above) | An accepted document proving legal name + address |
 | 3, 7 | App Review (WhatsApp + Instagram) | **Days-weeks** — Meta's own review | Item #1 landing first (recommended) |
 | 12 | M-Pesa Go-Live | **Days-weeks** — Safaricom's own review | Your business/banking details |
 | 16-18 | X / LinkedIn / TikTok | **Not started, no urgency** | A future prioritization decision |
