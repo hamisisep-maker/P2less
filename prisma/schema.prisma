@@ -1775,6 +1775,15 @@ model SupportTicket {
   // instead of creating a second ticket.
   trainingFindingId      String?
   trainingIdempotencyKey String? @unique
+  // The permanent evidence snapshot captured by Hamzone at the moment its
+  // staff validated this finding (campaign name, task type, worker input,
+  // AI response, worker's own assessment, reviewer reasoning, validator) —
+  // docs/integrations/P2LESS.md (Hamzone repo) §2.2. Deliberately a frozen
+  // copy, not a live reference: it stays correct even if the Hamzone-side
+  // campaign/submission is later changed, archived, or reorganized. Null
+  // for tickets predating this field, or when the finding had no linked
+  // submission on the Hamzone side (e.g. a test-created finding).
+  trainingEvidenceSnapshot Json?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

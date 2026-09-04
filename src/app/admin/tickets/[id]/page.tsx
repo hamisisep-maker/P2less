@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { withAdminPermission, hasAdminPermission } from "@/lib/admin-authz";
 import { runCrossTenant } from "@/lib/tenant-context";
 import { Card, PageHeader } from "@/components/ui";
-import { TicketWorkspace } from "./ticket-workspace";
+import { TicketWorkspace, type TrainingEvidence } from "./ticket-workspace";
 
 export default async function AdminTicketDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -108,6 +108,8 @@ export default async function AdminTicketDetailPage({ params }: { params: Promis
               resolution: ticket.resolution, resolutionReason: ticket.resolutionReason, resolvedAt: ticket.resolvedAt,
               createdAt: ticket.createdAt, source: ticket.source, qualityCategory: ticket.qualityCategory,
               actionRequired: ticket.actionRequired, actionReason: ticket.actionReason,
+              trainingFindingId: ticket.trainingFindingId,
+              trainingEvidenceSnapshot: ticket.trainingEvidenceSnapshot as TrainingEvidence,
             }}
             events={events.map((e) => ({ id: e.id, type: e.type, actorName: e.actorId ? actorNameById.get(e.actorId) ?? "Unknown admin" : "System", visibility: e.visibility, body: e.body, detail: e.detail, createdAt: e.createdAt }))}
             admins={admins}

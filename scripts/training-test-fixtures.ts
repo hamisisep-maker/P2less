@@ -115,6 +115,13 @@ async function main() {
       console.log(JSON.stringify({ count }));
       break;
     }
+    case "get-ticket-evidence": {
+      const findingId = args[0];
+      if (!findingId) throw new Error("usage: get-ticket-evidence <trainingFindingId>");
+      const ticket = await db.supportTicket.findFirst({ where: { trainingFindingId: findingId }, select: { trainingEvidenceSnapshot: true } });
+      console.log(JSON.stringify({ evidence: ticket?.trainingEvidenceSnapshot ?? null }));
+      break;
+    }
     case "cleanup-tickets": {
       const prefix = args[0];
       if (!prefix) throw new Error("usage: cleanup-tickets <trainingFindingIdPrefix>");
@@ -125,7 +132,7 @@ async function main() {
       break;
     }
     default:
-      throw new Error(`Unknown command '${command}'. Expected one of: create-credential, revoke-credential, disable-credential, enable-credential, get-tenant-by-slug, get-balance, set-balance, count-tickets, cleanup-tickets.`);
+      throw new Error(`Unknown command '${command}'. Expected one of: create-credential, revoke-credential, disable-credential, enable-credential, get-tenant-by-slug, get-balance, set-balance, count-tickets, get-ticket-evidence, cleanup-tickets.`);
   }
 }
 

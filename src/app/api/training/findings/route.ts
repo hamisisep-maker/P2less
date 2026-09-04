@@ -25,12 +25,29 @@ import { enterTenantContext } from "@/lib/tenant-context";
 // { received: true, clientRef } instead of creating a second one.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// evidence is the permanent snapshot Hamzone captures at the moment its
+// staff validated this finding — see that repo's docs/integrations/
+// P2LESS.md §2.2. Optional and stored as-is (Json?): absent for a finding
+// with no linked submission on the Hamzone side (e.g. a test-created
+// finding), and never re-fetched or re-validated here — it's a frozen
+// copy of what supported the finding then, not a live reference.
+type FindingEvidence = {
+  campaignName: string;
+  taskType: string;
+  workerInput: string | null;
+  aiResponse: string | null;
+  workerAssessment: string | null;
+  reviews: { reviewerName: string; verdict: string; notes: string | null }[];
+  validatedBy: string | null;
+} | null;
+
 type FindingsRequestBody = {
   findingId?: string;
   severity?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
   category?: string;
   description?: string;
   validatedAt?: string;
+  evidence?: FindingEvidence;
 };
 
 const IDEMPOTENCY_KEY_HEADER = "x-idempotency-key";
@@ -76,7 +93,7 @@ export async function POST(req: Request) {
   } catch {
     return trainingError("invalid_payload", "Body is not valid JSON.", 400);
   }
-  const { findingId, severity, category, description, validatedAt } = body;
+  const { findingId, severity, category, description, validatedAt, evidence } = body;
   if (!findingId || !severity || !category || !description || !validatedAt) {
     return trainingError("invalid_payload", "findingId, severity, category, description, and validatedAt are required.", 400);
   }
@@ -115,6 +132,7 @@ export async function POST(req: Request) {
         slaDeadlineAt: await computeSlaDeadline(priority),
         trainingFindingId: findingId,
         trainingIdempotencyKey: idempotencyKey,
+        trainingEvidenceSnapshot: evidence ?? undefined,
       },
     });
     await db.ticketEvent.create({
@@ -124,7 +142,7 @@ export async function POST(req: Request) {
         actorId: null,
         visibility: "internal",
         body: `Validated finding received from the Hamzone AI Training & Evaluation platform (severity: ${severity}, validated ${validatedAt}).`,
-        detail: { findingId, severity, category, validatedAt },
+        detail: { findingId, severity, category, validatedAt, hasEvidence: !!evidence },
       },
     });
     return Response.json({ received: true, clientRef: ticket.id });

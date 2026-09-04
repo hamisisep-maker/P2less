@@ -13,6 +13,20 @@ import {
 } from "@/lib/ticket-actions";
 import { QUALITY_CATEGORIES, TICKET_SOURCES, ACTION_DECISIONS } from "@/lib/quality-taxonomy";
 
+// The permanent evidence snapshot Hamzone captures at the moment its staff
+// validated this finding — a frozen copy, not a live reference, so it stays
+// correct even if the Hamzone-side campaign/submission is later changed or
+// archived. See docs/integrations/P2LESS.md (Hamzone repo) §2.2.
+export type TrainingEvidence = {
+  campaignName: string;
+  taskType: string;
+  workerInput: string | null;
+  aiResponse: string | null;
+  workerAssessment: string | null;
+  reviews: { reviewerName: string; verdict: string; notes: string | null }[];
+  validatedBy: string | null;
+} | null;
+
 type Ticket = {
   id: string; number: string | null; tenantId: string; tenantName: string;
   subject: string; description: string | null; category: string; priority: string; status: string;
@@ -21,6 +35,7 @@ type Ticket = {
   resolution: string | null; resolutionReason: string | null; resolvedAt: Date | null;
   createdAt: Date; source: string; qualityCategory: string | null;
   actionRequired: string | null; actionReason: string | null;
+  trainingFindingId: string | null; trainingEvidenceSnapshot: TrainingEvidence;
 };
 type TicketEventRow = { id: string; type: string; actorName: string; visibility: string; body: string | null; detail: unknown; createdAt: Date };
 type AdminOption = { id: string; name: string; email: string };
@@ -108,6 +123,68 @@ export function TicketWorkspace({ ticket, events, admins, relatedIncident, relat
       </div>
 
       {ticket.description && <p className="text-sm text-muted">{ticket.description}</p>}
+
+      {/* ── Hamzone AI Training Evidence — this ticket was created by
+          POST /api/training/findings (source = "training_platform") from a
+          finding validated on the Hamzone AI Training & Evaluation
+          platform. trainingFindingId is that platform's own Finding.id,
+          for cross-referencing its audit trail; trainingEvidenceSnapshot is
+          the permanent snapshot of what supported it at validation time —
+          see the TrainingEvidence type above for why it's frozen, not a
+          live link. Null snapshot = a finding validated before this field
+          existed, or one with no linked submission on the Hamzone side. ── */}
+      {ticket.source === "training_platform" && (
+        <div className="rounded-xl border border-indigo/30 bg-indigo-soft/10 px-3.5 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">Hamzone AI Training Evidence</h3>
+            {ticket.trainingFindingId && (
+              <span className="rounded-md border border-line-soft bg-surface px-1.5 py-0.5 font-mono text-[11px] text-faint">Finding {ticket.trainingFindingId}</span>
+            )}
+          </div>
+          {ticket.trainingEvidenceSnapshot ? (
+            <div className="mt-2 space-y-2 text-xs">
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted">
+                <span><b className="text-ink">Campaign:</b> {ticket.trainingEvidenceSnapshot.campaignName}</span>
+                <span><b className="text-ink">Task type:</b> {ticket.trainingEvidenceSnapshot.taskType.replaceAll("_", " ").toLowerCase()}</span>
+                {ticket.trainingEvidenceSnapshot.validatedBy && <span><b className="text-ink">Validated by:</b> {ticket.trainingEvidenceSnapshot.validatedBy}</span>}
+              </div>
+              {ticket.trainingEvidenceSnapshot.workerInput && (
+                <div>
+                  <div className="font-medium uppercase tracking-wide text-faint">Worker&apos;s input</div>
+                  <p className="mt-0.5 whitespace-pre-wrap text-muted">{ticket.trainingEvidenceSnapshot.workerInput}</p>
+                </div>
+              )}
+              {ticket.trainingEvidenceSnapshot.aiResponse && (
+                <div>
+                  <div className="font-medium uppercase tracking-wide text-faint">AI response evaluated</div>
+                  <p className="mt-0.5 whitespace-pre-wrap text-muted">{ticket.trainingEvidenceSnapshot.aiResponse}</p>
+                </div>
+              )}
+              {ticket.trainingEvidenceSnapshot.workerAssessment && (
+                <div>
+                  <div className="font-medium uppercase tracking-wide text-faint">Worker&apos;s assessment</div>
+                  <p className="mt-0.5 whitespace-pre-wrap text-muted">{ticket.trainingEvidenceSnapshot.workerAssessment}</p>
+                </div>
+              )}
+              {ticket.trainingEvidenceSnapshot.reviews.length > 0 && (
+                <div>
+                  <div className="font-medium uppercase tracking-wide text-faint">Reviewer reasoning</div>
+                  <div className="mt-1 space-y-1">
+                    {ticket.trainingEvidenceSnapshot.reviews.map((r, i) => (
+                      <div key={i} className="rounded-lg border border-line-soft bg-surface px-2 py-1.5">
+                        <span className="font-medium text-ink">{r.reviewerName}</span> — <span className="text-muted">{r.verdict}</span>
+                        {r.notes && <p className="mt-0.5 text-muted">{r.notes}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="mt-1 text-xs text-faint">No detailed evidence snapshot available for this finding.</p>
+          )}
+        </div>
+      )}
 
       {/* ── Cross-links: payment / incident evidence, per the Customer Ops Centre workflow ── */}
       <div className="grid gap-2 sm:grid-cols-2">
