@@ -12,6 +12,7 @@
     "seed": "tsx prisma/seed.ts",
     "db:push": "prisma db push",
     "test": "tsx scripts/test.ts",
+    "test:tenant-scoping": "tsx --conditions=react-server scripts/test-tenant-scoping.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {

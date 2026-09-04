@@ -1,16 +1,28 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { withAdminPermission, hasAdminPermission } from "@/lib/admin-authz";
+import { runCrossTenant } from "@/lib/tenant-context";
 import { Card, PageHeader } from "@/components/ui";
 import { TicketWorkspace } from "./ticket-workspace";
 
 export default async function AdminTicketDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const ticket = await db.supportTicket.findUnique({
-    where: { id },
-    include: { tenant: { select: { id: true, name: true } }, contact: { select: { id: true, displayName: true, address: true } }, assignedAdmin: { select: { id: true, name: true, email: true } } },
-  });
+  // This lookup has to run BEFORE withAdminPermission because it's what
+  // resolves ticket.tenantId, which withAdminPermission itself needs — a
+  // real chicken-and-egg gap the 4089820 tenant-scoping fix missed in this
+  // one file (it converted everything inside the callback but not this
+  // line). Already behind admin/layout.tsx's requireSuperAdmin() gate, so
+  // this doesn't run for an unauthenticated caller; runCrossTenant() is the
+  // same enterWith()-then-synchronously-invoke shape actions.ts's
+  // loginAction() already uses for the identical "resolve identity before
+  // any permission context exists" case.
+  const ticket = await runCrossTenant(() =>
+    db.supportTicket.findUnique({
+      where: { id },
+      include: { tenant: { select: { id: true, name: true } }, contact: { select: { id: true, displayName: true, address: true } }, assignedAdmin: { select: { id: true, name: true, email: true } } },
+    }),
+  );
   if (!ticket) notFound();
 
   return withAdminPermission("tickets.view", async (admin) => {
