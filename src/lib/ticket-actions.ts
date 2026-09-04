@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "./db";
 import { withAssertAdminPermission, logPrivilegedAction } from "./admin-authz";
+import { runCrossTenant } from "./tenant-context";
 import { nextTicketNumber } from "./ticket-numbering";
 import { computeSlaDeadline } from "./ticket-sla";
 import { storeTicketAttachment } from "./documents";
@@ -52,8 +53,14 @@ export async function createTicketAction(input: {
 // Internal helper only, never exported — every caller below only ever reads
 // `found.ok`/`found.ticket`/`found.error`, so this changes no externally
 // observable behavior of any Server Action.
+// runCrossTenant() — every caller below still needs to resolve which
+// tenant this ticket belongs to before its own withAssertAdminPermission
+// call can even run (same "resolve identity before any permission context
+// exists" shape as src/app/admin/tickets/[id]/page.tsx's fix). Without it
+// this throws TenantContextMissingError under db.ts's fail-closed
+// extension, on every single call.
 async function loadTicketOrError(ticketId: string) {
-  const ticket = await db.supportTicket.findUnique({ where: { id: ticketId } });
+  const ticket = await runCrossTenant(() => db.supportTicket.findUnique({ where: { id: ticketId } }));
   if (!ticket) return { ok: false as const, error: "Ticket not found." };
   return { ok: true as const, ticket };
 }
@@ -193,7 +200,7 @@ export async function linkPaymentAction(ticketId: string, paymentIdOrReference: 
   const found = await loadTicketOrError(ticketId);
   if (!found.ok) return { error: found.error };
   const q = paymentIdOrReference.trim();
-  const payment = await db.payment.findFirst({ where: { OR: [{ id: q }, { reference: q }] } });
+  const payment = await runCrossTenant(() => db.payment.findFirst({ where: { OR: [{ id: q }, { reference: q }] } }));
   if (!payment) return { error: "Payment not found." };
   if (payment.tenantId !== found.ticket.tenantId) return { error: "That payment belongs to a different tenant." };
   const paymentId = payment.id;
@@ -301,7 +308,7 @@ export async function linkMessageAction(ticketId: string, messageId: string) {
   if (!messageId?.trim()) return { error: "Choose a message to link." };
   const found = await loadTicketOrError(ticketId);
   if (!found.ok) return { error: found.error };
-  const message = await db.message.findUnique({ where: { id: messageId.trim() } });
+  const message = await runCrossTenant(() => db.message.findUnique({ where: { id: messageId.trim() } }));
   if (!message) return { error: "Message not found." };
   if (found.ticket.conversationId && message.conversationId !== found.ticket.conversationId) {
     return { error: "That message isn't part of this ticket's conversation." };

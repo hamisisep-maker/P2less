@@ -7,6 +7,7 @@ import { db } from "./db";
 import { verifyPassword, hashPassword, type CurrentUser } from "./auth";
 import { setSetting, setAiProviderCost, SETTING_DEFAULTS, type SettingKey } from "./platform-settings";
 import { withAssertAdminPermission, logPrivilegedAction, requireAdminPermission } from "./admin-authz";
+import { runCrossTenant } from "./tenant-context";
 import { computeBill } from "./billing";
 import { finalizeCancellation } from "./billing-lifecycle";
 import { resolveTenantRecipientEmail } from "./notifications";
@@ -565,7 +566,11 @@ export async function runBillingCycleNowAction() {
  *  no one mistakes this for a real money-back-to-customer flow. */
 export async function refundPaymentAction(paymentId: string, reason: string) {
   if (!reason?.trim()) return { error: "A reason is required." };
-  const payment = await db.payment.findUnique({ where: { id: paymentId } });
+  // runCrossTenant() — same "resolve which tenant this belongs to before
+  // any permission context exists" gap as the ticket-page fix; Payment is
+  // tenant-scoped, so this threw TenantContextMissingError on every call
+  // under db.ts's fail-closed extension.
+  const payment = await runCrossTenant(() => db.payment.findUnique({ where: { id: paymentId } }));
   if (!payment) return { error: "Payment not found." };
   return withAssertAdminPermission("billing.refund", async (admin) => {
     if (payment.status !== "paid") return { error: `Only a paid payment can be refunded (this one is "${payment.status}").` };
